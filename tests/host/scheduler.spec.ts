@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NO_NEWS_GIST } from '../../src/core/brief.ts'
+import { localDate } from '../../src/core/calendar.ts'
 import type { Id, Importance, Run, RunStatus } from '../../src/core/types.ts'
 import { STOPPED_ERROR, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { appendLate, synthesizeBrief, type BriefDeps } from '../../src/host/jobs/synthesize.ts'
@@ -95,6 +96,12 @@ afterEach(() => {
 })
 
 const dailyIds = () => calls.runDailyProduct.map(c => c.productId)
+/** A baseline run of the product today, as the baseline job leaves it: started and ended as given, or skipped by the budget (never started). */
+const recordBaseline = (productId: Id, status: 'done' | 'failed' | 'skipped') => {
+  const now = clock.clock.now().toISOString()
+  const run = repo.createRun({ kind: 'baseline', date: localDate(clock.clock.now()), trackId: null, productId })
+  repo.updateRun(run.id, { status, startedAt: status === 'skipped' ? null : now, endedAt: now, error: status === 'done' ? null : '没能建档' })
+}
 const seedRun = (productId: Id, status: RunStatus, error: string | null = null, date = DAY): Run => {
   const run = repo.createRun({ kind: 'daily', date, trackId: null, productId })
   repo.updateRun(run.id, { status, error })
@@ -373,6 +380,52 @@ describe('Scheduler: the day', () => {
     expect(dailyIds()).toEqual(['p1', 'p3', 'p2'])
     expect(events.indexOf('rebaseline p2')).toBeLessThan(events.indexOf('daily p2'))
     expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p1', 'p2', 'p3']) // Zed is not tracked yet: not in the brief
+  })
+
+  it('fills in a tracked product\'s missing dimensions at most once in 7 days', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run() // Windsurf's 定位 card was rejected by the check
+    const toppedUp: string[] = []
+    deps.rebaseline = async ids => { // the baseline runs, and fails again: the dimension stays without a card
+      for (const id of ids) {
+        toppedUp.push(`${id} ${localDate(clock.clock.now())}`)
+        recordBaseline(id, 'failed')
+      }
+    }
+    scheduler = new Scheduler(deps)
+
+    const days = ['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01', '2026-12-02']
+    for (const day of days) {
+      clock.set(`${day}T08:00`)
+      await scheduler.runDay(day)
+    }
+
+    expect(toppedUp).toEqual(['p2 2026-11-25', 'p2 2026-12-02']) // day 1, then not on days 2–7, then day 8
+    expect(calls.runDailyProduct.filter(c => c.productId === 'p2').map(c => c.date)).toEqual(days) // its daily update goes on every day
+  })
+
+  it('tries the missing dimensions again the next day when the budget kept the baseline from starting', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    deps.rebaseline = async ids => { calls.rebaseline.push(ids); for (const id of ids) recordBaseline(id, 'skipped') }
+    scheduler = new Scheduler(deps)
+
+    await scheduler.runDay(DAY)
+    clock.set('2026-11-26T08:00')
+    await scheduler.runDay('2026-11-26')
+
+    expect(calls.rebaseline).toEqual([['p2'], ['p2']])
+  })
+
+  it('retries a product stuck in 建档中 on every run day', async () => {
+    addProduct('p4', 'Zed', 'baselining', false)
+    deps.rebaseline = async ids => { calls.rebaseline.push(ids); for (const id of ids) recordBaseline(id, 'failed') }
+    scheduler = new Scheduler(deps)
+
+    for (const day of ['2026-11-25', '2026-11-26', '2026-11-27']) {
+      clock.set(`${day}T08:00`)
+      await scheduler.runDay(day)
+    }
+
+    expect(calls.rebaseline).toEqual([['p4'], ['p4'], ['p4']])
   })
 
   it('does not mark the day complete when the brief could not be written', async () => {

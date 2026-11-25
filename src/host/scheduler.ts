@@ -7,6 +7,9 @@
  * daily run that day are run (a run interrupted by quitting does not count as finished, nor as failed). A product whose
  * run failed is tried once more that day; after two failures it is left and named in the brief.
  *
+ * A tracked product missing a dimension's card gets it first, at most once in `TOP_UP_EVERY_DAYS` days; products stuck in
+ * 建档中 are baselined again every run day.
+ *
  * The brief is written when every product is through, or at the cutoff, two hours after the day began, whichever comes
  * first. Products that finish after the cutoff are added to it (「迟到」). The day counts as complete
  * (`lastCompletedDailyDate`) only once every product is through and the brief is written; then old sessions are archived.
@@ -21,6 +24,11 @@ import type { Clock } from './ports.ts'
 export const LAST_COMPLETED = 'lastCompletedDailyDate'
 /** How many failed daily runs a product may have in one day before it is left for that day. */
 export const MAX_DAILY_FAILURES = 2
+/**
+ * A tracked product missing a dimension's card is baselined again for it at most once in this many days: a card the
+ * check keeps rejecting would otherwise cost a baseline session every day. Products still in 建档中 are retried daily.
+ */
+export const TOP_UP_EVERY_DAYS = 7
 
 const DEFAULT_RUN_TIME = '08:00'
 const RUN_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -106,7 +114,7 @@ export class Scheduler {
   /**
    * 「立即更新」: updates the product now, for today, then adds it to today's brief (`appendLate`), or writes the brief
    * if today has none yet. A product stuck in 建档中 is baselined again instead (resolves with null); a tracked one
-   * missing a dimension's card gets it first. When the product's run is already in flight, that run is awaited instead
+   * missing a dimension's card gets it first (within the same 7-day limit as the daily run). When the product's run is already in flight, that run is awaited instead
    * of starting a second one, and whoever started it takes care of the brief.
    * @throws When the product does not exist.
    */
@@ -119,7 +127,7 @@ export class Scheduler {
       return null
     }
     const date = localDate(clock.now())
-    if (!this.busy.has(productId) && this.lacksCards(productId)) await this.deps.rebaseline([productId])
+    if (!this.busy.has(productId) && this.needsTopUp(productId, date)) await this.deps.rebaseline([productId])
     const inFlight = this.busy.get(productId)
     if (inFlight) return inFlight
     const run = await this.daily(productId, date)
@@ -178,7 +186,7 @@ export class Scheduler {
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }
 
-  /** The day's work: the tracked products to run (in tracking order), those of them missing a card, and those stuck in 建档中. */
+  /** The day's work: the tracked products to run (in tracking order), those of them to top up first, and those stuck in 建档中. */
   private plan(date: string): { toRun: Id[]; topUp: Set<Id>; stuck: Id[] } {
     const { repo } = this.deps
     const products = new Map<Id, Product>()
@@ -191,7 +199,7 @@ export class Scheduler {
       const { finished, failures } = this.standing(date, id)
       return !finished && failures < MAX_DAILY_FAILURES
     })
-    return { toRun, topUp: new Set(toRun.filter(id => this.lacksCards(id))), stuck: all.filter(p => p.status === 'baselining').map(p => p.id) }
+    return { toRun, topUp: new Set(toRun.filter(id => this.needsTopUp(id, date))), stuck: all.filter(p => p.status === 'baselining').map(p => p.id) }
   }
 
   /** One product's day: its missing cards first, then its daily run, tried once more if it failed. */
@@ -237,11 +245,17 @@ export class Scheduler {
     }
   }
 
-  /** Whether a dimension of the product has no card in its dossier. */
-  private lacksCards(productId: Id): boolean {
+  /**
+   * Whether a tracked product should be baselined for its missing cards before its run for `date`: a dimension of it has
+   * no card, and no baseline of it started in the `TOP_UP_EVERY_DAYS` days ending with `date` (read from the runs table;
+   * one the budget skipped never started and does not count).
+   */
+  private needsTopUp(productId: Id, date: string): boolean {
     const { repo } = this.deps
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
-    return repo.dimensionsOfProduct(productId).some(d => !have.has(d.key))
+    if (!repo.dimensionsOfProduct(productId).some(d => !have.has(d.key))) return false
+    const since = shiftDate(date, 1 - TOP_UP_EVERY_DAYS)
+    return !repo.listRuns(since).some(r => r.kind === 'baseline' && r.productId === productId && r.startedAt !== null && r.date <= date)
   }
 
   /** The product's daily run; the product is busy until it ends. */
@@ -309,3 +323,9 @@ export class Scheduler {
 }
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+/** The local date `days` days after `date` (both `YYYY-MM-DD`). */
+function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return localDate(new Date(y!, m! - 1, d! + days))
+}
