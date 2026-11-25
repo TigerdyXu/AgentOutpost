@@ -8,7 +8,7 @@ import type { CardVersion, DimensionKey, Facts, Source } from '../../../core/typ
 import { isFresh } from '../../../core/fresh.ts'
 import type { ProductView } from '../../../host/api.ts'
 import { useShell } from '../../shell/context.ts'
-import { shortDay } from '../../time.ts'
+import { localDay, shortDay } from '../../time.ts'
 import { SourceChip } from '../../ui/SourceChip.tsx'
 import { Tag } from '../../ui/Tag.tsx'
 import { RichText } from './richText.tsx'
@@ -38,12 +38,15 @@ interface CardProps {
   sources: ReadonlyMap<string, Source>
   open: boolean
   baselining: boolean
+  /** The newest text is within 72 hours: what was added in it is highlighted. */
   fresh: boolean
+  /** The card was changed (not first written) today: it says 今天改过. */
+  changedToday: boolean
   onToggle: () => void
   register: (element: HTMLElement | null) => void
 }
 
-function DimensionCard({ dimension, label, card, history, sources, open, baselining, fresh, onToggle, register }: CardProps): ReactNode {
+function DimensionCard({ dimension, label, card, history, sources, open, baselining, fresh, changedToday, onToggle, register }: CardProps): ReactNode {
   const { t } = useShell()
   const nameId = useId()
   const toggleId = useId()
@@ -61,7 +64,7 @@ function DimensionCard({ dimension, label, card, history, sources, open, baselin
   return <article ref={register} className="op-dcard" data-dimension={dimension} data-state="card" data-expanded={open ? '' : undefined}>
     <header className="op-dcard-head">
       <h3 className="op-dcard-name" id={nameId}>{label}</h3>
-      {fresh && <Tag kind="fresh" />}
+      {changedToday && <Tag kind="fresh" />}
       <button type="button" className="op-dcard-toggle" id={toggleId} aria-expanded={open} aria-controls={bodyId} aria-labelledby={`${toggleId} ${nameId}`}
         onClick={onToggle}>{t(open ? 'dossier.collapse' : 'dossier.expand')}</button>
     </header>
@@ -143,6 +146,7 @@ export function DossierTab({ view, expanded, onToggle, focus, now }: DossierProp
         const card = byDimension.get(key)
         return <DimensionCard key={key} dimension={key} label={label} card={card} history={view.history[key]} sources={sources}
           open={card !== undefined && expanded.has(key)} baselining={baselining} fresh={card !== undefined && isFresh(card, now)}
+          changedToday={card !== undefined && card.version > 1 && localDay(card.createdAt) === localDay(now)}
           onToggle={() => { onToggle(key) }} register={element => { if (element) elements.current.set(key, element); else elements.current.delete(key) }} />
       })}
     </div>

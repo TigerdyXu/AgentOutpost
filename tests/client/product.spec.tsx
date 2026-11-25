@@ -215,10 +215,36 @@ describe('the profile', () => {
     expect(all('.op-fact').map(fact => fact.querySelector('.op-fact-v')?.textContent)).toEqual(['—', '—', '—', '—', '—'])
   })
 
-  it('marks a card changed within 72 hours as 今天改过', async () => {
+  it('marks only a card changed today as 今天改过, never a first version', async () => {
+    // 定位 is version 3, written an hour ago; the others are first versions from the baseline.
     await show()
     expect(tags(dcard('定位'), 'fresh').map(tag => tag.textContent)).toEqual(['今天改过'])
     expect(all('.op-dcard').filter(item => tags(item, 'fresh').length > 0).map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['定位'])
+    unmount()
+    // A first version written just now is the profile being set up, not a change.
+    await show(view({ cards: [card('p1', 'positioning', { version: 1, createdAt: ago(1) }), card('p1', 'audience', { version: 2, createdAt: ago(2) })], history: {} }))
+    expect(all('.op-dcard').filter(item => tags(item, 'fresh').length > 0).map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['目标人群'])
+  })
+
+  it('says 今天改过 on a card changed today, and not on one changed yesterday whose new text is still highlighted', async () => {
+    const body = '旧的一句。新加的一句。[1]'
+    const added = [within(body, '新加的一句。[1]')]
+    // NOW is 09:00: two hours ago is today, ten hours ago is 23:00 yesterday.
+    await show(view({
+      cards: [
+        card('p1', 'positioning', { version: 2, body, sourceIds: ['s1'], addedSpans: added, createdAt: ago(2) }),
+        card('p1', 'audience', { version: 2, body, sourceIds: ['s1'], addedSpans: added, createdAt: ago(10) }),
+      ], history: {},
+    }))
+    // Collapsed: the tag is on the header of the card of today only.
+    expect(tags(dcard('定位'), 'fresh')).toHaveLength(1)
+    expect(tags(dcard('目标人群'), 'fresh')).toHaveLength(0)
+    // Opened: the same, and yesterday's added text is still light blue (within 72 hours).
+    await click('全部展开')
+    expect(tags(dcard('定位'), 'fresh')).toHaveLength(1)
+    expect(tags(dcard('目标人群'), 'fresh')).toHaveLength(0)
+    expect(inside(dcard('定位'), '.op-added').map(mark => mark.textContent).join('')).toBe('新加的一句。[1]')
+    expect(inside(dcard('目标人群'), '.op-added').map(mark => mark.textContent).join('')).toBe('新加的一句。[1]')
   })
 
   it('shows 暂无可核实的信息 for a rejected dimension', async () => {
@@ -360,10 +386,10 @@ describe('the text of a card', () => {
     const minutes = (m: number) => new Date(NOW.getTime() - 72 * 3_600_000 + m * 60_000).toISOString()
     await show(view({
       cards: [
-        card('p1', 'positioning', { body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: ago(2) }),
-        card('p1', 'audience', { body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: minutes(5) }),
-        card('p1', 'scenarios', { body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: minutes(-5) }),
-        card('p1', 'experience', { body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: ago(200) }),
+        card('p1', 'positioning', { version: 2, body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: ago(2) }),
+        card('p1', 'audience', { version: 2, body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: minutes(5) }),
+        card('p1', 'scenarios', { version: 2, body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: minutes(-5) }),
+        card('p1', 'experience', { version: 2, body: POSITIONING, sourceIds: ['s1', 's2', 's3'], addedSpans: added, createdAt: ago(200) }),
       ], history: {},
     }))
     await click('全部展开')
@@ -374,8 +400,8 @@ describe('the text of a card', () => {
     expect(markedIn('体验')).toBe('')
     // The text itself is there either way, whole.
     expect(plain(dcard('体验').querySelector('.op-dcard-text')!)).toBe(POSITIONING)
-    // Only fresh cards say 今天改过.
-    expect(all('.op-dcard').filter(item => tags(item, 'fresh').length > 0).map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['定位', '目标人群'])
+    // 今天改过 is about today, not about the 72 hours: only 定位 (version 2, written two hours ago) says it.
+    expect(all('.op-dcard').filter(item => tags(item, 'fresh').length > 0).map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['定位'])
   })
 
   it('tags inference spans 推论', async () => {
