@@ -32,6 +32,7 @@ const RECENT_DAYS = 14
 const MAX_ADDED_SOURCES = 3
 const MAX_SOURCES = 8
 const MAX_DIMENSIONS = 20
+const UNOPENED_NOTE = 'openedVia=unopened：quoteFound/supportsClaim 按未知记录'
 
 const TOOL_NAMES: Record<RunToolKind, string[]> = {
   recommend: ['outpost_submit_candidate', 'outpost_done'],
@@ -304,16 +305,18 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       }),
 
     tool('outpost_report_check',
-      '报告你对一个来源的核查结果（每个来源报告一次）。sourceId 取自 outpost_read_pending；openedVia 为 http（直接打开了）、browser（用浏览器打开了）、snippet（只看到搜索摘要）或 unopened（打不开）；quoteFound 表示原文里是否找到了那句引文（没打开过就填 null）；supportsClaim 表示原文是否支持那条结论（不确定就填 null）；如果这个来源只是转载别家的通稿，syndicationGroup 填原始通稿的网址。成功返回 { ok: true }。',
+      '报告你对一个来源的核查结果（每个来源报告一次）。sourceId 取自 outpost_read_pending；openedVia 为 http（直接打开了）、browser（用浏览器打开了）、snippet（只看到搜索摘要）或 unopened（打不开）；quoteFound 表示原文里是否找到了那句引文（没打开过就填 null）；supportsClaim 表示原文是否支持那条结论（不确定就填 null）；openedVia 为 unopened 时这两项一律按未知（null）记录，不管你填了什么；如果这个来源只是转载别家的通稿，syndicationGroup 填原始通稿的网址。成功返回 { ok: true }。',
       ReportCheck, args => {
         const { findings, unconfirmed, cardEdits } = waiting(needProduct())
         const known = new Set([...findings, ...unconfirmed].flatMap(f => f.sourceIds).concat(cardEdits.flatMap(e => e.sourceIds)))
         if (!known.has(args.sourceId)) reject(`sourceId：「${args.sourceId}」不在待核查的内容里。只能报告 outpost_read_pending 列出的来源，或者你用 outpost_add_source 新增的来源`)
+        // A page nobody opened cannot confirm or deny a quote; kept as sent, `quoteFound: true` would make `judge` count it as valid.
+        const unseen = args.openedVia === 'unopened'
         repo.updateSource(args.sourceId, {
-          openedVia: args.openedVia, quoteFound: args.quoteFound, supportsClaim: args.supportsClaim,
+          openedVia: args.openedVia, quoteFound: unseen ? null : args.quoteFound, supportsClaim: unseen ? null : args.supportsClaim,
           syndicationGroup: args.syndicationGroup ? canonicalUrl(args.syndicationGroup) : undefined,
         })
-        return { ok: true }
+        return unseen && (args.quoteFound !== null || args.supportsClaim !== null) ? { ok: true, note: UNOPENED_NOTE } : { ok: true }
       }),
 
     tool('outpost_add_source',

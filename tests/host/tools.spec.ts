@@ -539,6 +539,21 @@ describe('verification tools', () => {
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
   })
 
+  it('outpost_report_check records a source that could not be opened as unverified, whatever the agent claims about it', async () => {
+    const { source: s } = seedFinding()
+    const call = toolbox('verify')
+    const r = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: true, supportsClaim: true })
+    expect(r).toEqual({ ok: true, note: 'openedVia=unopened：quoteFound/supportsClaim 按未知记录' })
+    expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
+    // Even a "not found" cannot come from a page nobody saw.
+    const again = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: false, supportsClaim: false })
+    expect(again).toMatchObject({ ok: true, note: expect.stringContaining('unopened') })
+    expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
+    // A page that was opened (or a search snippet) keeps what the agent saw.
+    await call('outpost_report_check', { sourceId: s.id, openedVia: 'snippet', quoteFound: true, supportsClaim: true })
+    expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'snippet', quoteFound: true, supportsClaim: true })
+  })
+
   it('outpost_report_check files reposts of one press release under one group, however the address is spelled', async () => {
     const original = seedFinding({}, { url: 'https://www.official.example/pr/2026/?utm_source=x' })
     const repost = seedFinding({ dedupeKey: 'b' }, { url: 'https://36kr.example/p/1' })
