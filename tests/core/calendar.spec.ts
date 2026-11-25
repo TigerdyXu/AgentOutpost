@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cutoffAt, localDate, nextRunAt, shouldCatchUp } from '../../src/core/calendar.ts'
+import { cutoffAt, localDate, nextRunAt, shouldCatchUp, tomorrowRunAt } from '../../src/core/calendar.ts'
 
 // Every date here is built from explicit local components (month is 1-based), never from an ISO string or a fixed UTC
 // instant. The functions under test speak in the machine's local time zone, so the cases mean the same wall-clock time
@@ -58,6 +58,16 @@ describe('nextRunAt', () => {
     for (const bad of ['', '8', '8:00', '08:0', '24:00', '08:60', '08-00', 'abc']) {
       expect(() => nextRunAt(at(2026, 11, 25, 7, 0), bad), bad).toThrow(/HH:MM/)
     }
+  })
+})
+
+describe('tomorrowRunAt', () => {
+  it('is the run time on the local day after now, whatever the time of day and whether today\'s moment has passed', () => {
+    expect(tomorrowRunAt(at(2026, 11, 25, 7, 0), '08:00')).toEqual(at(2026, 11, 26, 8, 0))
+    expect(tomorrowRunAt(at(2026, 11, 25, 9, 30), '08:00')).toEqual(at(2026, 11, 26, 8, 0))
+    expect(tomorrowRunAt(at(2026, 11, 25, 23, 59, 59, 999), '00:00')).toEqual(at(2026, 11, 26, 0, 0))
+    expect(tomorrowRunAt(at(2026, 11, 30, 12, 0), '07:00')).toEqual(at(2026, 12, 1, 7, 0))
+    expect(() => tomorrowRunAt(at(2026, 11, 25), '24:00')).toThrow('runTime must be HH:MM')
   })
 })
 

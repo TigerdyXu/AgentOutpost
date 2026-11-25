@@ -53,6 +53,8 @@ export interface Clock {
   now(): Date
   /** Runs `fn` at `when`; the returned function cancels it. */
   at(when: Date, fn: () => void): () => void
+  /** Calls `fn` about once a minute, on the wall clock's own steps, until the returned function cancels it. */
+  tick(fn: () => void): () => void
 }
 
 export interface IconFetcher {

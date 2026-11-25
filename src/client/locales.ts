@@ -270,7 +270,7 @@ const TEXT = {
   'settings.browser.on': ['浏览器兜底已开启', 'Browser fallback is on'],
   'settings.section.daily': ['每天的运行', 'Daily run'],
   'settings.runTime': ['每天几点跑', 'Daily run time'],
-  'settings.runTimeHint': ['本机时间，所有赛道一起跑', 'Local time; all tracks run together'],
+  'settings.runTimeHint': ['本机时间，所有赛道一起跑；改动一分钟内生效', 'Local time; all tracks run together; a change takes effect within a minute'],
   'settings.runTimeInvalid': ['写成 时:分，比如 08:00', 'Write it as hours:minutes, like 08:00'],
   'settings.maxParallel': ['同时跑几个产品', 'Products at the same time'],
   'settings.maxParallelHint': ['1 到 8 个', '1 to 8'],

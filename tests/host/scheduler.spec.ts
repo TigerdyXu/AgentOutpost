@@ -228,6 +228,123 @@ describe('Scheduler: when to run', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('24:00'))
   })
 
+  // ---- a change of the run time while Outpost runs (checked every minute, Ruling 32) ----
+
+  it('runs today at a new run time two minutes ahead, within a minute of the change', async () => {
+    repo.setSetting(LAST_COMPLETED, '2026-11-24')
+    scheduler.start()
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
+
+    clock.set('2026-11-25T07:00:30')
+    settings.runTime = '07:02'
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')]) // nothing looked yet
+    clock.set('2026-11-25T07:01') // the next check
+    expect(clock.pending()).toEqual([local('2026-11-25T07:02')]) // the old timer is gone, the new one is set
+    await flush()
+    expect(calls.runDailyProduct).toEqual([])
+
+    clock.set('2026-11-25T07:02')
+    await flush()
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+    expect(calls.runDailyProduct.every(c => c.date === DAY)).toBe(true)
+    expect(clock.pending()).toEqual([local('2026-11-26T07:02')]) // and tomorrow at the new time
+
+    // The old 08:00 does not run the day again.
+    clock.set('2026-11-25T08:05')
+    await flush()
+    expect(calls.runDailyProduct).toHaveLength(trackedCount)
+  })
+
+  it('runs once, now, when the new run time is already past today and today has not run', async () => {
+    repo.setSetting(LAST_COMPLETED, '2026-11-24')
+    scheduler.start()
+    clock.set('2026-11-25T07:10')
+    settings.runTime = '07:05'
+    clock.set('2026-11-25T07:11') // the next check
+    await flush()
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(clock.pending()).toEqual([local('2026-11-26T07:05')])
+
+    // Never a second run the same day: another change to a past time, and the checks that follow, start nothing.
+    settings.runTime = '07:06'
+    clock.set('2026-11-25T07:13')
+    settings.runTime = '07:00'
+    clock.set('2026-11-25T23:00')
+    await flush()
+    expect(calls.runDailyProduct).toHaveLength(trackedCount)
+    expect(clock.pending()).toEqual([local('2026-11-26T07:00')])
+  })
+
+  it('joins the day already running instead of starting another when the run time moves back', async () => {
+    holds.p1 = gate()
+    scheduler.start()
+    clock.set('2026-11-25T08:00')
+    await flush()
+    expect(dailyIds()).toContain('p1') // the day is running, held at p1
+    settings.runTime = '07:30'
+    clock.set('2026-11-25T08:01')
+    await flush()
+    holds.p1!.open()
+    await flush()
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3']) // each once
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
+  it('waits for tomorrow at the new time when today has already completed', async () => {
+    scheduler.start()
+    clock.set('2026-11-25T08:00')
+    await flush()
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(calls.runDailyProduct).toHaveLength(trackedCount)
+
+    // Later, still today: the time moves to a later hour (today's moment would still lie ahead) and to an earlier one.
+    clock.set('2026-11-25T09:00')
+    settings.runTime = '10:00'
+    clock.set('2026-11-25T09:01')
+    expect(clock.pending()).toEqual([local('2026-11-26T10:00')])
+    settings.runTime = '07:00'
+    clock.set('2026-11-25T09:02')
+    expect(clock.pending()).toEqual([local('2026-11-26T07:00')])
+    clock.set('2026-11-25T23:59')
+    await flush()
+    expect(calls.runDailyProduct).toHaveLength(trackedCount) // nothing ran today again
+
+    clock.set('2026-11-26T07:00')
+    await flush()
+    expect(calls.runDailyProduct.slice(trackedCount).map(c => c.date)).toEqual(['2026-11-26', '2026-11-26', '2026-11-26'])
+  })
+
+  it('leaves the timer alone while the run time is unchanged, and says once when the new one cannot be read', async () => {
+    scheduler.start()
+    const timer = clock.pending()
+    clock.set('2026-11-25T07:05')
+    expect(clock.pending()).toEqual(timer)
+
+    settings.runTime = '24:00' // not HH:MM: 08:00 stands, as at the start
+    clock.set('2026-11-25T07:08')
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
+    expect(log.mock.calls.filter(([message]) => message.includes('24:00'))).toHaveLength(0) // the same time as armed: nothing to report
+    settings.runTime = '21:30'
+    clock.set('2026-11-25T07:09')
+    expect(clock.pending()).toEqual([local('2026-11-25T21:30')])
+    settings.runTime = '99:99'
+    clock.set('2026-11-25T07:12') // three checks
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
+    expect(log.mock.calls.filter(([message]) => message.includes('99:99'))).toHaveLength(1)
+  })
+
+  it('stops looking once stopped', async () => {
+    repo.setSetting(LAST_COMPLETED, '2026-11-24')
+    scheduler.start()
+    scheduler.stop()
+    settings.runTime = '07:02'
+    clock.set('2026-11-25T07:05')
+    await flush()
+    expect(clock.pending()).toEqual([])
+    expect(calls.runDailyProduct).toEqual([])
+  })
+
   it('stops: no timer left, and a timer that still fires runs nothing', async () => {
     scheduler.start()
     scheduler.stop()

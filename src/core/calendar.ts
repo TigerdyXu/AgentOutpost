@@ -25,6 +25,11 @@ export function nextRunAt(now: Date, runTime: string): Date {
   return today.getTime() > now.getTime() ? today : atRunTime(now, runTime, 1)
 }
 
+/** `runTime` on the local day after `now`: where the daily timer goes when today's run is already done, whatever time it is changed to. */
+export function tomorrowRunAt(now: Date, runTime: string): Date {
+  return atRunTime(now, runTime, 1)
+}
+
 /**
  * Whether today's run was missed and should start now: today's `runTime` has arrived (inclusive) and no daily run has
  * completed for today. `lastCompletedDailyDate` is a `localDate` string, or null if none ever completed.

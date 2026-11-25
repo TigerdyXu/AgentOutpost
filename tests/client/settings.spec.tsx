@@ -62,6 +62,8 @@ describe('the form', () => {
     await mount(<Settings />, { state: state(), configForm: form })
     expect(document.querySelector('h1')?.textContent).toBe('设置')
     expect(field('每天几点跑').value).toBe('08:00')
+    // A change of the run time is picked up by the scheduler within a minute; the field says so.
+    expect(field('每天几点跑').closest('.op-set-field')?.querySelector('.op-set-hint')?.textContent).toContain('改动一分钟内生效')
     expect(field('同时跑几个产品').value).toBe('3')
     expect(field('每日总预算（元）').value).toBe('20')
     expect(field('单个会话最长（分钟）').value).toBe('30')

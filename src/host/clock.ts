@@ -35,4 +35,13 @@ export class SystemClock implements Clock {
       clearTimeout(timer)
     }
   }
+
+  /** Calls `fn` every `CLOCK_STEP_MS` (after a sleep, within one step of waking), until the returned function cancels it. */
+  tick(fn: () => void): () => void {
+    const timer = setInterval(() => {
+      try { fn() } catch (error) { this.onError(error) }
+    }, CLOCK_STEP_MS)
+    timer.unref?.() // like `at`: no reason to keep the process alive
+    return () => { clearInterval(timer) }
+  }
 }

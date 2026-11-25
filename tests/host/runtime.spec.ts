@@ -231,6 +231,35 @@ describe('Runtime', () => {
     }
   })
 
+  it('picks up a changed run time, which is volatile, within a minute: today runs at the new time, not at the old one', async () => {
+    let runTime = '08:00'
+    // `runTime` read through a reference, as DSH's volatile fields are: the test changes it while the runtime runs.
+    const other = apiHost({ config: dataDir => ({ ...Config({ dataDir }), runTime: { get: () => runTime } }) as unknown as OutpostConfig })
+    try {
+      seed(repo => {
+        const track = repo.createTrack({ name: 'AI 编程助手', brief: '', dimensions: [{ key: 'positioning', label: '定位' }], status: 'active' })
+        product(repo, 'p1')
+        repo.linkProduct(track.id, 'p1')
+        repo.addCardVersion({ productId: 'p1', dimension: 'positioning', version: 1, summary: '编辑器', bullets: ['基于 VS Code'], body: '编辑器[1]', sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-20T00:00:00.000Z' })
+      }, other)
+      const rt = other.create()
+      rt.start()
+      const daily = () => rt.repo.listRuns('2026-11-25').filter(run => run.kind === 'daily')
+      expect(other.clock.pending()).toEqual([new Date(2026, 10, 25, 8, 0)])
+      runTime = '07:30'
+      other.clock.set('2026-11-25T07:01') // the minute's look
+      expect(other.clock.pending()).toEqual([new Date(2026, 10, 25, 7, 30)])
+      await flush(20)
+      expect(daily()).toHaveLength(0) // nothing ran at the change itself
+      other.clock.set('2026-11-25T07:30')
+      await vi.waitFor(() => { expect(daily()).toHaveLength(1) })
+      expect(other.clock.pending()).toEqual([new Date(2026, 10, 26, 7, 30)])
+      await rt.stop()
+    } finally {
+      other.cleanup()
+    }
+  })
+
   it('stop ends the sessions in flight, then closes the store, takes its tools back and releases the lock', async () => {
     const held = gate()
     host.driver.script['outpost-recommend-'] = async round => {

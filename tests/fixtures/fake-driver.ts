@@ -108,6 +108,7 @@ export function instantClock(start: Date) {
       })
       return () => { live = false }
     },
+    tick: () => () => {}, // time here moves only by the timers' own waits: there is no minute to tick
   }
   return { clock, waits, set(when: Date) { time = when } }
 }

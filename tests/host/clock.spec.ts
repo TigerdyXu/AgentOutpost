@@ -60,3 +60,29 @@ describe('SystemClock', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }))
   })
 })
+
+describe('SystemClock.tick', () => {
+  it('calls back about every minute, on the wall clock\'s own steps, until cancelled', () => {
+    const fn = vi.fn()
+    const cancel = new SystemClock().tick(fn)
+    vi.advanceTimersByTime(CLOCK_STEP_MS - 1)
+    expect(fn).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(fn).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(3 * CLOCK_STEP_MS)
+    expect(fn).toHaveBeenCalledTimes(4)
+    cancel()
+    vi.advanceTimersByTime(10 * CLOCK_STEP_MS)
+    expect(fn).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('reports a callback that throws and goes on ticking', () => {
+    const onError = vi.fn()
+    const fn = vi.fn(() => { throw new Error('boom') })
+    new SystemClock(onError).tick(fn)
+    expect(() => vi.advanceTimersByTime(2 * CLOCK_STEP_MS)).not.toThrow()
+    expect(fn).toHaveBeenCalledTimes(2)
+    expect(onError).toHaveBeenCalledTimes(2)
+  })
+})

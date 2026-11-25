@@ -3,9 +3,11 @@
  *
  * Outpost keeps its own timer for the next local `runTime` (default 08:00). On start, a day whose run time has passed
  * without a finished run (the desktop app was closed at 08:00, say) is run at once, and the timer is set for the next
- * day; the same day is never run twice. A day picks up where it stopped: only the tracked products without a finished
- * daily run that day are run (a run interrupted by quitting does not count as finished, nor as failed). A product whose
- * run failed is tried once more that day; after two failures it is left and named in the brief.
+ * day; the same day is never run twice. The run time is volatile: once a minute (the clock's `tick`) the configured one is
+ * compared with the one the timer was set with, and a change sets the timer again (`checkRunTime`). A day picks up where
+ * it stopped: only the tracked products without a finished daily run that day are run (a run interrupted by quitting does
+ * not count as finished, nor as failed). A product whose run failed is tried once more that day; after two failures it is
+ * left and named in the brief.
  *
  * A tracked product missing a dimension's card gets it first, at most once in `TOP_UP_EVERY_DAYS` days; products stuck in
  * 建档中 are baselined again every run day. A product is worked on by one thing at a time: its top-up (or a baseline
@@ -20,7 +22,7 @@
  * A day interrupted before its brief was written (the app quit mid-run) gets its brief, from what it has, on the next
  * start; its unfinished products are not researched for that day any more.
  */
-import { cutoffAt, localDate, nextRunAt, shouldCatchUp } from '../core/calendar.ts'
+import { cutoffAt, localDate, nextRunAt, shouldCatchUp, tomorrowRunAt } from '../core/calendar.ts'
 import type { Id, Product, Run } from '../core/types.ts'
 import type { Repo } from '../store/repo.ts'
 import { budgetRefusal, STOPPED_ERROR } from './jobs/runner.ts'
@@ -74,6 +76,10 @@ export class Scheduler {
   private readonly deps: SchedulerDeps
   private readonly log: (message: string) => void
   private cancelTimer: (() => void) | null = null
+  /** The run time the daily timer was set with: a change of the configured one is noticed against it. */
+  private armedRunTime: string | null = null
+  /** Looks about once a minute whether the configured run time still is `armedRunTime`. */
+  private cancelWatch: (() => void) | null = null
   private stopped = false
   /** Days being run, so that a second request for the same day joins the first. */
   private readonly days = new Map<string, Promise<void>>()
@@ -103,7 +109,9 @@ export class Scheduler {
     if (missed) void this.queueBrief(missed, 'brief of an interrupted day', () => this.deps.synthesize(missed))
     const runTime = this.runTime()
     if (shouldCatchUp(now, runTime, this.lastCompleted())) this.launch(today)
-    this.arm(nextRunAt(now, runTime))
+    this.arm(nextRunAt(now, runTime), runTime)
+    this.cancelWatch?.()
+    this.cancelWatch = this.deps.clock.tick(() => { this.checkRunTime() })
   }
 
   /** Cancels the timers. Products already running go on; nothing new starts, and the day is left for the next start. */
@@ -111,6 +119,8 @@ export class Scheduler {
     this.stopped = true
     this.cancelTimer?.()
     this.cancelTimer = null
+    this.cancelWatch?.()
+    this.cancelWatch = null
     for (const cancel of this.cutoffs) cancel()
     this.cutoffs.clear()
   }
@@ -429,9 +439,26 @@ export class Scheduler {
     void this.runDay(date)
   }
 
-  private arm(when: Date): void {
+  private arm(when: Date, runTime: string): void {
     this.cancelTimer?.()
+    this.armedRunTime = runTime
     this.cancelTimer = this.deps.clock.at(when, () => this.fire(when))
+  }
+
+  /**
+   * The minute's look at the configured run time (it can change while Outpost runs): when it is not the one the timer was
+   * set with, the timer is set again for the new one, within a minute of the change. A new time already past today, with
+   * today not complete, runs today now (the catch-up of a start; a day already running is joined, and a completed one
+   * never runs again). With today complete, the timer goes to tomorrow at the new time: today's moment must not run it again.
+   */
+  private checkRunTime(): void {
+    if (this.stopped) return
+    if (this.effectiveRunTime(false) === this.armedRunTime) return
+    const runTime = this.runTime()
+    const now = this.deps.clock.now()
+    const completedToday = this.lastCompleted() === localDate(now)
+    if (shouldCatchUp(now, runTime, this.lastCompleted())) this.launch(localDate(now))
+    this.arm(completedToday ? tomorrowRunAt(now, runTime) : nextRunAt(now, runTime), runTime)
   }
 
   /**
@@ -445,7 +472,7 @@ export class Scheduler {
     const at = now.getTime() < target.getTime() ? target : now
     const runTime = this.runTime()
     if (shouldCatchUp(at, runTime, this.lastCompleted())) this.launch(localDate(at))
-    this.arm(nextRunAt(at, runTime))
+    this.arm(nextRunAt(at, runTime), runTime)
   }
 
   private lastCompleted(): string | null {
@@ -453,12 +480,16 @@ export class Scheduler {
     return typeof value === 'string' ? value : null
   }
 
-  /** The configured run time, or 08:00 if it is not a valid `HH:MM` (the calendar throws on those). */
-  private runTime(): string {
+  /** The configured run time, or 08:00 if it is not a valid `HH:MM` (the calendar throws on those); `report` logs the latter. */
+  private effectiveRunTime(report: boolean): string {
     const value = this.deps.settings().runTime
     if (typeof value === 'string' && RUN_TIME.test(value)) return value
-    this.log(`runTime "${String(value)}" is not HH:MM; using ${DEFAULT_RUN_TIME}`)
+    if (report) this.log(`runTime "${String(value)}" is not HH:MM; using ${DEFAULT_RUN_TIME}`)
     return DEFAULT_RUN_TIME
+  }
+
+  private runTime(): string {
+    return this.effectiveRunTime(true)
   }
 }
 
