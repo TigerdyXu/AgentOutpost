@@ -1,7 +1,8 @@
 /**
  * Runs Outpost's research sessions. Each session gets a `Run` row and, in order: a budget check (a run the budget does
  * not allow is `skipped` with the reason), a place among at most `maxParallel` sessions at a time (the budget is checked
- * again once it gets one, so work queued behind a run that used the budget up does not start), its rounds with the agent
+ * again once it gets one, so work queued behind a run that used the budget up does not start; recommendations need no
+ * place, see `UNPOOLED`), its rounds with the agent
  * (a transient model or network failure retried, an agent that stops without `outpost_done` nudged once), and the
  * tokens it used priced into the run as they come.
  */
@@ -59,6 +60,11 @@ const DEFAULT_TIMEOUT_MIN = 30
 const STOPPED = '前哨已停止'
 const INVALID_BUDGET = '每日预算设置无效'
 const NOT_DONE = '提醒后仍没有调用 outpost_done，按已提交的内容收尾'
+/**
+ * Kinds that neither wait for nor take one of the `maxParallel` places: the user is watching a recommendation (§5.3
+ * promises candidates in 1–3 minutes), and queued behind the daily runs it could wait for hours. The budget still applies.
+ */
+const UNPOOLED = new Set<RunKind>(['recommend'])
 /** Rounds that ended this way may simply go on: the agent stopped talking, hit its output limit, or the host restarted. */
 const CONTINUABLE = new Set<SessionOutcome['reason']>(['completed', 'max-tokens', 'interrupted'])
 
@@ -159,7 +165,7 @@ export class JobRunner {
     }
     const refused = this.refusal(run)
     if (refused) return finish('skipped', refused)
-    const release = await this.slot()
+    const release = UNPOOLED.has(run.kind) ? (this.stopped ? null : () => {}) : await this.slot()
     if (!release) return finish('failed', STOPPED)
     try {
       // Spending may have reached the budget while this run waited for its place.

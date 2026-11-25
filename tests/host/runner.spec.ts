@@ -143,6 +143,55 @@ describe('sessions', () => {
     expect(driver.runs).toHaveLength(5)
   })
 
+  it('starts a recommendation at once, outside the maxParallel places', async () => {
+    settings.maxParallel = 1
+    const track = repo.createTrack({ name: 'AI 编程助手', brief: '编程 Agent', dimensions: [], status: 'picking' })
+    const recommend = (runId: Id): SessionPlan => ({
+      title: '前哨 · 推荐 AI 编程助手',
+      prompt: '找候选',
+      tools: onDone => researchTools('recommend', { repo, runId, trackId: track.id, productId: null, now: () => time.clock.now(), icons: { fetch: async () => null }, onDone }),
+    })
+    const dailyHeld = gate()
+    const recommendHeld = gate()
+    driver.script['outpost-daily-'] = async r => { if (r.spec.title === '前哨 · p1 日更') await dailyHeld.promise; await r.done(); return completed() }
+    driver.script['outpost-recommend-'] = async r => { await recommendHeld.promise; await r.done(); return completed() }
+
+    // A long daily session holds the only place.
+    const first = runner.start('daily', { productId: 'p1' }, build)
+    await flush()
+    expect(repo.getRun(first.run.id)!.status).toBe('running')
+
+    // The recommendation does not wait for it…
+    const rec = runner.start('recommend', { trackId: track.id }, recommend)
+    await flush()
+    expect(repo.getRun(rec.run.id)!.status).toBe('running')
+    expect(driver.runs.map(s => s.title)).toEqual(['前哨 · p1 日更', '前哨 · 推荐 AI 编程助手'])
+    recommendHeld.open()
+    expect(await rec.finished).toMatchObject({ status: 'done', error: null, sessionId: `outpost-recommend-${rec.run.id.slice(0, 8)}` })
+    expect(repo.getRun(first.run.id)!.status).toBe('running') // …and leaves the daily one alone
+
+    // …nor does it take a place: with one running, the next daily still queues only behind the first daily.
+    const second = gate()
+    driver.script['outpost-recommend-'] = async r => { await second.promise; await r.done(); return completed() }
+    const rec2 = runner.start('recommend', { trackId: track.id }, recommend)
+    const next = runner.start('daily', { productId: 'p2' }, daily('p2'))
+    await flush()
+    expect(repo.getRun(next.run.id)!.status).toBe('queued')
+    dailyHeld.open()
+    expect(await first.finished).toMatchObject({ status: 'done', error: null })
+    expect(await next.finished).toMatchObject({ status: 'done', error: null }) // ran while rec2 was still going
+    expect(repo.getRun(rec2.run.id)!.status).toBe('running')
+    second.open()
+    expect(await rec2.finished).toMatchObject({ status: 'done' })
+  })
+
+  it('still holds a recommendation to the budget', async () => {
+    repo.updateRun(seedRun.id, { costYuan: 20 })
+    const run = await runner.session('recommend', { trackId: null }, build)
+    expect(run).toMatchObject({ status: 'skipped', error: '今日总预算已用完' })
+    expect(driver.runs).toHaveLength(0)
+  })
+
   it('names the session after its kind and run, and passes title, prompt, tools and model', async () => {
     settings.model = { provider: 'deepseek', model: 'deepseek-flash' }
     driver.script['outpost-daily-'] = finishes()
