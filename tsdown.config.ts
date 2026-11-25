@@ -9,7 +9,7 @@ const raw = { name: 'raw',
 export default defineConfig([
   // Host half: an ESM Cordis plugin; dsh packages and runtime dependencies resolve at load time.
   { entry: { index: 'src/index.ts' }, outDir: 'lib', format: 'esm', fixedExtension: false, platform: 'node', target: 'es2024', dts: true, clean: true,
-    deps: { neverBundle: [/^@deepseek-ai\//, 'zod', 'diff'] } },
+    deps: { neverBundle: [/^@deepseek-ai\//, 'zod', 'diff', 'proper-lockfile'] } },
   // Client half: one CommonJS factory handed to the dsh module loader. It may `require` only modules of the dsh client
   // platform table (packages/client/web/src/platform.ts), and has no dynamic `import()`. `minify: false` keeps the wrapper
   // text verbatim; the default dead-code pass reprints the whole chunk, banner included.

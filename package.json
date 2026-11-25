@@ -50,6 +50,7 @@
   "packageManager": "pnpm@11.28.5",
   "dependencies": {
     "diff": "9.0.0",
+    "proper-lockfile": "4.1.2",
     "zod": "4.6.6"
   },
   "peerDependencies": {
@@ -99,6 +100,7 @@
     "@deepseek-ai/schemastery": "3.20.0-alpha.1",
     "@types/jsdom": "28.0.3",
     "@types/node": "24.19.2",
+    "@types/proper-lockfile": "4.1.4",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "jsdom": "29.1.1",
