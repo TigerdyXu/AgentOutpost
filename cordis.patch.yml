@@ -1,0 +1,56 @@
+# dsh-outpost bundle layer: the plugin itself, the agent preset its research sessions run under, and the optional browser
+# fallback that opens pages plain fetching cannot read. The `outpost` row carries no dataDir: the profile supplies it, and the
+# plugin refuses to start without it. dev/overlay.cordis.yml repeats these rows for a development run, because a `--patch`
+# overlay does not apply this file; keep the two in step.
+- insert:
+    - id: outpost
+      name: dsh-outpost
+    # The preset of every research session (outpost-researcher). It reads the web and nothing else: no shell, no file tools,
+    # no subagents. A preset row cannot hide itself from the preset picker, so its name and description say whom it is for.
+    - id: outpost-researcher-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: outpost-researcher
+        name: 前哨调研员
+        description: 前哨的调研会话专用，不供手动选择。只能联网搜索和读网页，没有命令行和文件工具。
+        order: 92
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a product research analyst powered by the {{model}} model.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    # Browser fallback for pages plain fetching cannot open (WeChat articles, Xiaohongshu, Zhihu). Experimental in DSH, so
+    # off until the user turns both rows on; without them a finding whose source will not open stays 「待确认」.
+    - id: outpost-browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+      disabled: true
+    - id: outpost-browser-use-playwright
+      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+      disabled: true
+      config:
+        mode: launch
+        headless: true

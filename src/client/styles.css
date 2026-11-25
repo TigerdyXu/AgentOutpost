@@ -1,0 +1,44 @@
+/* 前哨's one stylesheet, injected as a <style> element. Only DSH theme variables; class names start with `op-`. */
+
+.op-app {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 24px 28px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  font-size: max(15px, var(--dsh-content-font-size));
+}
+
+.op-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* Unread count at the end of the sidebar row; a pill when the sidebar is collapsed (as DSH's own review count). */
+.op-nav-count {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-nav-count:not([data-wide]) {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.op-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

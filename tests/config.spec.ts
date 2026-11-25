@@ -1,0 +1,32 @@
+import { expect, it } from 'vitest'
+import { Config } from '../src/config.ts'
+
+it('requires an absolute dataDir', () => {
+  expect(() => Config({} as never)).toThrow()
+  expect(() => Config({ dataDir: 'relative/dir' })).toThrow()
+  expect(Config({ dataDir: '/srv/outpost' }).dataDir).toBe('/srv/outpost')
+})
+
+it('fills the defaults behind volatile references', () => {
+  const config = Config({ dataDir: '/srv/outpost' })
+  expect(config.runTime.get()).toBe('08:00')
+  expect(config.maxParallel.get()).toBe(3)
+  expect(config.dailyBudgetYuan.get()).toBe(20)
+  expect(config.sessionTimeoutMin.get()).toBe(30)
+  // No model chosen: research sessions use the user's default model of DSH.
+  expect(config.model.get() ?? null).toBeNull()
+  const prices = config.prices.get()
+  expect(Object.keys(prices).sort()).toEqual(['cacheReadPerMTok', 'inputPerMTok', 'outputPerMTok'])
+  expect(prices.inputPerMTok).toBeGreaterThan(0)
+  expect(prices.outputPerMTok).toBeGreaterThan(prices.inputPerMTok)
+  expect(prices.cacheReadPerMTok).toBeLessThan(prices.inputPerMTok)
+})
+
+it('keeps a chosen model and rejects out-of-range values', () => {
+  expect(Config({ dataDir: '/d', model: null }).model.get()).toBeNull()
+  expect(Config({ dataDir: '/d', model: { provider: 'deepseek', model: 'deepseek-v4-pro' } }).model.get()).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' })
+  expect(Config({ dataDir: '/d', runTime: '21:30' }).runTime.get()).toBe('21:30')
+  expect(() => Config({ dataDir: '/d', runTime: '8:00' })).toThrow()
+  expect(() => Config({ dataDir: '/d', maxParallel: 9 })).toThrow()
+  expect(() => Config({ dataDir: '/d', maxParallel: 0 })).toThrow()
+})
