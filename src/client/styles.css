@@ -226,11 +226,13 @@
 /* ---- right column: the page, filling the rest of the width ---- */
 
 .op-content {
+  --op-pad-x: 36px;
+  --op-pad-bottom: 48px;
   position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
-  padding: 26px 36px 48px;
+  padding: 26px var(--op-pad-x) var(--op-pad-bottom);
   overflow-y: auto;
 }
 
@@ -342,7 +344,9 @@
   }
 
   .op-content {
-    padding: 18px 16px 40px;
+    --op-pad-x: 16px;
+    --op-pad-bottom: 40px;
+    padding: 18px var(--op-pad-x) var(--op-pad-bottom);
   }
 }
 
@@ -842,6 +846,612 @@ img.op-icon {
   color: var(--dsw-alias-label-primary);
 }
 
+/* ---- 新建赛道 (mockup 3, option B): steps, the form, the picking page ---- */
+
+.op-newtrack {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.op-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: op-step;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.op-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  counter-increment: op-step;
+}
+
+/* The bar between two steps. */
+.op-step + .op-step::before {
+  content: "";
+  width: 28px;
+  height: 0.5px;
+  margin-right: 4px;
+  background: var(--dsw-alias-border-l3);
+}
+
+.op-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  corner-shape: round;
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.op-step:not([data-state="done"]) .op-step-dot::before {
+  content: counter(op-step);
+}
+
+.op-step[data-state="done"] .op-step-dot {
+  background: var(--dsw-alias-state-business-tertiary);
+  box-shadow: none;
+  color: var(--dsw-alias-link);
+}
+
+.op-step[data-state="current"] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.op-step[data-state="current"] .op-step-dot {
+  background: var(--dsw-alias-button-primary-fill);
+  box-shadow: none;
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.op-newtrack > .op-page-title {
+  margin-top: 14px;
+}
+
+/* Step 1 as a form, and as the block it folds into. */
+.op-track-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 20px 28px;
+  margin-top: 18px;
+}
+
+.op-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.op-field:nth-of-type(3) {
+  grid-column: 1 / -1;
+}
+
+.op-field-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.op-field-count {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.5;
+}
+
+.op-input::placeholder {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.op-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+textarea.op-input {
+  resize: vertical;
+}
+
+.op-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-form-hint {
+  flex: 1 1 280px;
+  margin: 0 0 0 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-form-problem,
+.op-pick-problem {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+}
+
+.op-form-problem {
+  grid-column: 1 / -1;
+}
+
+/* The six dimensions, and the ones the user adds. */
+.op-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.op-chips-label {
+  margin-right: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.op-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 10px;
+  border: 0;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.op-chip-add {
+  background: var(--dsw-alias-state-business-tertiary);
+  box-shadow: none;
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.op-chip-remove {
+  margin-right: -4px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.op-chip-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.op-chip-input .op-input {
+  width: 180px;
+  padding: 3px 12px;
+  font-size: 14px;
+}
+
+.op-track-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-card-fill);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.65;
+}
+
+.op-track-summary-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-track-brief {
+  margin: 0 0 4px;
+}
+
+.op-track-summary > .op-button {
+  flex: none;
+  margin-left: auto;
+}
+
+.op-track-summary[data-editing] {
+  display: block;
+  padding: 4px 20px 20px;
+}
+
+/* Step 2: the status line with the adjustment box, then the groups. */
+.op-pick-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 16px;
+}
+
+.op-pick-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+  animation: op-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes op-pulse {
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .op-pulse {
+    animation: none;
+  }
+}
+
+.op-refine {
+  display: flex;
+  flex: 1 1 320px;
+  gap: 8px;
+  max-width: 560px;
+  margin-left: auto;
+}
+
+.op-refine .op-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.op-pick-hint {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-pick-bar ~ .op-pick-problem,
+.op-pick-notice {
+  margin-top: 12px;
+}
+
+.op-pick-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-pick-group {
+  margin-top: 20px;
+}
+
+.op-pick-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.op-pick-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 22px;
+}
+
+.op-pick-group-n {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.op-pick-group-head .op-link {
+  margin-left: auto;
+  font-size: 14px;
+}
+
+/* The cards fill the width: as many columns as fit, none narrower than 270px. */
+.op-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+}
+
+/* A candidate is a check box: picked = blue outline and a blue check at the top right (no bar at a side). */
+.op-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px 15px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+}
+
+.op-pick[data-picked] {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 35%, var(--dsw-alias-bg-layer-1));
+}
+
+.op-pick[data-tracked] {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.op-pick[data-compact] {
+  gap: 6px;
+  padding: 11px 14px;
+}
+
+.op-pick-check {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l3);
+}
+
+.op-pick[data-picked] .op-pick-check {
+  background: var(--dsw-alias-state-business-primary);
+  box-shadow: none;
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.op-pick[data-tracked] .op-pick-check {
+  display: none;
+}
+
+.op-pick-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 28px;
+}
+
+.op-pick-titles {
+  min-width: 0;
+}
+
+.op-pick-name {
+  display: block;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.op-pick-co {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.op-pick-tracked {
+  align-self: flex-start;
+  padding: 0 7px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.op-pick-one,
+.op-pick-why {
+  display: block;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+}
+
+.op-pick-why b {
+  font-weight: 600;
+}
+
+/* Heat evidence: the last five weeks as small bars, then the count. */
+.op-heat {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The words flow round the bars, so a long line wraps under them rather than beside; the trend word is not split. */
+.op-heat-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
+.op-heat-trend {
+  white-space: nowrap;
+}
+
+.op-heat-bars i {
+  display: block;
+  width: 4px;
+  height: calc(2px + 12px * var(--op-bar, 0));
+  border-radius: 1px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.op-heat-bars i[data-empty] {
+  opacity: 0.3;
+}
+
+/* The ones not recommended, with why, folded away. */
+.op-pick-fold {
+  margin-top: 8px;
+}
+
+.op-fold-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-fold-end {
+  flex: none;
+  font-size: 13px;
+}
+
+.op-pick-excluded {
+  margin: 8px 0 0;
+  padding: 2px 16px;
+  list-style: none;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-pick-excluded li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  padding: 10px 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+}
+
+.op-pick-excluded li + li {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-pick-excluded-name {
+  flex: 0 0 200px;
+  max-width: 100%;
+  font-weight: 600;
+}
+
+.op-pick-excluded-why {
+  flex: 1 1 260px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* On a short page the footer still sits at the bottom of the column: the spacer takes up what is left. */
+.op-pick-spacer {
+  flex: 1 0 24px;
+}
+
+/*
+ * The footer stays at the bottom of the column while the cards scroll under it, reaching its edges. A sticky box keeps
+ * clear of its scroll container's padding, so the negative offset takes the bottom padding back.
+ */
+.op-pick-foot {
+  position: sticky;
+  bottom: calc(var(--op-pad-bottom) * -1);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 calc(var(--op-pad-x) * -1) calc(var(--op-pad-bottom) * -1);
+  padding: 12px var(--op-pad-x);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent);
+  backdrop-filter: blur(8px);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-pick-foot .op-pick-problem {
+  flex: 1 0 100%;
+}
+
+.op-pick-count {
+  font-weight: 650;
+}
+
+.op-pick-cost {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.op-pick-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@container (max-width: 1099px) {
+  .op-track-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
@@ -888,6 +1498,18 @@ img.op-icon {
     text-decoration: underline;
     text-underline-offset: 3px;
   }
+
+  .op-pick:not([data-picked], [data-tracked]):hover {
+    background: var(--dsw-alias-card-fill-hover);
+  }
+
+  .op-chip-add:hover {
+    background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 82%, var(--dsw-alias-link));
+  }
+
+  .op-chip-remove:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .op-row:focus-visible,
@@ -899,9 +1521,22 @@ img.op-icon {
 .op-filter button:focus-visible,
 .op-fold:focus-visible,
 .op-link:focus-visible,
+.op-chip-add:focus-visible,
+.op-chip-remove:focus-visible,
 .op-cite > a:focus-visible {
   outline: 2px solid var(--dsw-alias-link);
   outline-offset: -2px;
+}
+
+.op-input:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: -1px;
+}
+
+/* A candidate card takes the ring while its (hidden) check box has the keyboard focus. */
+.op-pick:has(input:focus-visible) {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: 2px;
 }
 
 /* A text link has no box to draw inside of. */

@@ -109,7 +109,8 @@ describe('middle column', () => {
     // Both lead to the track's 挑产品 page, selected in the column.
     await click(row('挑产品')!)
     expect(row('挑产品')!.getAttribute('aria-current')).toBe('page')
-    expect(pageTitle()).toBe('新建赛道')
+    // The track's own picking page (its name is the title), not the blank form.
+    expect(pageTitle()).toBe('Personal Agent')
     await click(row('候选推荐')!)
     expect(row('候选推荐')!.getAttribute('aria-current')).toBe('page')
     expect(row('挑产品')!.getAttribute('aria-current')).toBeNull()
@@ -120,6 +121,30 @@ describe('middle column', () => {
     await mount(<MiddleColumn />, { state: state({ tracks: [track('t1', 'Personal Agent', [], { status: 'picking' })] }), picks: { t1: 5 } })
     expect(end('挑产品')).toBe('已选 5')
     expect(api.requests).toHaveLength(0)
+  })
+
+  it('reads a track\'s candidates every 2 s while the recommendation runs, and only every 30 s after', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    let running = true
+    const api = stubApi({
+      'GET tracks/:id/candidates': () => ({ batchId: 'b1', running, status: running ? 'running' : 'done', error: null, elapsedSec: 5, candidates: [{ ...candidate('a'), product: product('p-a', 'a') }] }),
+    })
+    await mount(<MiddleColumn />, { state: state({ tracks: [track('t1', 'Personal Agent', [], { status: 'picking' })] }) })
+    const reads = () => api.requests.filter(r => r.path === 'tracks/t1/candidates').length
+    const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }); await settle() }
+    // While it runs, the candidates arrive and the count follows.
+    const first = reads()
+    await advance(6000)
+    expect(reads() - first).toBe(3)
+    expect(end('挑产品')).toBe('已选 1')
+    // Once it is over, the column does not keep asking every 2 s for a list that no longer changes.
+    running = false
+    await advance(2000)
+    const over = reads()
+    await advance(20_000)
+    expect(reads()).toBe(over)
+    await advance(10_000)
+    expect(reads()).toBe(over + 1)
   })
 
   it('says 前哨正在启动… until the plugin answers, then shows its tracks', async () => {

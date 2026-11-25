@@ -185,6 +185,23 @@ export function unmount() {
   container = undefined
 }
 
+/** Types `value` into a text field as a user would (React sees an input event, not a property write). */
+export async function type(target: string | Element, value: string) {
+  const field = (typeof target === 'string' ? document.querySelector(target) : target) as HTMLInputElement | HTMLTextAreaElement
+  const setter = Object.getOwnPropertyDescriptor(field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setter.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await settle()
+}
+/** Submits the form as a click on its submit button, or Enter in a field, would. */
+export async function submit(form: string | Element) {
+  const element = (typeof form === 'string' ? document.querySelector(form) : form) as HTMLFormElement
+  await act(async () => { element.requestSubmit() })
+  await settle()
+}
+
 export const all = <E extends Element = HTMLElement>(selector: string) => [...document.querySelectorAll<E & Element>(selector)] as E[]
 const CONTROLS = 'button, a, [role="button"]'
 /** The control whose text, or accessible name, is `name`. */

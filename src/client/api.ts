@@ -1,5 +1,6 @@
 /** Same-origin client of `/outpost/api/` and the polling hook the panel reads it with (after superagent src/client/api.ts). */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Id } from '../core/types.ts'
 import type { Api, ApiRequest, ApiResponse } from '../host/api.ts'
 import type { T } from './locales.ts'
 
@@ -62,11 +63,12 @@ const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.s
 
 /**
  * Polls `load` while mounted, every `intervalMs` (the caller passes 2000 while a run is in progress; a new interval
- * applies from the next wait), more slowly while the document is hidden and at once when it shows again. Keeps the last
- * value across failures and `deps` changes, skips updates when the answer did not change, and drops answers of an
- * earlier `deps`. `reload` polls now, after the poll in flight.
+ * applies from the next wait), more slowly while the document is hidden and at once when it shows again. `intervalMs` may
+ * also be a function of the answer just read (undefined after a failure), so that the wait after it follows what it said.
+ * Keeps the last value across failures and `deps` changes, skips updates when the answer did not change, and drops answers
+ * of an earlier `deps`. `reload` polls now, after the poll in flight.
  */
-export function usePoll<V>(load: () => Promise<V>, deps: readonly unknown[], intervalMs = 5000) {
+export function usePoll<V>(load: () => Promise<V>, deps: readonly unknown[], intervalMs: number | ((latest: V | undefined) => number) = 5000) {
   const [state, setState] = useState<{ data?: V; error?: Error }>({})
   const loader = useRef(load)
   loader.current = load
@@ -76,17 +78,21 @@ export function usePoll<V>(load: () => Promise<V>, deps: readonly unknown[], int
   useEffect(() => {
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
+    let latest: V | undefined
     // One request at a time, so a reload after a change runs after the poll in flight.
     let queue = Promise.resolve()
     const once = async () => {
       clearTimeout(timer)
       try {
         const value = await loader.current()
+        latest = value
         if (active) setState(previous => same(previous.data, value) ? previous.error ? { data: previous.data as V } : previous : { data: value })
       } catch (failure) {
+        latest = undefined
         if (active) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)) }))
       } finally {
-        if (active) timer = setTimeout(run, document.hidden ? every.current * HIDDEN_FACTOR : every.current)
+        const wait = typeof every.current === 'function' ? every.current(latest) : every.current
+        if (active) timer = setTimeout(run, document.hidden ? wait * HIDDEN_FACTOR : wait)
       }
     }
     const run = () => (queue = queue.then(once))
@@ -99,4 +105,17 @@ export function usePoll<V>(load: () => Promise<V>, deps: readonly unknown[], int
   }, deps)
   const reload = useCallback(() => refresh.current(), [])
   return { data: state.data, error: state.error, reload }
+}
+
+/** How often a track's candidates are read while its recommendation runs, and while none does (a new one may have started). */
+export const CANDIDATES_FAST_MS = 2000
+export const CANDIDATES_SLOW_MS = 30_000
+
+/**
+ * The candidates of a track's latest recommendation (`GET tracks/:id/candidates`), polled every 2 s while it runs and every
+ * 30 s once it does not; before the first answer, and while the plugin does not answer, every 2 s. A read made on purpose
+ * (`reload`, after a refinement was sent) sees the new round running and the quick pace starts from it.
+ */
+export function useCandidates(trackId: Id) {
+  return usePoll(() => call('GET tracks/:id/candidates', { id: trackId }), [trackId], view => view?.running === false ? CANDIDATES_SLOW_MS : CANDIDATES_FAST_MS)
 }

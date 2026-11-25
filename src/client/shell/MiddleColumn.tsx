@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
-import { call, describeError, usePoll } from '../api.ts'
+import { describeError, useCandidates } from '../api.ts'
 import { BriefIcon, CheckIcon, ChevronIcon, RunsIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { useShell } from './context.ts'
@@ -67,10 +67,11 @@ function PickRow({ trackId, count, onChoose }: { trackId: Id; count: number | un
 
 /**
  * 「已选 n」 before the 挑产品 page reports its picks (after a reload, say): the candidates the latest recommendation picked
- * by default (the strong ones; an excluded one never counts), read again as they arrive.
+ * by default (the strong ones; an excluded one never counts), read again as they arrive (every 2 s while the recommendation
+ * runs, every 30 s after).
  */
 function DefaultPickRow({ trackId, onChoose }: { trackId: Id; onChoose: () => void }): ReactNode {
-  const { data } = usePoll(() => call('GET tracks/:id/candidates', { id: trackId }), [trackId], BUSY_POLL_MS)
+  const { data } = useCandidates(trackId)
   return <PickRow trackId={trackId} count={data?.candidates.filter(c => c.selected && c.tier !== 'excluded').length} onChoose={onChoose} />
 }
 
