@@ -8,11 +8,16 @@
  * run failed is tried once more that day; after two failures it is left and named in the brief.
  *
  * A tracked product missing a dimension's card gets it first, at most once in `TOP_UP_EVERY_DAYS` days; products stuck in
- * 建档中 are baselined again every run day.
+ * 建档中 are baselined again every run day. A product is worked on by one thing at a time: its top-up, then its daily
+ * run, whether the day or 「立即更新」 started them (two checks of one product side by side would race).
  *
  * The brief is written when every product is through, or at the cutoff, two hours after the day began, whichever comes
  * first. Products that finish after the cutoff are added to it (「迟到」). The day counts as complete
  * (`lastCompletedDailyDate`) only once every product is through and the brief is written; then old sessions are archived.
+ * Every write of a day's brief, the day's own and 「立即更新」's, goes through one queue per date.
+ *
+ * A day interrupted before its brief was written (the app quit mid-run) gets its brief, from what it has, on the next
+ * start; its unfinished products are not researched for that day any more.
  */
 import { cutoffAt, localDate, nextRunAt, shouldCatchUp } from '../core/calendar.ts'
 import type { Id, Product, Run } from '../core/types.ts'
@@ -29,6 +34,8 @@ export const MAX_DAILY_FAILURES = 2
  * check keeps rejecting would otherwise cost a baseline session every day. Products still in 建档中 are retried daily.
  */
 export const TOP_UP_EVERY_DAYS = 7
+/** How far back `start` looks for a day that has daily runs but no brief. */
+export const MISSED_BRIEF_LOOKBACK_DAYS = 7
 
 const DEFAULT_RUN_TIME = '08:00'
 const RUN_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -71,6 +78,10 @@ export class Scheduler {
   private readonly days = new Map<string, Promise<void>>()
   /** Daily runs in flight, by product: a product is updated by one run at a time (two checks of one product would race). */
   private readonly busy = new Map<Id, Promise<Run>>()
+  /** Top-up baselines in flight, by product (the session and its check): whoever needs one joins the running one. */
+  private readonly topUps = new Map<Id, Promise<void>>()
+  /** The last write queued for each date's brief: writes of one brief run one after another. */
+  private readonly briefs = new Map<string, Promise<boolean>>()
   private readonly cutoffs = new Set<() => void>()
 
   constructor(deps: SchedulerDeps) {
@@ -79,14 +90,18 @@ export class Scheduler {
   }
 
   /**
-   * Runs today now if its run time has passed and it has not finished, and sets the timer for the next run time.
-   * Calling it again is harmless: the timer is set anew, and a day already running is not started twice.
+   * Writes the brief of the latest earlier day that has daily runs but no brief (an interrupted day), then runs today now
+   * if its run time has passed and it has not finished, and sets the timer for the next run time. Calling it again is
+   * harmless: the timer is set anew, and neither a day already running nor a brief already written is done twice.
    */
   start(): void {
     this.stopped = false
     const now = this.deps.clock.now()
+    const today = localDate(now)
+    const missed = this.missedBriefDay(today)
+    if (missed) void this.queueBrief(missed, 'brief of an interrupted day', () => this.deps.synthesize(missed))
     const runTime = this.runTime()
-    if (shouldCatchUp(now, runTime, this.lastCompleted())) this.launch(localDate(now))
+    if (shouldCatchUp(now, runTime, this.lastCompleted())) this.launch(today)
     this.arm(nextRunAt(now, runTime))
   }
 
@@ -113,9 +128,10 @@ export class Scheduler {
 
   /**
    * 「立即更新」: updates the product now, for today, then adds it to today's brief (`appendLate`), or writes the brief
-   * if today has none yet. A product stuck in 建档中 is baselined again instead (resolves with null); a tracked one
-   * missing a dimension's card gets it first (within the same 7-day limit as the daily run). When the product's run is already in flight, that run is awaited instead
-   * of starting a second one, and whoever started it takes care of the brief.
+   * if today has none yet (decided when the write's turn in the date's queue comes). A product stuck in 建档中 is
+   * baselined again instead (resolves with null); a tracked one missing a dimension's card gets it first, within the same
+   * 7-day limit as the daily run, joining a top-up already running. When the product's daily run is already in flight,
+   * that run is awaited instead of starting a second one, and whoever started it takes care of the brief.
    * @throws When the product does not exist.
    */
   async runProductNow(productId: Id): Promise<Run | null> {
@@ -127,16 +143,14 @@ export class Scheduler {
       return null
     }
     const date = localDate(clock.now())
-    if (!this.busy.has(productId) && this.needsTopUp(productId, date)) await this.deps.rebaseline([productId])
-    const inFlight = this.busy.get(productId)
+    const running = this.busy.get(productId)
+    if (running) return running
+    await this.topUp(productId, date)
+    const inFlight = this.busy.get(productId) // the day may have started it meanwhile
     if (inFlight) return inFlight
     const run = await this.daily(productId, date)
-    try {
-      if (repo.getBrief(date)) await this.deps.appendLate(date, productId)
-      else await this.deps.synthesize(date)
-    } catch (error) {
-      this.log(`brief of ${date} after updating product ${productId} failed: ${messageOf(error)}`)
-    }
+    await this.queueBrief(date, `brief after updating product ${productId}`,
+      () => repo.getBrief(date) ? this.deps.appendLate(date, productId) : this.deps.synthesize(date))
     return run
   }
 
@@ -145,17 +159,11 @@ export class Scheduler {
   private async day(date: string): Promise<void> {
     const { clock } = this.deps
     const start = clock.now()
-    const { toRun, topUp, stuck } = this.plan(date)
+    const { toRun, stuck } = this.plan(date)
     if (stuck.length) void this.deps.rebaseline(stuck).catch(error => { this.log(`re-baseline failed: ${messageOf(error)}`) })
 
-    // Writes to the brief, one after another (a late product must not recompose it while the cutoff's is being written).
-    let written = Promise.resolve(true)
-    const toBrief = (label: string, write: () => Promise<unknown>) => {
-      written = written.then(async ok => {
-        if (this.stopped) return false
-        try { await write(); return ok } catch (error) { this.log(`${label} of ${date} failed: ${messageOf(error)}`); return false }
-      })
-    }
+    const writes: Promise<boolean>[] = []
+    const toBrief = (label: string, write: () => Promise<unknown>) => { writes.push(this.queueBrief(date, label, write)) }
 
     let over = false
     let pastCutoff = false
@@ -169,7 +177,7 @@ export class Scheduler {
 
     let interrupted = false
     await this.pool(toRun, () => !interrupted && !this.stopped, async productId => {
-      const outcome = await this.product(date, productId, topUp.has(productId))
+      const outcome = await this.product(date, productId)
       if (outcome === 'stopped') interrupted = true
       else if (pastCutoff) toBrief(`late product ${productId} in the brief`, () => this.deps.appendLate(date, productId))
     })
@@ -177,17 +185,17 @@ export class Scheduler {
     cancelCutoff()
     this.cutoffs.delete(cancelCutoff)
     if (interrupted || this.stopped) { // the rest of the day waits for the next start
-      await written
+      await Promise.all(writes)
       return
     }
 
     if (!pastCutoff) toBrief('brief', () => this.deps.synthesize(date))
-    if (await written) this.complete(date)
+    if ((await Promise.all(writes)).every(Boolean)) this.complete(date)
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }
 
-  /** The day's work: the tracked products to run (in tracking order), those of them to top up first, and those stuck in 建档中. */
-  private plan(date: string): { toRun: Id[]; topUp: Set<Id>; stuck: Id[] } {
+  /** The day's work: the tracked products to run (in tracking order), and those stuck in 建档中. */
+  private plan(date: string): { toRun: Id[]; stuck: Id[] } {
     const { repo } = this.deps
     const products = new Map<Id, Product>()
     for (const track of repo.listTracks()) {
@@ -199,14 +207,17 @@ export class Scheduler {
       const { finished, failures } = this.standing(date, id)
       return !finished && failures < MAX_DAILY_FAILURES
     })
-    return { toRun, topUp: new Set(toRun.filter(id => this.needsTopUp(id, date))), stuck: all.filter(p => p.status === 'baselining').map(p => p.id) }
+    return { toRun, stuck: all.filter(p => p.status === 'baselining').map(p => p.id) }
   }
 
-  /** One product's day: its missing cards first, then its daily run, tried once more if it failed. */
-  private async product(date: string, productId: Id, topUp: boolean): Promise<Outcome> {
+  /**
+   * One product's day: its missing cards first, then its daily run, tried once more if it failed. Whether it needs a
+   * top-up is decided when its turn comes (「立即更新」 may have done it meanwhile), and never while its daily run is busy.
+   */
+  private async product(date: string, productId: Id): Promise<Outcome> {
     const { repo, settings, clock } = this.deps
-    if (topUp) await this.deps.rebaseline([productId]).catch(error => { this.log(`baseline of product ${productId} failed: ${messageOf(error)}`) })
     let failures = this.standing(date, productId).failures
+    let toppedUp = false
     for (;;) {
       if (this.stopped) return 'stopped'
       const other = this.busy.get(productId)
@@ -215,6 +226,11 @@ export class Scheduler {
         const now = this.standing(date, productId)
         if (now.finished) return 'done'
         if ((failures = now.failures) >= MAX_DAILY_FAILURES) return 'failed'
+        continue
+      }
+      if (!toppedUp) { // look again afterwards: 「立即更新」 may have started the product while this waited
+        toppedUp = true
+        await this.topUp(productId, date)
         continue
       }
       const refused = budgetRefusal(repo, settings().dailyBudgetYuan, date, productId)
@@ -246,16 +262,60 @@ export class Scheduler {
   }
 
   /**
+   * Fills in the product's missing cards before its run for `date` if it needs that (`needsTopUp`), or joins the top-up
+   * already running for it. Resolves once it is over (at once when there is nothing to do); never rejects.
+   */
+  private topUp(productId: Id, date: string): Promise<void> {
+    const running = this.topUps.get(productId)
+    if (running) return running
+    if (!this.needsTopUp(productId, date)) return Promise.resolve()
+    const work: Promise<void> = this.deps.rebaseline([productId])
+      .catch(error => { this.log(`baseline of product ${productId} failed: ${messageOf(error)}`) })
+      .finally(() => { if (this.topUps.get(productId) === work) this.topUps.delete(productId) })
+    this.topUps.set(productId, work)
+    return work
+  }
+
+  /**
    * Whether a tracked product should be baselined for its missing cards before its run for `date`: a dimension of it has
-   * no card, and no baseline of it started in the `TOP_UP_EVERY_DAYS` days ending with `date` (read from the runs table;
-   * one the budget skipped never started and does not count).
+   * no card, and no baseline of it finished in the `TOP_UP_EVERY_DAYS` days ending with `date` (read from the runs table).
+   * Only a baseline that started and ended counts: one the budget skipped never started, one cut short by a stop or left
+   * behind by a crash was interrupted, and one still running is joined (`topUp`), not counted.
    */
   private needsTopUp(productId: Id, date: string): boolean {
     const { repo } = this.deps
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
     if (!repo.dimensionsOfProduct(productId).some(d => !have.has(d.key))) return false
     const since = shiftDate(date, 1 - TOP_UP_EVERY_DAYS)
-    return !repo.listRuns(since).some(r => r.kind === 'baseline' && r.productId === productId && r.startedAt !== null && r.date <= date)
+    return !repo.listRuns(since).some(r => r.kind === 'baseline' && r.productId === productId && r.date <= date
+      && r.startedAt !== null && r.endedAt !== null && r.error !== STOPPED_ERROR)
+  }
+
+  /**
+   * Queues a write of the brief of `date` behind the writes of that brief already queued (the day's and 「立即更新」's
+   * alike), and resolves with whether it went through. A failure is logged; once the scheduler stopped, nothing is written.
+   */
+  private queueBrief(date: string, label: string, write: () => Promise<unknown>): Promise<boolean> {
+    const next = (this.briefs.get(date) ?? Promise.resolve(true)).then(async () => {
+      if (this.stopped) return false
+      try {
+        await write()
+        return true
+      } catch (error) {
+        this.log(`${label} of ${date} failed: ${messageOf(error)}`)
+        return false
+      }
+    })
+    this.briefs.set(date, next)
+    void next.finally(() => { if (this.briefs.get(date) === next) this.briefs.delete(date) })
+    return next
+  }
+
+  /** The latest day before `today`, within `MISSED_BRIEF_LOOKBACK_DAYS`, that has daily runs but no brief, and is neither being run nor having its brief written now. */
+  private missedBriefDay(today: string): string | null {
+    const { repo } = this.deps
+    const dates = new Set(repo.listRuns(shiftDate(today, -MISSED_BRIEF_LOOKBACK_DAYS)).filter(r => r.kind === 'daily' && r.date < today).map(r => r.date))
+    return [...dates].sort().reverse().find(date => !this.days.has(date) && !this.briefs.has(date) && !repo.getBrief(date)) ?? null
   }
 
   /** The product's daily run; the product is busy until it ends. */

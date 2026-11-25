@@ -12,7 +12,7 @@ import { PROMOTED_NOTE } from '../../src/host/jobs/verify.ts'
 import type { ModelClient } from '../../src/host/ports.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
-import { instantClock, usage } from '../fixtures/fake-driver.ts'
+import { gate, instantClock, usage } from '../fixtures/fake-driver.ts'
 
 const DAY = '2026-11-25'
 const DAY_3 = '2026-11-27'
@@ -212,6 +212,34 @@ describe('synthesizeBrief', () => {
     expect(repo.getBrief(DAY)!.findingIds).toEqual([waiting.id]) // still in the brief of its own day
     // How the panel tells it apart (documented in synthesize.ts): verified that day, as a promotion.
     expect(repo.getFinding(waiting.id)).toMatchObject({ verifiedOn: DAY_3, statusNote: PROMOTED_NOTE })
+  })
+
+  it('keeps what arrived while the model was writing the gist', async () => {
+    const held = gate()
+    let calls = 0
+    complete.mockImplementation(async () => {
+      if (calls++ === 0) await held.promise // the first write's model call is slow
+      return { text: '今天两条更新。', usage: USED }
+    })
+    const a = found(daily('p1'), 'Cursor 后台 Agent 正式上线')
+    const r2 = daily('p2', 'running')
+
+    const slow = synthesizeBrief(deps, DAY)
+    expect(complete).toHaveBeenCalledOnce()
+    // Meanwhile Windsurf finishes and another write of the brief goes through.
+    repo.updateRun(r2.id, { status: 'done' })
+    const b = found(r2, 'Windsurf 发布 Wave 9')
+    const fast = await synthesizeBrief(deps, DAY)
+    expect(fast.findingIds).toEqual([a.id, b.id])
+
+    time.set(new Date(2026, 10, 25, 9, 45, 0))
+    held.open()
+    const last = await slow
+
+    // The slow write is stored last, but from what is there when it stores, not from before its model call.
+    expect(last.findingIds).toEqual([a.id, b.id])
+    expect(last.createdAt).toBe(fast.createdAt)
+    expect(repo.getBrief(DAY)).toEqual(last)
   })
 
   it('keeps the creation time of the day\'s earlier brief', async () => {

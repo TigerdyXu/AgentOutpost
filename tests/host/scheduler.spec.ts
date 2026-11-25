@@ -81,7 +81,7 @@ beforeEach(() => {
       events.push(`daily ${productId} ${outcome.status ?? 'done'}`)
       return repo.getRun(run.id)!
     },
-    synthesize: date => synthesizeBrief(briefDeps, date),
+    synthesize: date => { events.push(`brief ${date}`); return synthesizeBrief(briefDeps, date) },
     appendLate: (date, productId) => appendLate(briefDeps, date, productId),
     archiveOld: async now => { calls.archiveOld.push(now) },
     rebaseline: async ids => { calls.rebaseline.push(ids); events.push(`rebaseline ${ids.join(',')}`) },
@@ -154,6 +154,36 @@ describe('Scheduler: when to run', () => {
     scheduler.start()
     await flush()
     expect(calls.runDailyProduct).toHaveLength(trackedCount)
+  })
+
+  it('writes the brief of a day interrupted before its cutoff on the next start, without new research', async () => {
+    settings.maxParallel = 1
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }]
+    plays.p2 = [{ status: 'failed', error: STOPPED_ERROR }] // the desktop app was quit at 08:40
+    clock.set('2026-11-25T08:00')
+    await scheduler.runDay(DAY)
+    expect(repo.getBrief(DAY)).toBeNull()
+
+    clock.set('2026-11-26T09:00')
+    events.length = 0
+    const next = new Scheduler(deps)
+    next.start()
+    await flush()
+
+    const [news] = repo.findingsOfDate(DAY)
+    expect(repo.getBrief(DAY)).toMatchObject({ findingIds: [news!.id], quietProductIds: [], skipped: [] })
+    expect(events.filter(e => e.startsWith('brief '))).toEqual(['brief 2026-11-25', 'brief 2026-11-26'])
+    expect(calls.runDailyProduct.filter(c => c.date === DAY).map(c => c.productId)).toEqual(['p1', 'p2']) // nothing more for the 25th
+    expect(calls.runDailyProduct.filter(c => c.date === '2026-11-26').map(c => c.productId)).toEqual(['p1', 'p2', 'p3']) // today as usual
+    expect(repo.getSetting(LAST_COMPLETED)).toBe('2026-11-26')
+
+    const written = repo.getBrief(DAY)!.updatedAt
+    clock.set('2026-11-26T10:00')
+    next.start() // a brief once written is not written again
+    await flush()
+    next.stop()
+    expect(repo.getBrief(DAY)!.updatedAt).toBe(written)
+    expect(events.filter(e => e === 'brief 2026-11-25')).toHaveLength(1)
   })
 
   it('runs today once and re-arms for tomorrow when the timer fires a moment early', async () => {
@@ -493,6 +523,113 @@ describe('Scheduler: 立即更新', () => {
 
     expect(calls.rebaseline).toEqual([['p4']])
     expect(calls.runDailyProduct).toEqual([])
+  })
+
+  it('joins a top-up in flight: one baseline, and the daily run starts only after it', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    const filled = gate()
+    deps.rebaseline = async ids => { // as the baseline job leaves its run: started at once, ended when it is over
+      calls.rebaseline.push(ids)
+      const now = () => clock.clock.now().toISOString()
+      const run = repo.createRun({ kind: 'baseline', date: DAY, trackId: null, productId: ids[0]! })
+      repo.updateRun(run.id, { status: 'running', startedAt: now() })
+      await filled.promise
+      repo.updateRun(run.id, { status: 'done', endedAt: now() })
+      events.push(`rebaseline ${ids.join(',')} over`)
+    }
+    scheduler = new Scheduler(deps)
+    const day = scheduler.runDay(DAY)
+    await flush()
+    expect(calls.rebaseline).toEqual([['p2']])
+
+    const now = scheduler.runProductNow('p2') // 立即更新 while the day fills in Windsurf's missing card
+    await flush()
+    expect(calls.rebaseline).toEqual([['p2']]) // joined, not a second baseline
+    expect(dailyIds()).toEqual(['p1', 'p3']) // nothing runs beside the baseline
+
+    filled.open()
+    const [run] = await Promise.all([now, day])
+    expect(dailyIds()).toEqual(['p1', 'p3', 'p2']) // once
+    expect(events.indexOf('rebaseline p2 over')).toBeLessThan(events.indexOf('daily p2'))
+    expect(run).toMatchObject({ productId: 'p2', status: 'done' })
+  })
+
+  it('does not baseline a product again in the day after 立即更新 topped it up', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    deps.rebaseline = async ids => { calls.rebaseline.push(ids); for (const id of ids) recordBaseline(id, 'done') }
+    scheduler = new Scheduler(deps)
+    settings.maxParallel = 1
+    holds.p1 = gate() // the day is busy with Cursor; Windsurf waits in line
+    holds.p2 = gate()
+    const day = scheduler.runDay(DAY)
+    await flush()
+
+    const now = scheduler.runProductNow('p2') // tops Windsurf up, then starts its update
+    await flush()
+    expect(calls.rebaseline).toEqual([['p2']])
+    holds.p1!.open() // the day reaches Windsurf while 立即更新 is still updating it
+    await flush()
+    holds.p2!.open()
+    await Promise.all([now, day])
+
+    expect(calls.rebaseline).toEqual([['p2']])
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it('queues 立即更新\'s brief behind the day\'s writes, so a slow gist cannot overwrite a fuller brief', async () => {
+    const answers: ReturnType<typeof gate>[] = []
+    complete.mockImplementation(async () => {
+      const answer = gate()
+      answers.push(answer)
+      await answer.promise
+      return { text: '今天四条更新。', usage: usage() }
+    })
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }, { findings: [{ headline: 'Cursor 团队版涨价' }] }]
+    plays.p2 = [{ findings: [{ headline: 'Windsurf 发布 Wave 9' }] }]
+    plays.p3 = [{ findings: [{ headline: 'Cline 发布 4.0' }] }]
+    holds.p2 = gate()
+    holds.p3 = gate()
+    clock.set('2026-11-25T08:00')
+    const day = scheduler.runDay(DAY)
+    await flush()
+
+    clock.set('2026-11-25T08:30')
+    const now = scheduler.runProductNow('p1') // Cursor again; today has no brief yet, so this one writes it
+    await flush()
+    expect(answers).toHaveLength(1)
+
+    holds.p2!.open()
+    holds.p3!.open()
+    await flush()
+    expect(answers).toHaveLength(1) // the day's own brief waits for that write instead of racing it
+
+    answers[0]!.open()
+    await flush()
+    expect(answers).toHaveLength(2)
+    answers[1]!.open()
+    await Promise.all([now, day])
+
+    const headlines = repo.getBrief(DAY)!.findingIds.map(id => repo.getFinding(id)!.headline)
+    expect(headlines.sort()).toEqual(['Cline 发布 4.0', 'Cursor 后台 Agent 正式上线', 'Cursor 团队版涨价', 'Windsurf 发布 Wave 9'].sort())
+  })
+
+  it('adds 立即更新\'s news to the day\'s brief when the day\'s gist is still being written', async () => {
+    const held = gate()
+    complete.mockImplementation(async () => { await held.promise; return { text: '今天一条更新。', usage: usage() } })
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }, { findings: [{ headline: 'Cursor 团队版涨价' }] }]
+    const day = scheduler.runDay(DAY)
+    await flush()
+    expect(complete).toHaveBeenCalledOnce() // the day's gist
+
+    const now = scheduler.runProductNow('p1')
+    await flush()
+    held.open()
+    await Promise.all([now, day])
+
+    const brief = repo.getBrief(DAY)!
+    expect(brief.findingIds.map(id => repo.getFinding(id)!.headline)).toEqual(['Cursor 后台 Agent 正式上线', 'Cursor 团队版涨价'])
+    expect(brief.gist).toBe('今天一条更新。')
+    expect(complete).toHaveBeenCalledOnce()
   })
 
   it('waits for the product\'s run in flight rather than starting a second one beside it', async () => {

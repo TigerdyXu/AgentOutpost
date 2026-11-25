@@ -79,19 +79,33 @@ export function cleanGist(text: string): string | null {
 
 // ---- composing ----
 
-/** Composes and stores the brief of `date`; `kept` is the gist to keep (null: write one). */
+/**
+ * Composes and stores the brief of `date`; `kept` is the gist to keep (null: write one). What the brief lists is read
+ * again after the model call: another product may have finished, or another write of this brief gone through, while
+ * the model was writing, and storing the earlier reading would silently drop that.
+ */
 async function compose(deps: BriefDeps, date: string, kept: string | null): Promise<Brief> {
   const { repo, clock } = deps
-  const findings = dayFindings(repo, date)
-  const { tracked, skipped } = dayProducts(repo, date)
-  const previous = repo.getBrief(date)
-  const make = (gist: string) => composeBrief({ date, findings, trackedProductIds: tracked, skipped, gist, costYuan: repo.spentOn(date), now: clock.now(), previous })
+  const read = () => {
+    const findings = dayFindings(repo, date)
+    const { tracked, skipped } = dayProducts(repo, date)
+    const make = (gist: string) => composeBrief({
+      date, findings, trackedProductIds: tracked, skipped, gist, costYuan: repo.spentOn(date), now: clock.now(), previous: repo.getBrief(date),
+    })
+    const byId = new Map(findings.map(f => [f.id, f]))
+    return { make, main: make(NO_NEWS_GIST).findingIds.map(id => byId.get(id)!) } // main: in reading order
+  }
 
-  const byId = new Map(findings.map(f => [f.id, f]))
-  const main = make(NO_NEWS_GIST).findingIds.map(id => byId.get(id)!) // in reading order
+  let state = read()
   let gist = NO_NEWS_GIST
-  if (main.length) gist = kept !== null && kept !== NO_NEWS_GIST ? kept : await writeGist(deps, date, main)
-  const brief = make(gist) // after the gist, so that its cost is in the day's total
+  if (state.main.length) {
+    if (kept !== null && kept !== NO_NEWS_GIST) gist = kept
+    else {
+      gist = await writeGist(deps, date, state.main)
+      state = read()
+    }
+  }
+  const brief = state.make(state.main.length ? gist : NO_NEWS_GIST) // after the gist, so that its cost is in the day's total
   repo.putBrief(brief)
   return brief
 }
