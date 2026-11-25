@@ -1,0 +1,60 @@
+import type { ClaimKind, FindingStatus, OpenedVia } from './types.ts'
+
+/** What one source contributed to one finding, as recorded by the verify step. */
+export interface Evidence {
+  url: string
+  isOfficial: boolean
+  syndicationGroup: string | null
+  openedVia: OpenedVia
+  quoteFound: boolean | null
+  supportsClaim: boolean | null
+}
+
+export interface Verdict { status: FindingStatus; note: string | null; unconfirmedUntil: string | null }
+
+/** How long an under-sourced finding stays 「待确认」 before it is 「未证实」 (spec §8). */
+const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Same page, whatever the scheme, `www.`, case, trailing slash, query or fragment: host + path. */
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.hostname.toLowerCase().replace(/^www\./, '') + u.pathname.replace(/\/+$/, '')
+  } catch {
+    return url.trim().toLowerCase()
+  }
+}
+
+/**
+ * Decides how far a finding can be trusted from the evidence its sources gave (spec §8):
+ * - an official source speaking about its own product is enough on its own;
+ * - anyone else's claim needs two independent sources, reposts of one press release counting once;
+ * - a source that cannot be opened is not a false one: the finding waits as 「待确认」 with 「原文打不开」;
+ * - a source that was opened and does not hold the quote, or does not support the claim, is void, and a finding
+ *   whose sources are all void is withdrawn.
+ * A finding still short of that after 7 days from `firstSeen` is 「未证实」.
+ */
+export function judge(input: { claimKind: ClaimKind; evidence: Evidence[]; firstSeen: Date; now: Date }): Verdict {
+  const { claimKind, evidence, firstSeen, now } = input
+
+  // Void: really opened (not just a search snippet) and the page does not back the finding.
+  const isVoid = (e: Evidence) => (e.openedVia === 'http' || e.openedVia === 'browser') && (e.quoteFound === false || e.supportsClaim === false)
+  // Valid: the quote was matched (on the page, or in a search snippet when the page would not open) and nothing says it fails the claim.
+  const valid = evidence.filter((e) => e.quoteFound === true && e.supportsClaim !== false)
+
+  // With no source at all there is nothing to hold on to: spec §8.1 says a claim without one is not taken in.
+  if (evidence.length === 0 || evidence.every(isVoid)) {
+    return { status: 'withdrawn', note: '引句在原文中找不到或不支持结论', unconfirmedUntil: null }
+  }
+
+  const independent = new Set(valid.map((e) => e.syndicationGroup ?? normalizeUrl(e.url))).size
+  if (claimKind === 'self' && valid.some((e) => e.isOfficial)) return { status: 'verified', note: null, unconfirmedUntil: null }
+  if (independent >= 2) return { status: 'verified', note: null, unconfirmedUntil: null }
+
+  const deadline = new Date(firstSeen.getTime() + WINDOW_MS)
+  return {
+    status: now.getTime() > deadline.getTime() ? 'unproven' : 'unconfirmed',
+    note: evidence.some((e) => e.openedVia === 'unopened') ? '原文打不开' : '只有一个来源',
+    unconfirmedUntil: deadline.toISOString(),
+  }
+}
