@@ -3,7 +3,7 @@ import { canonicalUrl, findingKey, isDuplicate } from '../../src/core/dedupe.ts'
 import { canonicalUrl as urlCanonicalUrl } from '../../src/core/url.ts'
 
 const wechat = (q: string) => `https://mp.weixin.qq.com/s?${q}`
-const recent = (productId: string, headline: string, urls: string[]) => ({ productId, dedupeKey: findingKey(productId, headline, urls), urls })
+const recent = (productId: string, headline: string, urls: string[]) => ({ productId, headline, dedupeKey: findingKey(productId, headline, urls), urls })
 
 describe('canonicalUrl', () => {
   it('is the one from url.ts, which keeps the query (no second definition that drops it)', () => {
@@ -45,7 +45,7 @@ describe('findingKey', () => {
 
 describe('isDuplicate', () => {
   it('treats a shared article URL as the same finding', () =>
-    expect(isDuplicate({ productId: 'p', headline: '完全不同的标题', urls: ['https://www.a.com/x/?utm_source=x'] }, [{ productId: 'p', dedupeKey: 'k', urls: ['https://a.com/x'] }])).toBe(true))
+    expect(isDuplicate({ productId: 'p', headline: '完全不同的标题', urls: ['https://www.a.com/x/?utm_source=x'] }, [{ productId: 'p', headline: '另一个标题', dedupeKey: 'k', urls: ['https://a.com/x'] }])).toBe(true))
 
   it('shares a URL if any one of several matches', () =>
     expect(isDuplicate({ productId: 'p', headline: '新标题', urls: ['https://c.com/z', 'https://a.com/x#top'] }, [recent('p', '旧标题', ['https://b.com/y', 'http://www.a.com/x/'])])).toBe(true))
@@ -62,7 +62,7 @@ describe('isDuplicate', () => {
   })
 
   it('does not count two findings with no URLs as sharing an (empty) URL', () => {
-    expect(isDuplicate({ productId: 'p', headline: 'A', urls: [''] }, [{ productId: 'p', dedupeKey: 'k', urls: ['', '  '] }])).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: 'A', urls: [''] }, [{ productId: 'p', headline: 'B', dedupeKey: 'k', urls: ['', '  '] }])).toBe(false)
   })
 
   it('is not a duplicate when the headline and URLs both differ', () =>
@@ -75,6 +75,39 @@ describe('isDuplicate', () => {
 
   it('is not a duplicate when there is nothing to compare with', () =>
     expect(isDuplicate({ productId: 'p', headline: '标题', urls: ['https://a.com/x'] }, [])).toBe(false))
+
+  it('treats the same headline as the same finding even when the articles are entirely different', () => {
+    // The same news found again through another repost, or resubmitted the next day with new links.
+    const rec = [recent('p', 'DeepSeek 发布 V4，价格下调', ['https://a.com/x', 'https://b.com/y'])]
+    expect(isDuplicate({ productId: 'p', headline: 'DeepSeek 发布 V4，价格下调', urls: ['https://c.com/z'] }, rec)).toBe(true)
+    expect(isDuplicate({ productId: 'p', headline: 'DeepSeek 发布 V4，价格下调', urls: [] }, rec)).toBe(true)
+    expect(isDuplicate({ productId: 'p', headline: 'DeepSeek 发布 V4，价格下调', urls: ['https://d.com/1', 'https://e.com/2'] }, [recent('p', 'DeepSeek 发布 V4，价格下调', [])])).toBe(true)
+  })
+
+  it('treats headlines that differ only in punctuation, whitespace, width or case as the same', () => {
+    const rec = [recent('p', 'DeepSeek 发布 V4：价格下调！', ['https://a.com/x'])]
+    for (const headline of ['deepseek发布v4 价格下调', 'DEEPSEEK　发布「V4」，价格下调。', 'ＤｅｅｐＳｅｅｋ发布Ｖ４价格下调', '  DeepSeek发布V4 —— 价格下调  ']) {
+      expect(isDuplicate({ productId: 'p', headline, urls: ['https://other.com/news'] }, rec), headline).toBe(true)
+    }
+  })
+
+  it('does not match a headline of another product, even when the text and the articles are the same', () => {
+    const rec = [recent('q', '同一条新闻', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: '同一条新闻', urls: ['https://c.com/z'] }, rec)).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '同一条新闻', urls: ['https://a.com/x'] }, rec)).toBe(false)
+  })
+
+  it('does not match a different headline over different articles', () => {
+    const rec = [recent('p', 'DeepSeek 发布 V4', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: 'DeepSeek 发布 V4.1', urls: ['https://c.com/z'] }, rec)).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: 'DeepSeek 下调价格', urls: ['https://c.com/z'] }, rec)).toBe(false)
+  })
+
+  it('does not match two headlines that are nothing but punctuation just because both are empty once stripped', () => {
+    const rec = [recent('p', '……！！', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: '？？', urls: ['https://c.com/z'] }, rec)).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '   ', urls: [] }, rec)).toBe(false)
+  })
 
   it('keeps two different WeChat articles of the same product as two findings', () => {
     const first = wechat('__biz=A&mid=1&idx=1&sn=a')

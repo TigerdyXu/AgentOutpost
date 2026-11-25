@@ -18,19 +18,28 @@ function headlineText(headline: string): string {
 
 /**
  * A stable key for "the same finding": the product, the headline without whitespace/punctuation/case, and the sorted
- * canonical URLs. The same headline over a different set of articles is a different key, on purpose: a generic headline
- * such as "发布新版本" must not swallow a later, different release.
+ * canonical URLs, so the key itself tells the same headline over different articles apart. (`isDuplicate` also compares
+ * headlines on their own; see there.)
  */
 export function findingKey(productId: Id, headline: string, urls: string[]): string {
   return JSON.stringify([productId, headlineText(headline), canonicalUrls(urls)])
 }
 
+/** What `isDuplicate` needs to know about an earlier finding. `headline` is the finding's own headline, as written. */
+export interface RecentFinding { productId: Id; headline: string; dedupeKey: string; urls: string[] }
+
 /**
- * Whether a candidate finding repeats a recent one of the same product: same key, or any article (canonical URL) in
- * common. `urls` on both sides are the raw source addresses, not canonical forms. Findings of other products never match.
+ * Whether a candidate finding repeats a recent one of the same product. It does if any of these holds:
+ * - the key is the same (same headline text over the same articles);
+ * - they share an article (canonical URL), whatever the headlines say;
+ * - the headline text is the same (whitespace, punctuation and case ignored), whatever articles each cites: the same
+ *   news found again through another repost, or submitted again the next day.
+ * `urls` on both sides are the raw source addresses, not canonical forms. Findings of other products never match, and
+ * a headline that is nothing but punctuation and spaces is not compared by its text.
  */
-export function isDuplicate(c: { productId: Id; headline: string; urls: string[] }, recent: { productId: Id; dedupeKey: string; urls: string[] }[]): boolean {
+export function isDuplicate(c: { productId: Id; headline: string; urls: string[] }, recent: RecentFinding[]): boolean {
   const key = findingKey(c.productId, c.headline, c.urls)
   const mine = new Set(canonicalUrls(c.urls))
-  return recent.some((r) => r.productId === c.productId && (r.dedupeKey === key || canonicalUrls(r.urls).some((u) => mine.has(u))))
+  const text = headlineText(c.headline)
+  return recent.some((r) => r.productId === c.productId && (r.dedupeKey === key || (text !== '' && headlineText(r.headline) === text) || canonicalUrls(r.urls).some((u) => mine.has(u))))
 }
