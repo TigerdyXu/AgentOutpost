@@ -8,8 +8,9 @@
  * run failed is tried once more that day; after two failures it is left and named in the brief.
  *
  * A tracked product missing a dimension's card gets it first, at most once in `TOP_UP_EVERY_DAYS` days; products stuck in
- * 建档中 are baselined again every run day. A product is worked on by one thing at a time: its top-up, then its daily
- * run, whether the day or 「立即更新」 started them (two checks of one product side by side would race).
+ * 建档中 are baselined again every run day. A product is worked on by one thing at a time: its top-up (or a baseline
+ * asked for through `baseline`), then its daily run, whether the day or 「立即更新」 started them (two checks of one
+ * product side by side would race).
  *
  * The brief is written when every product is through, or at the cutoff, two hours after the day began, whichever comes
  * first. Products that finish after the cutoff are added to it (「迟到」). The day counts as complete
@@ -154,6 +155,37 @@ export class Scheduler {
     return run
   }
 
+  /**
+   * Baselines the products (建档 of products just added to a track, or a retry of a failed one) through the same entry as
+   * the day's top-ups, each product on its own: a daily run of one of them, the day's or 「立即更新」's, waits for its
+   * baseline instead of running a second check beside it, a baseline asked for while its daily run is in flight starts
+   * once that run is over, and a top-up asked for meanwhile joins it. A product whose baseline is already running is
+   * joined. Resolves once each is over; never rejects (failures are logged).
+   */
+  baseline(productIds: Id[]): Promise<void> {
+    return Promise.all([...new Set(productIds)].map(id => this.topUps.get(id) ?? this.startBaseline(id, this.busy.get(id)))).then(() => {})
+  }
+
+  /**
+   * Writes the brief of `date` again (a summary whose model call failed, retried), queued behind the writes of that brief
+   * already waiting. Resolves with whether it went through; once the scheduler stopped, nothing is written.
+   */
+  rewriteBrief(date: string): Promise<boolean> {
+    return this.queueBrief(date, 'rewritten brief', () => this.deps.synthesize(date))
+  }
+
+  /**
+   * Resolves once every day, daily run, baseline and brief write in flight has ended, including those they start
+   * meanwhile. After `stop` (and the runner's stop) they end soon; whoever closes the store waits for this first.
+   */
+  async idle(): Promise<void> {
+    for (;;) {
+      const work = [...this.days.values(), ...this.busy.values(), ...this.topUps.values(), ...this.briefs.values()]
+      if (!work.length) return
+      await Promise.allSettled(work)
+    }
+  }
+
   // ---- the day ----
 
   private async day(date: string): Promise<void> {
@@ -269,7 +301,16 @@ export class Scheduler {
     const running = this.topUps.get(productId)
     if (running) return running
     if (!this.needsTopUp(productId, date)) return Promise.resolve()
-    const work: Promise<void> = this.deps.rebaseline([productId])
+    return this.startBaseline(productId)
+  }
+
+  /**
+   * Starts the product's baseline (`rebaseline`), after `after` (its daily run in flight) if given, as its top-up in
+   * flight; resolves once it is over, never rejects.
+   */
+  private startBaseline(productId: Id, after?: Promise<unknown>): Promise<void> {
+    const rebaseline = () => this.deps.rebaseline([productId])
+    const work: Promise<void> = (after ? after.then(rebaseline, rebaseline) : rebaseline())
       .catch(error => { this.log(`baseline of product ${productId} failed: ${messageOf(error)}`) })
       .finally(() => { if (this.topUps.get(productId) === work) this.topUps.delete(productId) })
     this.topUps.set(productId, work)

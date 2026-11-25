@@ -131,6 +131,31 @@ export class DshSessionDriver implements SessionDriver {
     await this.persist()
   }
 
+  /**
+   * Gives an existing session its tools again without saying anything to it: after DSH or Outpost restarts, a 追问 chat the
+   * user reopens still has `outpost_read`. They are registered on the session's live agent now, if it has one (DSH's agent
+   * registry; a stored session is not resumed for this), and on every agent DSH makes for it later (resume, compaction).
+   * @throws When the id lacks the `outpost-` prefix, or DSH refuses a tool on the live agent.
+   */
+  rebind(sessionId: string, tools: ToolSpec[]): void {
+    if (!sessionId.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${sessionId}" must start with "${SESSION_PREFIX}"`)
+    this.bound.set(sessionId, tools)
+    const live = this.ctx.get('agents')?.get(sessionId as SessionId)
+    if (live) this.attach(live)
+  }
+
+  /**
+   * Takes every tool it registered off the live agents and forgets every binding, so that no agent can call a tool of a
+   * stopped Outpost (they answer from a closed store); a restarted Outpost binds them again.
+   */
+  close(): void {
+    for (const { dispose } of this.attached.values()) {
+      try { dispose() } catch { /* the agent is gone, and its tools with it */ }
+    }
+    this.attached.clear()
+    this.bound.clear()
+  }
+
   async archive(sessionId: string): Promise<void> {
     await this.ctx.workspaceRegistry.archiveSession(sessionId as SessionId, { stopActivity: true })
     this.bound.delete(sessionId)

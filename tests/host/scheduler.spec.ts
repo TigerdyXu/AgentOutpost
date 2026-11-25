@@ -645,3 +645,84 @@ describe('Scheduler: 立即更新', () => {
     expect(run).toMatchObject({ productId: 'p1', status: 'done' })
   })
 })
+
+describe('Scheduler: work started from outside the day', () => {
+  it('updates a product only after a baseline started through it, which it joins rather than doubles', async () => {
+    const filled = gate()
+    deps.rebaseline = async ids => {
+      calls.rebaseline.push(ids)
+      events.push(`rebaseline ${ids.join(',')}`)
+      await filled.promise
+      events.push(`rebaseline ${ids.join(',')} over`)
+    }
+    scheduler = new Scheduler(deps)
+    // Windsurf has every card, so the day sees nothing to fill in; a baseline asked for elsewhere (a new track) still runs.
+    const started = scheduler.baseline(['p2', 'p2'])
+    const again = scheduler.baseline(['p2'])
+    const now = scheduler.runProductNow('p2')
+    const day = scheduler.runDay(DAY)
+    await flush()
+    expect(calls.rebaseline).toEqual([['p2']])
+    expect(dailyIds()).toEqual(['p1', 'p3']) // nothing runs on Windsurf beside its baseline
+
+    filled.open()
+    await Promise.all([started, again, now, day])
+    expect(dailyIds()).toEqual(['p1', 'p3', 'p2']) // once
+    expect(events.indexOf('rebaseline p2 over')).toBeLessThan(events.indexOf('daily p2'))
+  })
+
+  it('baselines each product on its own, so one product\'s update does not wait for another\'s baseline', async () => {
+    const slow = gate()
+    deps.rebaseline = async ids => { calls.rebaseline.push(ids); if (ids.includes('p1')) await slow.promise }
+    scheduler = new Scheduler(deps)
+    const both = scheduler.baseline(['p1', 'p2'])
+    expect(calls.rebaseline).toEqual([['p1'], ['p2']])
+    await scheduler.runProductNow('p2') // Windsurf's baseline is over: its update goes ahead while Cursor's still runs
+    expect(dailyIds()).toEqual(['p2'])
+    slow.open()
+    await both
+  })
+
+  it('starts a baseline asked for while the product\'s daily run is in flight only once that run is over', async () => {
+    holds.p1 = gate()
+    const now = scheduler.runProductNow('p1')
+    await flush()
+    const baseline = scheduler.baseline(['p1'])
+    await flush()
+    expect(calls.rebaseline).toEqual([]) // not beside the running update
+    holds.p1!.open()
+    await Promise.all([now, baseline])
+    expect(calls.rebaseline).toEqual([['p1']])
+    expect(events.indexOf('daily p1 done')).toBeLessThan(events.indexOf('rebaseline p1'))
+  })
+
+  it('rewrites a day\'s brief through the same queue as the day\'s own writes, and not once stopped', async () => {
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }]
+    await scheduler.runDay(DAY)
+    complete.mockResolvedValueOnce({ text: '重写后的一句话。', usage: usage() })
+    expect(await scheduler.rewriteBrief(DAY)).toBe(true)
+    expect(repo.getBrief(DAY)!.gist).toBe('重写后的一句话。')
+
+    scheduler.stop()
+    expect(await scheduler.rewriteBrief(DAY)).toBe(false)
+  })
+
+  it('idle resolves only once the day in flight, its products and its brief are over', async () => {
+    holds.p1 = gate()
+    const day = scheduler.runDay(DAY)
+    await flush()
+    const idle = vi.fn()
+    void scheduler.idle().then(idle)
+    await flush()
+    expect(idle).not.toHaveBeenCalled()
+
+    holds.p1!.open()
+    await day
+    await vi.waitFor(() => { expect(idle).toHaveBeenCalled() })
+    expect(repo.getBrief(DAY)).not.toBeNull()
+  })
+
+  it('idle resolves at once when nothing runs', async () => {
+    await expect(scheduler.idle()).resolves.toBeUndefined()
+  })
+})

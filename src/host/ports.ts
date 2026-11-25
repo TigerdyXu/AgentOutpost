@@ -37,6 +37,10 @@ export interface SessionDriver {
   nudge(sessionId: string, text: string, signal: AbortSignal): Promise<SessionOutcome>
   /** A follow-up chat for the user: create the session and send the message, without waiting for an answer. */
   startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void>
+  /** Gives an existing session (a follow-up chat, after a restart) its tools again, without sending it anything. */
+  rebind(sessionId: string, tools: ToolSpec[]): void
+  /** Takes back every tool registered so far: Outpost is stopping. */
+  close(): void
   archive(sessionId: string): Promise<void>
 }
 

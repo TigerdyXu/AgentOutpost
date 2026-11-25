@@ -299,6 +299,46 @@ describe('DshSessionDriver.startInteractive', () => {
   })
 })
 
+describe('DshSessionDriver.rebind', () => {
+  const followupTools = () => researchTools('followup', { repo: {} as never, runId: 'r1', trackId: null, productId: 'p1', now: () => new Date(), icons: { fetch: async () => null }, onDone: () => {} })
+
+  it('gives a stored session its tools when DSH opens it again, without sending it anything', async () => {
+    host.store('outpost-followup-1a2b3c4d') // a 追问 chat from before DSH restarted
+    driver.rebind('outpost-followup-1a2b3c4d', followupTools())
+    // Nothing is opened or said now: the session stays as the user left it.
+    expect(host.sessionController.resolveAgent).not.toHaveBeenCalled()
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+
+    await host.sessionController.resolveAgent('outpost-followup-1a2b3c4d') // the user opens it: DSH resumes the session
+    expect([...host.tools('outpost-followup-1a2b3c4d').keys()]).toEqual(['outpost_read'])
+    expect(host.sent('outpost-followup-1a2b3c4d')).toEqual([])
+  })
+
+  it('registers the tools at once on a session that is open now', async () => {
+    await host.spawn('outpost-followup-live') // open in DSH while Outpost restarts
+    expect(host.tools('outpost-followup-live').size).toBe(0)
+    driver.rebind('outpost-followup-live', followupTools())
+    expect([...host.tools('outpost-followup-live').keys()]).toEqual(['outpost_read'])
+    expect(host.sent('outpost-followup-live')).toEqual([])
+  })
+
+  it('refuses a session id without the outpost- prefix', () => {
+    expect(() => driver.rebind('chat-1', followupTools())).toThrow('outpost-')
+  })
+})
+
+describe('DshSessionDriver.close', () => {
+  it('takes every tool it registered off the live agents, and registers none afterwards', async () => {
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool] })
+    expect(host.tools('outpost-followup-1').size).toBe(1)
+    driver.close()
+    // Its tools answer from a store that is being closed; DSH must not call them any more.
+    expect(host.tools('outpost-followup-1').size).toBe(0)
+    await host.spawn('outpost-followup-1')
+    expect(host.tools('outpost-followup-1').size).toBe(0)
+  })
+})
+
 describe('DshSessionDriver.archive', () => {
   it('archives the session, stopping what it still does, and lets go of its tools', async () => {
     const p = driver.run(specOf(), signal)

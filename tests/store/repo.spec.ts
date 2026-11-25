@@ -316,6 +316,16 @@ describe('Repo: tracks and products', () => {
     expect(() => repo.setProductIcon('nope', 'x.png')).toThrow(/unknown/)
   })
 
+  it('setProductBudget sets or clears the product\'s own budget and touches nothing else', () => {
+    const repo = newRepo()
+    const p = repo.upsertProduct(product())
+    repo.setProductBudget(p.id, 2.5)
+    expect(repo.getProduct(p.id)).toEqual({ ...p, dailyBudgetYuan: 2.5 })
+    repo.setProductBudget(p.id, null) // unlike upsertProduct, null does clear it
+    expect(repo.getProduct(p.id)).toEqual(p)
+    expect(() => repo.setProductBudget('nope', 1)).toThrow(/unknown/)
+  })
+
   it('setProductStatus moves a product between statuses', () => {
     const repo = newRepo()
     const p = repo.upsertProduct(product({ status: 'candidate' }))
@@ -346,6 +356,16 @@ describe('Repo: candidates', () => {
     expect(repo.listCandidates('t1', 'b2')).toEqual([b])
     expect(repo.listCandidates('t1')).toEqual([a, b])
     expect(repo.listCandidates('t1', 'nope')).toEqual([])
+  })
+
+  it('setCandidateSelected records the user\'s pick of one candidate', () => {
+    const repo = newRepo()
+    const a = repo.addCandidate(cand({ selected: true }))
+    const b = repo.addCandidate(cand({ productId: 'p2', selected: false }))
+    repo.setCandidateSelected(a.id, false)
+    repo.setCandidateSelected(b.id, true)
+    expect(repo.listCandidates('t1').map(c => c.selected)).toEqual([false, true])
+    expect(() => repo.setCandidateSelected('nope', true)).toThrow(/unknown/)
   })
 
   it('latestBatchId is the batch added last for that track, null when there is none', () => {
@@ -521,6 +541,15 @@ describe('Repo: cards and facts', () => {
     expect(repo.cardHistory('p1', 'nothing')).toEqual([])
   })
 
+  it('cardDimensions lists every dimension some card or card edit was written for', () => {
+    const repo = newRepo()
+    expect(repo.cardDimensions()).toEqual(new Set())
+    repo.addCardVersion(cardAt(1))
+    repo.addCardVersion(cardAt(1, { productId: 'p2', dimension: 'custom-75286237' }))
+    repo.addCardEdit({ productId: 'p1', dimension: 'audience', summary: '', bullets: [], body: '', sourceIds: [], inferenceSpans: [], changeNote: '', findingIds: [] })
+    expect(repo.cardDimensions()).toEqual(new Set(['pricing', 'custom-75286237', 'audience']))
+  })
+
   it('refuses to overwrite a card version that already exists', () => {
     const repo = newRepo()
     repo.addCardVersion(cardAt(1))
@@ -570,6 +599,38 @@ describe('Repo: briefs, runs, spending, settings', () => {
     repo.putBrief(brief({ date: '2026-11-24' }))
     expect(repo.getBrief('2026-11-24')!.date).toBe('2026-11-24')
     expect(repo.getBrief('2026-11-25')!.gist).toBe('补了迟到的')
+  })
+
+  it('previousBriefDate is the latest day before the given one that has a brief', () => {
+    const repo = newRepo()
+    expect(repo.previousBriefDate('2026-11-25')).toBeNull()
+    for (const date of ['2026-11-20', '2026-11-23', '2026-11-25']) repo.putBrief(brief({ date }))
+    expect(repo.previousBriefDate('2026-11-25')).toBe('2026-11-23')
+    expect(repo.previousBriefDate('2026-11-24')).toBe('2026-11-23')
+    expect(repo.previousBriefDate('2026-11-23')).toBe('2026-11-20')
+    expect(repo.previousBriefDate('2026-11-20')).toBeNull()
+  })
+
+  it('latestRun is the run of a kind made last for a track or product; activeRuns are those queued or running, newest first', () => {
+    const repo = newRepo()
+    const run = (kind: 'recommend' | 'baseline' | 'daily', about: { trackId?: string; productId?: string }, status: 'queued' | 'running' | 'done') => {
+      const r = repo.createRun({ kind, date: '2026-11-25', trackId: about.trackId ?? null, productId: about.productId ?? null })
+      repo.updateRun(r.id, { status })
+      return r.id
+    }
+    const r1 = run('recommend', { trackId: 't1' }, 'done')
+    const r2 = run('recommend', { trackId: 't1' }, 'running')
+    run('recommend', { trackId: 't2' }, 'queued')
+    const b1 = run('baseline', { productId: 'p1' }, 'running')
+    const d1 = run('daily', { productId: 'p1' }, 'done')
+    expect(repo.latestRun('recommend', { trackId: 't1' })!.id).toBe(r2)
+    expect(repo.latestRun('baseline', { productId: 'p1' })!.id).toBe(b1)
+    expect(repo.latestRun('daily', { productId: 'p1' })!.id).toBe(d1)
+    expect(repo.latestRun('daily', { productId: 'p2' })).toBeNull()
+    expect(repo.latestRun('recommend', { trackId: 't3' })).toBeNull()
+    expect(repo.activeRuns('p1').map(r => r.id)).toEqual([b1])
+    expect(repo.activeRuns().map(r => r.kind)).toEqual(['baseline', 'recommend', 'recommend'])
+    expect(repo.activeRuns().some(r => r.id === r1)).toBe(false)
   })
 
   it('createRun starts a run queued with nothing spent', () => {

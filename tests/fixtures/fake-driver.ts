@@ -3,10 +3,10 @@
  * keyed by session id prefix (`'outpost-recommend-'`, `'outpost-baseline-'` …; the longest matching key wins); its entry
  * gets each round of a matching session and plays it, calling the session's tools as the agent would, and says how the
  * round ended. A session no entry matches ends every round `completed` without calling a tool. Every `run`, `nudge`,
- * `archive` and `startInteractive` is recorded.
+ * `archive`, `startInteractive` and `rebind` is recorded.
  */
 import type { Usage } from '../../src/core/types.ts'
-import type { Clock, SessionDriver, SessionOutcome, SessionSpec } from '../../src/host/ports.ts'
+import type { Clock, SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from '../../src/host/ports.ts'
 
 export const usage = (over: Partial<Usage> = {}): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, ...over })
 export const completed = (used: Partial<Usage> = {}): SessionOutcome => ({ reason: 'completed', usage: usage(used) })
@@ -35,6 +35,9 @@ export class FakeDriver implements SessionDriver {
   readonly nudges: { sessionId: string; text: string }[] = []
   readonly archived: string[] = []
   readonly interactive: Omit<SessionSpec, 'model'>[] = []
+  /** Sessions given their tools again (`rebind`), in order. */
+  readonly rebound: { sessionId: string; tools: ToolSpec[] }[] = []
+  closed = false
   /** Sessions DSH no longer has: `archive` throws for them. */
   readonly missing = new Set<string>()
   private readonly specs = new Map<string, SessionSpec>()
@@ -56,6 +59,14 @@ export class FakeDriver implements SessionDriver {
 
   async startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void> {
     this.interactive.push(spec)
+  }
+
+  rebind(sessionId: string, tools: ToolSpec[]): void {
+    this.rebound.push({ sessionId, tools })
+  }
+
+  close(): void {
+    this.closed = true
   }
 
   async archive(sessionId: string): Promise<void> {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
 import type {
-  Brief, Candidate, CardEdit, CardVersion, Dimension, Facts, Finding, Id, Product, ProductStatus, Run, RunKind, Source, Track,
+  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunKind, Source, Track,
 } from '../core/types.ts'
 import type { Db } from './db.ts'
 
@@ -126,6 +126,12 @@ export class Repo {
 
   setProductStatus(id: Id, status: ProductStatus): void { this.patch(PRODUCT, id, { status }, ['status']) }
 
+  /** Sets the product's own daily budget in yuan (null: none, only the total applies); nothing else changes. */
+  setProductBudget(id: Id, dailyBudgetYuan: number | null): void {
+    const { changes } = this.db.prepare('UPDATE products SET daily_budget_yuan = ? WHERE id = ?').run(dailyBudgetYuan, id)
+    if (!changes) throw new Error(`products: unknown id ${id}`)
+  }
+
   /** Sets where the product's icon file is kept (null clears it); nothing else about the product changes. */
   setProductIcon(id: Id, iconPath: string | null): void { this.patch(PRODUCT, id, { iconPath }, ['iconPath']) }
 
@@ -145,6 +151,12 @@ export class Repo {
     return batchId === undefined
       ? this.select(CANDIDATE, 'WHERE track_id = ? ORDER BY rowid', trackId)
       : this.select(CANDIDATE, 'WHERE track_id = ? AND batch_id = ? ORDER BY rowid', trackId, batchId)
+  }
+
+  /** Records whether the user picked the candidate (it starts as the agent's pre-selection: strong ones picked). */
+  setCandidateSelected(id: Id, selected: boolean): void {
+    const { changes } = this.db.prepare('UPDATE candidates SET selected = ? WHERE id = ?').run(selected ? 1 : 0, id)
+    if (!changes) throw new Error(`candidates: unknown id ${id}`)
   }
 
   /** The batch whose candidate was added last, or null when the track has none. */
@@ -223,6 +235,12 @@ export class Repo {
     return this.select(CARD_VERSION, 'WHERE product_id = ? AND dimension = ? ORDER BY version', productId, dimension)
   }
 
+  /** Every dimension key some product has a card version or a card edit for, whatever the product or track. */
+  cardDimensions(): Set<DimensionKey> {
+    const rows = this.db.prepare('SELECT dimension FROM card_versions UNION SELECT dimension FROM card_edits').all()
+    return new Set(rows.map(row => String(row.dimension)))
+  }
+
   /** Appends a version; the caller numbers it. @throws When that product, dimension and version already exist. */
   addCardVersion(v: CardVersion): void { this.insert(CARD_VERSION, v) }
 
@@ -252,6 +270,12 @@ export class Repo {
 
   getBrief(date: string): Brief | null { return this.select(BRIEF, 'WHERE date = ?', date)[0] ?? null }
 
+  /** The latest date before `date` that has a brief, or null. */
+  previousBriefDate(date: string): string | null {
+    const row = this.db.prepare('SELECT date FROM briefs WHERE date < ? ORDER BY date DESC LIMIT 1').get(date)
+    return row ? String(row.date) : null
+  }
+
   /** Saves the brief as given, replacing any earlier one for its date. */
   putBrief(b: Brief): void { this.insert(BRIEF, b, {}, 'INSERT OR REPLACE') }
 
@@ -270,6 +294,22 @@ export class Repo {
 
   /** Runs dated `sinceDate` or later, newest first (the run log reads top-down). */
   listRuns(sinceDate: string): Run[] { return this.select(RUN, 'WHERE date >= ? ORDER BY rowid DESC', sinceDate) }
+
+  /** The run of that kind created last for the track or product given (both, if both are), or null. */
+  latestRun(kind: RunKind, about: { trackId?: Id; productId?: Id }): Run | null {
+    const where = ['kind = ?']
+    const params: SQLInputValue[] = [kind]
+    if (about.trackId !== undefined) { where.push('track_id = ?'); params.push(about.trackId) }
+    if (about.productId !== undefined) { where.push('product_id = ?'); params.push(about.productId) }
+    return this.select(RUN, `WHERE ${where.join(' AND ')} ORDER BY rowid DESC LIMIT 1`, ...params)[0] ?? null
+  }
+
+  /** The runs still `queued` or `running`, newest first: all of them, or those of one product. */
+  activeRuns(productId?: Id): Run[] {
+    return productId === undefined
+      ? this.select(RUN, "WHERE status IN ('queued', 'running') ORDER BY rowid DESC")
+      : this.select(RUN, "WHERE status IN ('queued', 'running') AND product_id = ? ORDER BY rowid DESC", productId)
+  }
 
   runsOfDate(date: string, kind?: RunKind): Run[] {
     return kind === undefined ? this.select(RUN, 'WHERE date = ? ORDER BY rowid', date) : this.select(RUN, 'WHERE date = ? AND kind = ? ORDER BY rowid', date, kind)

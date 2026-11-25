@@ -1,6 +1,6 @@
 /**
  * An in-memory stand-in for the parts of DSH the adapters use (as superagent's `tests/fixtures/host.ts` builds one): a Cordis
- * `Context` providing `sessionController`, `workspaceRegistry`, `sessionPersistence`, `llm` and `agentDefaultModel`, and fake
+ * `Context` providing `sessionController`, `workspaceRegistry`, `sessionPersistence`, `llm`, `agentDefaultModel` and `agents`, and fake
  * agents with their own `agent.ctx.tools`. Like DSH, creating or resuming a session emits `agent/created` before it resolves;
  * a message sent to an idle agent starts a turn at once (`turn/start`; the step takes the message out of the inbox,
  * `agent/inbox/claimed`; then records it, `user/message`), and one sent while a turn runs waits for that turn to end. The test plays the model: `assistant(...)` and `turnEnd(...)` emit what
@@ -132,7 +132,10 @@ export function dshHost() {
   }
   const agentDefaultModel = { currentSelection: vi.fn(() => ({ provider: 'deepseek-account', model: 'deepseek-flash' })) }
 
-  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel }))
+  /** DSH's registry of live agents (`ctx.agents`): only those created or resumed, never stored ones. */
+  const agentRegistry = { get: vi.fn((sessionId: string) => agents.get(sessionId)) }
+
+  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agents: agentRegistry }))
     ctx.reflect.provide(name, service)
 
   const agentOf = (sessionId: string): FakeAgent => {
@@ -142,7 +145,7 @@ export function dshHost() {
   }
 
   return {
-    ctx, sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel,
+    ctx, sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agents: agentRegistry,
     agent: agentOf,
     /** The tools registered on the session's current agent, by name. */
     tools: (sessionId: string) => tools.get(sessionId) ?? new Map<string, RegisteredTool>(),

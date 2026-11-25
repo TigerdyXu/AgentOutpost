@@ -17,7 +17,12 @@ export class DshModelClient implements ModelClient {
    */
   constructor(private readonly ctx: Context, private readonly pick: () => { provider: string; model: string } | null) {}
 
+  /**
+   * @throws When the call failed, or `signal` aborted. The signal goes to DSH, and the stream is also given up on here the
+   *   moment it aborts: a provider that hangs without looking at the signal must not hold the caller (the brief queue).
+   */
   async complete(req: { system: string; user: string }, signal: AbortSignal): Promise<{ text: string; usage: Usage }> {
+    if (signal.aborted) throw aborted(signal)
     const picked = this.pick()
     const route = picked ? { provider: picked.provider, model: picked.model } : this.ctx.agentDefaultModel.currentSelection()
     /** Text of each text block, in the order the blocks began; a closed block's final text wins over its deltas. */
@@ -30,7 +35,7 @@ export class DshModelClient implements ModelClient {
       ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
       system: req.system, messages: [{ role: 'user', content: [{ type: 'text', text: req.user }] }], signal,
     })
-    for await (const chunk of stream) {
+    for await (const chunk of untilAborted(stream, signal)) {
       switch (chunk.type) {
         case 'block-start':
           if (chunk.blockType === 'text' && !texts.has(chunk.index)) texts.set(chunk.index, '')
@@ -51,5 +56,30 @@ export class DshModelClient implements ModelClient {
     const usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
     addUsage(usage, reported)
     return { text: [...texts.values()].join(''), usage }
+  }
+}
+
+const aborted = (signal: AbortSignal) => new Error('模型调用已中止（超时或前哨停止）', { cause: signal.reason })
+
+/**
+ * The chunks of `stream` until it ends or `signal` aborts, whichever comes first; on abort it throws and lets go of the
+ * stream (`return`, not awaited: a hung stream may never answer it).
+ */
+async function* untilAborted<T>(stream: AsyncIterable<T>, signal: AbortSignal): AsyncGenerator<T> {
+  const iterator = stream[Symbol.asyncIterator]()
+  const { promise: stop, reject } = Promise.withResolvers<never>()
+  stop.catch(() => {}) // only raced below; an abort after the last chunk is nobody's error
+  const onAbort = () => reject(aborted(signal))
+  signal.addEventListener('abort', onAbort, { once: true })
+  let finished = false
+  try {
+    for (;;) {
+      const step = await Promise.race([iterator.next(), stop])
+      if (step.done) { finished = true; return }
+      yield step.value
+    }
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+    if (!finished) void Promise.resolve(iterator.return?.()).catch(() => {})
   }
 }

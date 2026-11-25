@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DshModelClient } from '../../src/host/dsh-model.ts'
 import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
 
@@ -64,5 +64,42 @@ describe('DshModelClient', () => {
     await expect(client.complete({ system: 's', user: 'u' }, signal)).rejects.toThrow('HTTP 401: invalid api key')
     host.respond([{ type: 'finish', reason: { kind: 'aborted', failure: { message: 'aborted', code: 'ABORTED' } } }])
     await expect(client.complete({ system: 's', user: 'u' }, signal)).rejects.toThrow('aborted')
+  })
+
+  it('stops waiting for a model that ignores the abort signal, and lets go of its stream', async () => {
+    // A provider that hangs and never looks at the signal must not hold the caller (the brief queue) forever.
+    const close = vi.fn(async () => ({ done: true as const, value: undefined }))
+    host.llm.stream.mockImplementation(() => ({
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<never>>(() => {}), return: close }),
+    }) as never)
+    const client = new DshModelClient(host.ctx, () => null)
+    const controller = new AbortController()
+    const call = client.complete({ system: 's', user: 'u' }, controller.signal)
+    const outcome = vi.fn()
+    call.then(outcome, outcome)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(outcome).not.toHaveBeenCalled()
+
+    controller.abort(new Error('time is up'))
+    await expect(call).rejects.toThrow('模型调用已中止')
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('does not call the model at all once the signal has aborted', async () => {
+    const client = new DshModelClient(host.ctx, () => null)
+    await expect(client.complete({ system: 's', user: 'u' }, AbortSignal.abort())).rejects.toThrow('模型调用已中止')
+    expect(host.llm.stream).not.toHaveBeenCalled()
+  })
+
+  it('keeps no abort listener once the answer is in', async () => {
+    host.respond(answer)
+    const client = new DshModelClient(host.ctx, () => null)
+    const controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener')
+    const remove = vi.spyOn(controller.signal, 'removeEventListener')
+    await client.complete({ system: 's', user: 'u' }, controller.signal)
+    controller.abort() // after the fact: nothing left to reject, no unhandled rejection
+    expect(add).toHaveBeenCalledWith('abort', expect.any(Function), expect.anything())
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]![1])
   })
 })
