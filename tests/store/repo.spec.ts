@@ -37,7 +37,7 @@ const product = (over: Partial<Omit<Product, 'id' | 'createdAt'>> = {}): Omit<Pr
 const sourceSpec = (over: Partial<Omit<Source, 'id'>> = {}): Omit<Source, 'id'> =>
   ({ url: 'https://cursor.com/changelog', title: 'Changelog', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: '推出新定价', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...over })
 const findingSpec = (over: Partial<Omit<Finding, 'id' | 'createdAt'>> = {}): Omit<Finding, 'id' | 'createdAt'> =>
-  ({ productId: 'p1', runId: 'r1', headline: 'Cursor 推出新定价', why: '价格变了', importance: 'major', claimKind: 'self', sourceIds: ['s1'], status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: ['pricing'], inference: false, read: false, late: false, dedupeKey: 'cursor-pricing', ...over })
+  ({ productId: 'p1', runId: 'r1', headline: 'Cursor 推出新定价', why: '价格变了', importance: 'major', claimKind: 'self', sourceIds: ['s1'], status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: ['pricing'], inference: false, read: false, late: false, dedupeKey: 'cursor-pricing', verifiedOn: null, ...over })
 const cardAt = (version: number, over: Partial<CardVersion> = {}): CardVersion =>
   ({ productId: 'p1', dimension: 'pricing', version, summary: `第 ${version} 版`, bullets: ['要点'], body: `正文 ${version}[1]`, sourceIds: ['s1'], inferenceSpans: [], addedSpans: [], changeNote: '改了', findingIds: ['f1'], createdAt: `2026-11-2${version}T00:00:00.000Z`, ...over })
 
@@ -84,6 +84,23 @@ describe('openDb', () => {
     expect(check.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: MIGRATIONS.length + 1 })
     expect(check.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'").get()).toMatchObject({ n: 0 })
     check.close()
+  })
+
+  it('adds the verified-on column to a database made before it, keeping its findings', () => {
+    const raw = new DatabaseSync(dbPath)
+    migrate(raw, MIGRATIONS.slice(0, 1)) // the schema as the first build shipped it
+    raw.prepare(`INSERT INTO findings (id, product_id, run_id, headline, why, importance, claim_kind, source_ids, status, status_note, unconfirmed_until,
+      dimensions, inference, read, late, dedupe_key, created_at, date) VALUES ('f-old', 'p1', 'r1', '旧发现', '旧', 'major', 'self', '["s1"]', 'verified', NULL, NULL,
+      '[]', 0, 0, 0, 'k-old', '2026-11-20T08:00:00.000Z', '2026-11-20')`).run()
+    raw.close()
+
+    const db = open()
+
+    expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: MIGRATIONS.length })
+    expect(db.prepare('PRAGMA table_info(findings)').all().map(c => c.name)).toContain('verified_on')
+    const repo = new Repo(db, () => time)
+    expect(repo.findingsOfProduct('p1')).toMatchObject([{ id: 'f-old', headline: '旧发现', status: 'verified', verifiedOn: null }])
+    expect(repo.findingsOfDate('2026-11-20').map(f => f.id)).toEqual(['f-old'])
   })
 
   it('close is safe to call twice', () => {
@@ -406,6 +423,20 @@ describe('Repo: sources and findings', () => {
     expect(repo.findingsOfDate('2026-11-25')).toEqual([a, b])
     expect(repo.findingsOfDate('2026-11-26')).toEqual([c])
     expect(repo.findingsOfDate('2026-11-24')).toEqual([])
+  })
+
+  it('findingsVerifiedOn returns the findings verified on that day, whichever day\'s brief they belong to', () => {
+    const repo = newRepo()
+    const run = repo.createRun({ kind: 'daily', date: '2026-11-25', trackId: null, productId: 'p1' })
+    const sameDay = repo.addFinding(findingSpec({ runId: run.id, dedupeKey: 'a' }))
+    const promoted = repo.addFinding(findingSpec({ runId: run.id, headline: '后来转正', status: 'unconfirmed', dedupeKey: 'b' }))
+    const waiting = repo.addFinding(findingSpec({ runId: run.id, headline: '还在等', status: 'unconfirmed', dedupeKey: 'c' }))
+    repo.updateFinding(sameDay.id, { status: 'verified', verifiedOn: '2026-11-25' })
+    repo.updateFinding(promoted.id, { status: 'verified', verifiedOn: '2026-11-27' })
+    expect(repo.findingsVerifiedOn('2026-11-25').map(f => f.id)).toEqual([sameDay.id])
+    expect(repo.findingsVerifiedOn('2026-11-27')).toEqual([{ ...promoted, status: 'verified', verifiedOn: '2026-11-27' }])
+    expect(repo.findingsVerifiedOn('2026-11-26')).toEqual([])
+    expect(repo.findingsOfDate('2026-11-25').map(f => f.id)).toEqual([sameDay.id, promoted.id, waiting.id]) // still in the brief of its own day
   })
 
   it('findingsOfDate falls back to the local day of creation when the run is unknown', () => {

@@ -30,7 +30,8 @@ export class VerifyNotRun extends Error {
 /**
  * Checks what waits for a check on the product, then settles it:
  * - every `pending` and `unconfirmed` finding gets `judge`'s verdict (the 7-day window counts from its `createdAt`;
- *   one that was 「待确认」 and is now verified gets the note 「已证实」);
+ *   one that was 「待确认」 and is now verified gets the note 「已证实」). A finding found verified gets `verifiedOn` =
+ *   the day being processed (`date`), unless it already has one, so a promotion shows in that day's brief;
  * - a daily card edit (one resting on findings) becomes the dimension's next version once all its findings are verified,
  *   is rejected once any of them is withdrawn or unproven, and otherwise waits for the next check;
  * - a baseline card edit (resting on no finding) loses its void sources and their `[n]` (the rest renumbered), and
@@ -44,7 +45,7 @@ export class VerifyNotRun extends Error {
  * A source the checker never reported on counts as not opened (`openedVia: 'unopened'`): nobody has seen the page, so it
  * neither backs nor voids anything, and a finding resting on it waits as 「待确认」 (「原文打不开」) for the next check.
  *
- * @param date - the day the check counts toward (its brief and budget); default today.
+ * @param date - the day the check counts toward (its brief, its budget, and `verifiedOn`); default today.
  * @throws VerifyNotRun when the session was skipped or failed; nothing is judged then, all of it waits for the next check.
  * @throws When the product does not exist.
  */
@@ -53,10 +54,10 @@ export async function verifyProduct(deps: JobDeps, productId: Id, scope: VerifyS
   const product = repo.getProduct(productId)
   if (!product) throw new Error(`Unknown product ${productId}`)
 
-  settle(repo, productId, clock.now(), false)
+  const day = date ?? localDate(clock.now())
+  settle(repo, productId, day, clock.now(), false)
   if (!waitsForAgent(repo, productId)) return
 
-  const day = date ?? localDate(clock.now())
   const prompt = renderPrompt('verify', {
     productName: product.name,
     company: product.company,
@@ -69,7 +70,7 @@ export async function verifyProduct(deps: JobDeps, productId: Id, scope: VerifyS
     tools: onDone => researchTools('verify', { repo, runId, trackId: null, productId, now: () => clock.now(), icons, onDone }),
   }))
   if (run.status !== 'done') throw new VerifyNotRun(run)
-  settle(repo, productId, clock.now(), true)
+  settle(repo, productId, day, clock.now(), true)
 }
 
 /** Whether anything is left that needs the agent: a pending finding or card edit, or an unconfirmed finding still in its window. */
@@ -83,13 +84,16 @@ function waitsForAgent(repo: Repo, productId: Id): boolean {
  * no new report is settled: unconfirmed findings whose window has closed, superseded edits, and daily edits whose
  * findings are all decided. After it, everything waiting is.
  */
-function settle(repo: Repo, productId: Id, now: Date, checked: boolean): void {
+function settle(repo: Repo, productId: Id, day: string, now: Date, checked: boolean): void {
   const open = checked ? repo.findingsOfProduct(productId).filter(f => f.status === 'pending' || f.status === 'unconfirmed') : repo.openUnconfirmed(productId)
   for (const f of open) {
     const verdict = judge({ claimKind: f.claimKind, evidence: repo.getSources(f.sourceIds).map(evidenceOf), firstSeen: new Date(f.createdAt), now })
     if (!checked && verdict.status === 'unconfirmed') continue // still in its window: today's check looks at it again
     const promoted = f.status === 'unconfirmed' && verdict.status === 'verified'
-    repo.updateFinding(f.id, { status: verdict.status, statusNote: promoted ? PROMOTED_NOTE : verdict.note, unconfirmedUntil: verdict.unconfirmedUntil })
+    repo.updateFinding(f.id, {
+      status: verdict.status, statusNote: promoted ? PROMOTED_NOTE : verdict.note, unconfirmedUntil: verdict.unconfirmedUntil,
+      verifiedOn: verdict.status === 'verified' ? f.verifiedOn ?? day : undefined, // the first verified day stands
+    })
   }
 
   const edits = repo.pendingCardEdits(productId) // oldest first

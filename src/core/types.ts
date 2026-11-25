@@ -21,7 +21,9 @@ export interface Source { id: Id; url: string; title: string; publisher: string;
 export type Importance = 'major' | 'notable' | 'minor'
 export type ClaimKind = 'self' | 'third-party'
 export type FindingStatus = 'pending' | 'verified' | 'unconfirmed' | 'unproven' | 'withdrawn'
-export interface Finding { id: Id; productId: Id; runId: Id; headline: string; why: string; importance: Importance; claimKind: ClaimKind; sourceIds: Id[]; status: FindingStatus; statusNote: string | null; unconfirmedUntil: string | null; dimensions: DimensionKey[]; inference: boolean; read: boolean; late: boolean; dedupeKey: string; createdAt: string }
+export interface Finding { id: Id; productId: Id; runId: Id; headline: string; why: string; importance: Importance; claimKind: ClaimKind; sourceIds: Id[]; status: FindingStatus; statusNote: string | null; unconfirmedUntil: string | null; dimensions: DimensionKey[]; inference: boolean; read: boolean; late: boolean; dedupeKey: string; createdAt: string
+  /** Local `YYYY-MM-DD` of the day the check first found it verified (the day being processed), or null; a promotion shows in that day's brief. */
+  verifiedOn: string | null }
 
 export interface Span { start: number; end: number }
 export interface CardVersion { productId: Id; dimension: DimensionKey; version: number; summary: string; bullets: string[]; body: string; sourceIds: Id[]; inferenceSpans: Span[]; addedSpans: Span[]; changeNote: string; findingIds: Id[]; createdAt: string }

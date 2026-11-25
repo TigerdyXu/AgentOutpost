@@ -27,6 +27,7 @@ const finding = (over: Partial<Finding> = {}): Finding => {
     read: false,
     late: false,
     dedupeKey: `k-${id}`,
+    verifiedOn: null,
     createdAt: stamp(7, 0),
     ...over,
   }

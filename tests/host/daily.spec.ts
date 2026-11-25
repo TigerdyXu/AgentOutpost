@@ -76,7 +76,7 @@ describe('runDailyProduct', () => {
     expect(run).toMatchObject({ kind: 'daily', productId: 'p1', date: DAY, status: 'done', error: null })
     expect(runsOf('verify')).toMatchObject([{ productId: 'p1', status: 'done' }]) // the check counts toward the same day
     // The finding was checked and lands in that day's brief; the card edit on it became the dossier's first version.
-    expect(repo.findingsOfDate(DAY)).toMatchObject([{ headline: finding.headline, status: 'verified', runId: run.id }])
+    expect(repo.findingsOfDate(DAY)).toMatchObject([{ headline: finding.headline, status: 'verified', runId: run.id, verifiedOn: DAY }])
     expect(repo.latestCards('p1')).toMatchObject([{ dimension: 'technology', version: 1, changeNote: '后台 Agent 转正' }])
   })
 

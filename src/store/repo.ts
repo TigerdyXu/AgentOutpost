@@ -40,7 +40,7 @@ const TRACK = new Codec<Track>('tracks', { id: 'plain', name: 'plain', brief: 'p
 const PRODUCT = new Codec<Product>('products', { id: 'plain', name: 'plain', company: 'plain', region: 'plain', form: 'plain', iconPath: 'plain', officialDomains: 'json', status: 'plain', dailyBudgetYuan: 'plain', createdAt: 'plain' })
 const CANDIDATE = new Codec<Candidate>('candidates', { id: 'plain', trackId: 'plain', batchId: 'plain', productId: 'plain', tier: 'plain', oneLiner: 'plain', reason: 'plain', heat: 'json', selected: 'bool' })
 const SOURCE = new Codec<Source>('sources', { id: 'plain', url: 'plain', title: 'plain', publisher: 'plain', publishedAt: 'plain', kind: 'plain', isOfficial: 'bool', quote: 'plain', syndicationGroup: 'plain', openedVia: 'plain', quoteFound: 'bool', supportsClaim: 'bool' })
-const FINDING = new Codec<Finding>('findings', { id: 'plain', productId: 'plain', runId: 'plain', headline: 'plain', why: 'plain', importance: 'plain', claimKind: 'plain', sourceIds: 'json', status: 'plain', statusNote: 'plain', unconfirmedUntil: 'plain', dimensions: 'json', inference: 'bool', read: 'bool', late: 'bool', dedupeKey: 'plain', createdAt: 'plain' })
+const FINDING = new Codec<Finding>('findings', { id: 'plain', productId: 'plain', runId: 'plain', headline: 'plain', why: 'plain', importance: 'plain', claimKind: 'plain', sourceIds: 'json', status: 'plain', statusNote: 'plain', unconfirmedUntil: 'plain', dimensions: 'json', inference: 'bool', read: 'bool', late: 'bool', dedupeKey: 'plain', createdAt: 'plain', verifiedOn: 'plain' })
 const CARD_VERSION = new Codec<CardVersion>('card_versions', { productId: 'plain', dimension: 'plain', version: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', addedSpans: 'json', changeNote: 'plain', findingIds: 'json', createdAt: 'plain' })
 const CARD_EDIT = new Codec<CardEdit>('card_edits', { id: 'plain', productId: 'plain', dimension: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', changeNote: 'plain', findingIds: 'json', status: 'plain' })
 const FACTS = new Codec<Facts>('facts', { productId: 'plain', version: 'plain', form: 'plain', platforms: 'plain', price: 'plain', firstReleased: 'plain', rivals: 'json', createdAt: 'plain' })
@@ -48,7 +48,7 @@ const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', finding
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup'>>
-type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late' | 'sourceIds'>>
+type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late' | 'sourceIds' | 'verifiedOn'>>
 type TrackPatch = Partial<Pick<Track, 'name' | 'brief' | 'dimensions' | 'status'>>
 
 /**
@@ -180,10 +180,13 @@ export class Repo {
     return finding
   }
 
-  updateFinding(id: Id, patch: FindingPatch): void { this.patch(FINDING, id, patch, ['status', 'statusNote', 'unconfirmedUntil', 'read', 'late', 'sourceIds']) }
+  updateFinding(id: Id, patch: FindingPatch): void { this.patch(FINDING, id, patch, ['status', 'statusNote', 'unconfirmedUntil', 'read', 'late', 'sourceIds', 'verifiedOn']) }
 
   /** The findings of that day's brief (see `addFinding`), oldest first. */
   findingsOfDate(date: string): Finding[] { return this.select(FINDING, 'WHERE date = ? ORDER BY rowid', date) }
+
+  /** The findings verified on that day (`verifiedOn`), oldest first, whichever day's brief they belong to: how a promotion reaches the brief of its day. */
+  findingsVerifiedOn(date: string): Finding[] { return this.select(FINDING, 'WHERE verified_on = ? ORDER BY rowid', date) }
 
   /**
    * The product's findings, newest first, whatever their status. With `sinceDays`, only those made within that many

@@ -284,7 +284,7 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
         const finding = repo.addFinding({
           productId, runId: scope.runId, headline: args.headline, why: args.why, importance: args.importance, claimKind: args.claimKind, sourceIds: sources.map(s => s.id),
           status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: args.dimensions, inference: args.inference, read: false, late: false,
-          dedupeKey: findingKey(productId, args.headline, urls),
+          dedupeKey: findingKey(productId, args.headline, urls), verifiedOn: null,
         })
         return { findingId: finding.id }
       }),

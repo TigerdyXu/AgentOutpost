@@ -76,7 +76,7 @@ const seedFinding = (over: Partial<Omit<Finding, 'id' | 'createdAt'>> = {}, sour
   const s = repo.addSource({ url: 'https://seed.example/1', title: '旧报道', publisher: '某媒体', publishedAt: null, kind: 'media', isOfficial: false, quote: '原话', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...sourceOver })
   const f = repo.addFinding({
     productId: product.id, runId: run.id, headline: '旧发现', why: '旧', importance: 'notable', claimKind: 'third-party', sourceIds: [s.id], status: 'pending', statusNote: null,
-    unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'seed', ...over,
+    unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'seed', verifiedOn: null, ...over,
   })
   return { source: s, finding: f }
 }

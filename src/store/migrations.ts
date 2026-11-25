@@ -171,6 +171,11 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // 2: the day a finding was verified, so a 「待确认」 finding confirmed days later shows in that day's brief (design §7.4).
+  `
+  ALTER TABLE findings ADD COLUMN verified_on TEXT;
+  CREATE INDEX findings_verified_on ON findings (verified_on);
+  `,
 ]
 
 /**

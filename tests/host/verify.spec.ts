@@ -16,6 +16,7 @@ import { FakeDriver, completed, failure, instantClock, type Play, type Round } f
 const DAY_MS = 24 * 60 * 60 * 1000
 const START = new Date(2026, 10, 25, 9, 0, 0) // local wall clock: 2026-11-25 09:00
 const TODAY = '2026-11-25'
+const DAY_3 = '2026-11-28'
 const VERIFY = 'outpost-verify-'
 
 let dir: string
@@ -57,7 +58,7 @@ const official = (url: string) => addSource(url, { kind: 'official', isOfficial:
 const addFinding = (sources: Source[], over: Partial<Omit<Finding, 'id' | 'createdAt' | 'sourceIds'>> = {}): Finding => repo.addFinding({
   productId: 'p1', runId: dailyRun().id, headline: 'Cursor 推出团队定价', why: '团队版每人每月 40 美元', importance: 'major', claimKind: 'self',
   sourceIds: sources.map(s => s.id), status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: ['business'], inference: false,
-  read: false, late: false, dedupeKey: `key-${sources[0]?.url}`, ...over,
+  read: false, late: false, dedupeKey: `key-${sources[0]?.url}`, verifiedOn: null, ...over,
 })
 const addEdit = (over: Partial<Omit<CardEdit, 'id' | 'status'>> = {}): CardEdit => repo.addCardEdit({
   productId: 'p1', dimension: 'business', summary: '团队版按人收费', bullets: ['团队版 40 美元'], body: '团队版每人每月 40 美元[1]。',
@@ -145,8 +146,8 @@ describe('verifyProduct', () => {
     const f = addFinding([first], { claimKind: 'third-party', headline: 'Cursor 年收入破 5 亿美元' })
     const edit = addEdit({ dimension: 'business', body: '年收入已破 5 亿美元[1]。', sourceIds: [addSource('https://36kr.example/p/1').id], findingIds: [f.id] })
     driver.script[VERIFY] = reportCheck(SEEN)
-    await verifyProduct(deps, 'p1', 'daily')
-    expect(finding(f.id)).toMatchObject({ status: 'unconfirmed', statusNote: '只有一个来源' })
+    await verifyProduct(deps, 'p1', 'daily', TODAY)
+    expect(finding(f.id)).toMatchObject({ status: 'unconfirmed', statusNote: '只有一个来源', verifiedOn: null })
     expect(repo.pendingCardEdits('p1')).toHaveLength(1)
 
     // Three days later the checker finds an independent second report and confirms it.
@@ -162,13 +163,46 @@ describe('verifyProduct', () => {
       await r.done()
       return completed()
     }
-    await verifyProduct(deps, 'p1', 'daily')
+    await verifyProduct(deps, 'p1', 'daily', DAY_3)
 
     expect(offered!.unconfirmedFindings.map(i => i.itemId)).toEqual([f.id])
-    expect(finding(f.id)).toMatchObject({ status: 'verified', statusNote: '已证实', unconfirmedUntil: null })
+    expect(finding(f.id)).toMatchObject({ status: 'verified', statusNote: '已证实', unconfirmedUntil: null, verifiedOn: DAY_3 })
+    // It shows in the brief of the day it was confirmed, and still belongs to the day it was found.
+    expect(repo.findingsVerifiedOn(DAY_3).map(x => x.id)).toEqual([f.id])
+    expect(repo.findingsOfDate(TODAY).map(x => x.id)).toEqual([f.id])
+    expect(repo.findingsOfDate(DAY_3)).toEqual([])
+    expect(finding(f.id).createdAt).toBe(f.createdAt)
     expect(finding(f.id).sourceIds).toHaveLength(2)
     expect(repo.pendingCardEdits('p1')).toEqual([])
     expect(card('business')).toMatchObject({ version: 1, findingIds: [f.id], sourceIds: edit.sourceIds }) // 转正：写进档案
+  })
+
+  it('records the day a finding is verified: the day being processed, and only when it is verified', async () => {
+    const official1 = addFinding([official('https://cursor.com/changelog/2-0')])
+    const thirdParty = addFinding([addSource('https://news.example/one-report')], { claimKind: 'third-party', dedupeKey: 'k2' })
+    const refuted = addFinding([official('https://cursor.com/changelog/2-1')], { dedupeKey: 'k3' })
+    driver.script[VERIFY] = reportCheck(s => s.url.endsWith('2-1') ? NOT_THERE : SEEN)
+
+    await verifyProduct(deps, 'p1', 'daily', '2026-11-24') // a run for the 24th, finishing on the clock's 25th
+
+    expect(finding(official1.id)).toMatchObject({ status: 'verified', verifiedOn: '2026-11-24' })
+    expect(finding(thirdParty.id)).toMatchObject({ status: 'unconfirmed', verifiedOn: null })
+    expect(finding(refuted.id)).toMatchObject({ status: 'withdrawn', verifiedOn: null })
+    expect(repo.findingsVerifiedOn('2026-11-24').map(f => f.id)).toEqual([official1.id])
+  })
+
+  it('records today as the verified day of a baseline check', async () => {
+    const f = addFinding([official('https://cursor.com/changelog/2-0')])
+    driver.script[VERIFY] = reportCheck(SEEN)
+    await verifyProduct(deps, 'p1', 'baseline')
+    expect(finding(f.id).verifiedOn).toBe(TODAY)
+  })
+
+  it('never overwrites a verified day already recorded', async () => {
+    const f = addFinding([official('https://cursor.com/changelog/2-0')], { status: 'unconfirmed', verifiedOn: '2026-11-20' })
+    driver.script[VERIFY] = reportCheck(SEEN)
+    await verifyProduct(deps, 'p1', 'daily', DAY_3)
+    expect(finding(f.id)).toMatchObject({ status: 'verified', verifiedOn: '2026-11-20' })
   })
 
   it('expires an unconfirmed finding to unproven after 7 days', async () => {
