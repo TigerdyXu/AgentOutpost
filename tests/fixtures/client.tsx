@@ -5,8 +5,8 @@
 import { act, type ComponentType, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { expect, vi } from 'vitest'
-import type { Product, Track } from '../../src/core/types.ts'
-import type { Api, StateView, TrackProductView, TrackView } from '../../src/host/api.ts'
+import type { Brief, Finding, Product, Source, Track } from '../../src/core/types.ts'
+import type { Api, BriefView, StateView, TrackProductView, TrackView } from '../../src/host/api.ts'
 import { zh, type T } from '../../src/client/locales.ts'
 import { ShellContext, type Shell } from '../../src/client/shell/context.ts'
 
@@ -125,8 +125,26 @@ export const track = (id: string, name: string, products: TrackProductView[], ex
   products, candidatesToReview,
 })
 export const state = (extra: Partial<StateView> = {}): StateView => ({
-  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, browserAvailable: true, ...extra,
+  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, runTime: '08:00', browserAvailable: true, ...extra,
 })
+
+/** A verified, unread major finding of `productId` that cites nothing, from today's run. */
+export const finding = (id: string, productId: string, extra: Partial<Finding> = {}): Finding => ({
+  id, productId, runId: 'r1', headline: `标题 ${id}`, why: `原因 ${id}`, importance: 'major', claimKind: 'self', sourceIds: [], status: 'verified',
+  statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: id,
+  createdAt: '2026-11-25T08:05:00.000Z', verifiedOn: '2026-11-25', ...extra,
+})
+export const source = (id: string, extra: Partial<Source> = {}): Source => ({
+  id, url: `https://example.com/${id}`, title: `来源 ${id}`, publisher: `发布方 ${id}`, publishedAt: '2026-11-24', kind: 'media', isOfficial: false,
+  quote: `${id} 的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, ...extra,
+})
+export const brief = (extra: Partial<Brief> = {}): Brief => ({
+  date: '2026-11-25', gist: '', findingIds: [], minorIds: [], quietProductIds: [], skipped: [], costYuan: 0,
+  // 08:12 on the machine's own clock, whatever its time zone: the page shows the time of day as the reader's clock has it.
+  createdAt: new Date(2026, 10, 25, 8, 12).toISOString(), updatedAt: new Date(2026, 10, 25, 8, 12).toISOString(), ...extra,
+})
+/** `GET brief`'s answer: the brief, its findings, the products it names and the sources of the findings. */
+export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], prevDate: null, ...extra })
 
 // ---- rendering ----
 

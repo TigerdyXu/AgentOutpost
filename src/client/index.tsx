@@ -12,6 +12,7 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import STYLES from './styles.css?raw'
 import { call } from './api.ts'
 import { en, NS, zh, type T } from './locales.ts'
+import type { SessionAccess } from './shell/context.ts'
 import { App } from './shell/App.tsx'
 import { TelescopeIcon } from './ui/icons.tsx'
 
@@ -106,8 +107,10 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS) as T
   const count = unreadCount()
   ctx.effect(() => () => { count.close() }, 'dsh-outpost: unread count')
+  // DSH's session catalog and workspace, for opening a session from the panel (追问).
+  const sessions: SessionAccess = { catalog: ctx.sessions, open: id => { ctx.uiWorkspace.openSession(id) } }
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS },
-    (props: { t: T }) => <App t={props.t} onState={state => { count.set(state.todayUnread) }} />))
+    (props: { t: T }) => <App t={props.t} sessions={sessions} onState={state => { count.set(state.todayUnread) }} />))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist', id: PANEL_ID, order: 20, label: () => t('panel'), locale: NS,
   }, SidebarIcon))

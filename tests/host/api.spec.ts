@@ -172,6 +172,9 @@ describe('GET state', () => {
     expect(state.todayUnread).toBe(1)
     expect(state.todayCostYuan).toBe(1.25)
     expect(state.browserAvailable).toBe(false)
+    // The time the daily run is due, for the page that says when the first brief will arrive.
+    expect(state.runTime).toBe(rt.settings().runTime)
+    expect(state.runTime).toMatch(/^\d\d:\d\d$/)
   })
 
   it('counts unread like unreadCount, over the findings today\'s brief still shows', async () => {

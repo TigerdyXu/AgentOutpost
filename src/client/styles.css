@@ -566,6 +566,282 @@ img.op-icon {
   background: var(--dsw-alias-card-fill);
 }
 
+/* ---- 今日哨报 (mockup 2, option A): header, summary, filter, one stream of cards ---- */
+
+.op-today {
+  display: flex;
+  flex-direction: column;
+}
+
+.op-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.op-day-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-day-meta {
+  margin: 5px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-day-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The header's buttons are smaller than a page's main action. */
+.op-button[data-size="small"] {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--dsw-radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.op-day-problem {
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The brief's one sentence, with the AI mark: light blue block. */
+.op-gist {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 13px 16px;
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-state-business-tertiary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+/* A day with nothing to read, or with no brief: one quiet line. */
+.op-day-empty {
+  margin: 16px 0 0;
+  padding: 13px 16px;
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-secondary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+.op-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 4px;
+}
+
+.op-filter button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  corner-shape: round;
+  background: transparent;
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.op-filter button[aria-pressed="true"] {
+  background: var(--dsw-alias-state-business-tertiary);
+  box-shadow: none;
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+}
+
+/* One stream in the brief's order; the wider the panel, the more columns. */
+.op-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.op-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 15px 18px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* Read: faded. */
+.op-card[data-read] {
+  opacity: 0.62;
+}
+
+.op-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-card-product {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.op-card-level {
+  margin-left: auto;
+}
+
+.op-card-title {
+  margin: 8px 0 4px;
+  font-size: max(16.5px, calc(var(--dsh-content-font-size) + 2px));
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.op-card-why {
+  margin: 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+.op-card-why-label {
+  font-weight: 600;
+}
+
+.op-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 11px;
+}
+
+.op-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+.op-card-changed {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+.op-card-changed b {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.op-card-actions {
+  display: inline-flex;
+  gap: 14px;
+  margin-left: auto;
+}
+
+.op-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-link);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.op-link:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.op-card-error {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The minor updates, one folded row. */
+.op-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-fold[aria-expanded="false"] > .op-glyph {
+  transform: rotate(-90deg);
+}
+
+/* What the day could not do (budget, failures), and who had no news. */
+.op-day-note {
+  margin: 16px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+.op-day-note + .op-day-note {
+  margin-top: 4px;
+}
+
+.op-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-quiet-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-primary);
+}
+
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
@@ -602,6 +878,16 @@ img.op-icon {
     text-decoration: underline dotted;
     text-underline-offset: 3px;
   }
+
+  .op-filter button:not([aria-pressed="true"]):hover,
+  .op-fold:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  .op-link:not(:disabled):hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 }
 
 .op-row:focus-visible,
@@ -610,9 +896,18 @@ img.op-icon {
 .op-nav-toggle:focus-visible,
 .op-button:focus-visible,
 .op-source:focus-visible,
+.op-filter button:focus-visible,
+.op-fold:focus-visible,
+.op-link:focus-visible,
 .op-cite > a:focus-visible {
   outline: 2px solid var(--dsw-alias-link);
   outline-offset: -2px;
+}
+
+/* A text link has no box to draw inside of. */
+.op-link:focus-visible {
+  border-radius: var(--dsw-radius-xs);
+  outline-offset: 2px;
 }
 
 /* ---- sidebar count: a plain number when the sidebar is wide, a round badge when it is collapsed (as DSH's review count) ---- */

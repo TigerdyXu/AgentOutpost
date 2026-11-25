@@ -99,35 +99,37 @@ it('trailing count reads today’s unread every minute and whenever the panel re
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
   let unread = 2
   const api = stubApi({ 'GET state': () => state({ todayUnread: unread }) })
+  // The panel's own page reads the brief too; this counts the reads of the state.
+  const reads = () => api.requests.filter(request => request.path === 'state')
   const { entry, dispose } = fixture()
   const trailing = entry('sidebar.panellist.trailing')
   // Nothing is read before the sidebar shows the count.
-  expect(api.requests).toHaveLength(0)
+  expect(reads()).toHaveLength(0)
   await render(Live as never, { entry: trailing, wide: true })
   await settle()
   const shown = () => all('.op-nav-count [aria-hidden="true"]')[0]?.textContent
   expect(shown()).toBe('2')
-  expect(api.requests).toHaveLength(1)
+  expect(reads()).toHaveLength(1)
   unread = 5
   await act(async () => { await vi.advanceTimersByTimeAsync(59_000) })
   expect(shown()).toBe('2')
   await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
   await settle()
   expect(shown()).toBe('5')
-  expect(api.requests).toHaveLength(2)
+  expect(reads()).toHaveLength(2)
 
   // The panel reading the state (after 全部已读, say) updates the count at once; at 0 it disappears.
   unread = 0
   await render(entry('main').component, { t })
   await settle()
   expect(shown()).toBeUndefined()
-  expect(api.requests).toHaveLength(3)
+  expect(reads()).toHaveLength(3)
 
   // Once disposed, it stops asking.
   for (const unmount of mounted.splice(0)) unmount()
   dispose()
   await act(async () => { await vi.advanceTimersByTimeAsync(180_000) })
-  expect(api.requests).toHaveLength(3)
+  expect(reads()).toHaveLength(3)
 })
 
 it('injects the stylesheet while applied and removes it on dispose', () => {

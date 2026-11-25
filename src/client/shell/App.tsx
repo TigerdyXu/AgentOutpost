@@ -10,7 +10,8 @@ import type { StateView } from '../../host/api.ts'
 import { call, usePoll } from '../api.ts'
 import type { T } from '../locales.ts'
 import { MenuIcon, TelescopeIcon } from '../ui/icons.tsx'
-import { ShellContext, useShell, type Shell } from './context.ts'
+import { Today } from '../pages/Today.tsx'
+import { ShellContext, useShell, type SessionAccess, type Shell } from './context.ts'
 import { BUSY_POLL_MS, IDLE_POLL_MS, MiddleColumn } from './MiddleColumn.tsx'
 import { useRoute, type Route } from './route.ts'
 
@@ -18,7 +19,7 @@ import { useRoute, type Route } from './route.ts'
 const isBusy = (state: StateView | undefined, error: Error | undefined) => error !== undefined
   || !!state?.tracks.some(view => view.track.status === 'picking' || view.products.some(item => item.progress !== null))
 
-/** A page still to come (今日哨报, 新建赛道, 产品档案, 运行记录 and 设置 arrive with their own tasks): its title. */
+/** A page still to come (新建赛道, 产品档案, 运行记录 and 设置 arrive with their own tasks): its title. */
 function Placeholder({ title }: { title: string }): ReactNode {
   return <div className="op-page"><h1 className="op-page-title">{title}</h1></div>
 }
@@ -38,7 +39,7 @@ function Welcome(): ReactNode {
 function Page(): ReactNode {
   const { t, route, state } = useShell()
   switch (route.page) {
-    case 'today': return state && state.tracks.length === 0 ? <Welcome /> : <Placeholder title={t('nav.today')} />
+    case 'today': return state && state.tracks.length === 0 ? <Welcome /> : <Today />
     case 'newTrack': return <Placeholder title={t('page.newTrack')} />
     case 'product': {
       const known = state?.tracks.flatMap(view => view.products).find(item => item.product.id === route.productId)
@@ -49,10 +50,12 @@ function Page(): ReactNode {
   }
 }
 
-/** Identifies the page of a route, tabs and cards aside: moving to another one starts the right column at its top. */
-const pageOf = (route: Route) => route.page === 'product' ? `product:${route.productId}` : route.page === 'newTrack' ? `newTrack:${route.trackId ?? ''}` : route.page
+/** Identifies the page of a route, tabs and cards aside (a day of the brief is a page): moving to another one starts the right column at its top. */
+const pageOf = (route: Route) => route.page === 'product' ? `product:${route.productId}` : route.page === 'newTrack' ? `newTrack:${route.trackId ?? ''}`
+  : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
 
-export function App({ t, onState }: { t: T; onState?: (state: StateView) => void }): ReactNode {
+/** `sessions` is DSH's session catalog and workspace, for the pages that open a session (追问). */
+export function App({ t, onState, sessions }: { t: T; onState?: (state: StateView) => void; sessions?: SessionAccess }): ReactNode {
   const [route, setRoute] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
   const [picks, setPicksState] = useState<Readonly<Record<Id, number>>>({})
@@ -77,8 +80,8 @@ export function App({ t, onState }: { t: T; onState?: (state: StateView) => void
       return count === null ? rest : { ...rest, [trackId]: count }
     })
   }, [])
-  const shell = useMemo<Shell>(() => ({ t, route, navigate, state, stateError, refresh, picks, setPicks }),
-    [t, route, navigate, state, stateError, refresh, picks, setPicks])
+  const shell = useMemo<Shell>(() => ({ t, route, navigate, state, stateError, refresh, picks, setPicks, sessions }),
+    [t, route, navigate, state, stateError, refresh, picks, setPicks, sessions])
 
   const content = useRef<HTMLDivElement>(null)
   const page = pageOf(route)

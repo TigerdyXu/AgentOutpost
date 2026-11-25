@@ -42,6 +42,8 @@ export interface StateView {
   /** Unread findings shown in today's brief (the sidebar number): its main list, verified or 「待确认」, not read. */
   todayUnread: number
   todayCostYuan: number
+  /** When the daily run is due (`HH:MM`, local), as configured: the page that waits for the first brief names it. */
+  runTime: string
   /** A browser provider is registered with DSH's browser use, so pages behind verification walls can be opened. */
   browserAvailable: boolean
 }
@@ -312,6 +314,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         todayDate: rt.today(),
         todayUnread: brief ? unreadCount(brief, shown) : 0,
         todayCostYuan: repo.spentOn(rt.today()),
+        runTime: rt.settings().runTime,
         browserAvailable: rt.browserAvailable(),
       }
     },

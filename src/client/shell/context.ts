@@ -1,9 +1,17 @@
 /** What the shell hands every part of the panel: copy, the route, the latest `GET state`, and ways to change them. */
 import { createContext, useContext } from 'react'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Id } from '../../core/types.ts'
 import type { StateView } from '../../host/api.ts'
 import type { T } from '../locales.ts'
 import type { Route } from './route.ts'
+
+/** DSH's session catalog and its workspace: what opening a session there (追问) needs. */
+export interface SessionAccess {
+  catalog: Pick<ISessions, 'list' | 'refresh'>
+  open: (id: SessionId) => void
+}
 
 export interface Shell {
   t: T
@@ -20,6 +28,8 @@ export interface Shell {
   picks: Readonly<Record<Id, number>>
   /** The 挑产品 page reports its picks for a track here; null forgets them (the server's defaults show again). */
   setPicks: (trackId: Id, count: number | null) => void
+  /** DSH's sessions, to open one in the workspace; absent when the panel runs without them (the page then says so). */
+  sessions?: SessionAccess
 }
 
 export const ShellContext = createContext<Shell | null>(null)
