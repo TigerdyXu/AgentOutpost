@@ -24,6 +24,25 @@ describe('findingKey', () => {
     expect(findingKey('p', '推出新功能 A', [])).not.toBe(findingKey('p', '推出新功能 B', []))
   })
 
+  it('keeps a decimal point, a comma or another mark standing between two digits, since it makes the number', () => {
+    expect(findingKey('p', '会员价降至 1.5 元', [])).not.toBe(findingKey('p', '会员价降至 15 元', []))
+    expect(findingKey('p', 'GPT-4.5', [])).not.toBe(findingKey('p', 'GPT-45', []))
+    expect(findingKey('p', '月费 3-5 元', [])).not.toBe(findingKey('p', '月费 35 元', []))
+    expect(findingKey('p', '10:30 开售', [])).not.toBe(findingKey('p', '1030 开售', []))
+    expect(findingKey('p', '版本 1.5.2', [])).not.toBe(findingKey('p', '版本 152', []))
+    expect(findingKey('p', '1,000 万用户', [])).not.toBe(findingKey('p', '1000 万用户', []))
+    // Full-width forms are folded first, so they count as the same mark.
+    expect(findingKey('p', '会员价降至 1．5 元', [])).toBe(findingKey('p', '会员价降至 1.5 元', []))
+    expect(findingKey('p', '用户 1，000 万', [])).toBe(findingKey('p', '用户 1,000 万', []))
+  })
+
+  it('still drops the same marks where they do not stand between two digits', () => {
+    expect(findingKey('p', 'GPT-4.5 发布', [])).toBe(findingKey('p', 'GPT-4.5发布！', []))
+    expect(findingKey('p', '涨到 1.5。', [])).toBe(findingKey('p', '涨到 1.5', []))
+    expect(findingKey('p', 'V2. 发布', [])).toBe(findingKey('p', 'V2 发布', []))
+    expect(findingKey('p', '价格 .5 元', [])).toBe(findingKey('p', '价格 5 元', []))
+  })
+
   it('does not depend on URL order, URL tracking, repeated URLs or the www prefix', () => {
     const a = findingKey('p', '标题', ['https://b.com/y', 'https://www.a.com/x/?utm_source=t'])
     expect(findingKey('p', '标题', ['http://a.com/x', 'https://b.com/y/'])).toBe(a)
@@ -95,6 +114,27 @@ describe('isDuplicate', () => {
     const rec = [recent('q', '同一条新闻', ['https://a.com/x'])]
     expect(isDuplicate({ productId: 'p', headline: '同一条新闻', urls: ['https://c.com/z'] }, rec)).toBe(false)
     expect(isDuplicate({ productId: 'p', headline: '同一条新闻', urls: ['https://a.com/x'] }, rec)).toBe(false)
+  })
+
+  it('does not merge two different numbers: 1.5 is not 15, GPT-4.5 is not GPT-45', () => {
+    const price = [recent('p', '会员价降至 15 元', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: '会员价降至 1.5 元', urls: ['https://c.com/z'] }, price)).toBe(false)
+    const model = [recent('p', 'GPT-45', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: 'GPT-4.5', urls: ['https://c.com/z'] }, model)).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '月费 3-5 元', urls: ['https://c.com/z'] }, [recent('p', '月费 35 元', [])])).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '10:30 开售', urls: ['https://c.com/z'] }, [recent('p', '1030 开售', [])])).toBe(false)
+  })
+
+  it('still sees the same number written with different marks around it as the same headline', () => {
+    const rec = [recent('p', 'GPT-4.5 发布', ['https://a.com/x'])]
+    expect(isDuplicate({ productId: 'p', headline: 'GPT-4.5发布！', urls: ['https://c.com/z'] }, rec)).toBe(true)
+    expect(isDuplicate({ productId: 'p', headline: 'ＧＰＴ－４．５　发布', urls: ['https://c.com/z'] }, rec)).toBe(true)
+    expect(isDuplicate({ productId: 'p', headline: '会员价降至 1．5 元！', urls: ['https://c.com/z'] }, [recent('p', '会员价降至 1.5 元', [])])).toBe(true)
+  })
+
+  it('does not treat 1,000 and 1000 as the same headline (a missed merge shows a story twice, a wrong one hides it)', () => {
+    expect(isDuplicate({ productId: 'p', headline: '1,000 万用户', urls: ['https://c.com/z'] }, [recent('p', '1000 万用户', [])])).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '1,000 万用户', urls: ['https://c.com/z'] }, [recent('p', '1,000 万用户！', [])])).toBe(true)
   })
 
   it('does not match a different headline over different articles', () => {

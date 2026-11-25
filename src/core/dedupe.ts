@@ -11,9 +11,18 @@ function canonicalUrls(urls: string[]): string[] {
   return [...new Set(urls.filter((u) => u.trim() !== '').map(canonicalUrl))].sort(byCodeUnits)
 }
 
-/** The headline as a comparison text: full-width forms folded to normal ones, case, whitespace and punctuation gone. */
+/**
+ * The headline as a comparison text: full-width forms folded to normal ones, case, whitespace and punctuation gone,
+ * except a mark standing directly between two digits, which is kept because it is part of the number: `1.5` is not
+ * `15`, `3-5` is not `35`, `10:30` is not `1030`, `GPT-4.5` is not `GPT-45`. A comma counts like any other such mark, so
+ * `1,000` and `1000` read as different headlines: a missed merge shows a story twice, a wrong one hides a finding.
+ * (Marks around the digits with a space in between, as in `3 - 5`, are still dropped.)
+ */
 function headlineText(headline: string): string {
-  return headline.normalize('NFKC').toLowerCase().replace(/[\p{P}\s]/gu, '')
+  return headline
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/((?<=\p{Nd})\p{P}(?=\p{Nd}))|[\p{P}\s]/gu, (_, between: string | undefined) => between ?? '')
 }
 
 /**
