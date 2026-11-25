@@ -33,7 +33,7 @@ export interface TrackProductView {
 export interface TrackView {
   track: Track
   products: TrackProductView[]
-  /** Candidates of the track's latest batch that wait to be looked at (none once the user started tracking from it). */
+  /** Candidates of the track's latest batch that wait to be looked at (not those the user had seen when they started tracking from it; later ones count). */
   candidatesToReview: number
 }
 export interface StateView {
@@ -173,8 +173,14 @@ const isShown = (f: Finding) => f.status === 'verified' || f.status === 'unconfi
 const isActive = (r: Run) => r.status === 'queued' || r.status === 'running'
 /** Kinds of run that work on one product: what 「立即更新」 and a retry of them start, and wait for. */
 const PRODUCT_WORK = new Set<Run['kind']>(['baseline', 'daily', 'verify'])
-/** Settings key: the batch the user started tracking from, per track (its leftovers are not waiting to be looked at). */
-const reviewedKey = (trackId: Id) => `reviewedBatch:${trackId}`
+/**
+ * Settings key, per track: the candidates of the latest batch that the user had in front of them when they started tracking
+ * from it (`Reviewed`). The ones they passed over are not waiting to be looked at; those the batch's still-running round adds
+ * afterwards are, so starting early loses nothing. (A candidate found in the instant between the panel's last read and the
+ * click counts as seen: at most one polling interval of candidates.)
+ */
+const reviewedKey = (trackId: Id) => `reviewedCandidates:${trackId}`
+interface Reviewed { batchId: Id; candidateIds: Id[] }
 
 // ---- dimensions ----
 
@@ -258,9 +264,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   const candidatesToReview = (t: Track): number => {
     const batch = repo.latestBatchId(t.id)
     if (batch === null || t.status === 'archived') return 0
-    if (t.status === 'active' && repo.getSetting(reviewedKey(t.id)) === batch) return 0
+    const reviewed = t.status === 'active' ? repo.getSetting<Reviewed>(reviewedKey(t.id)) : undefined
+    const seen = new Set(reviewed?.batchId === batch ? reviewed.candidateIds : [])
     const linked = new Set(repo.productsOfTrack(t.id).map(p => p.id))
-    return repo.listCandidates(t.id, batch).filter(c => c.tier !== 'excluded' && !linked.has(c.productId)).length
+    return repo.listCandidates(t.id, batch).filter(c => c.tier !== 'excluded' && !linked.has(c.productId) && !seen.has(c.id)).length
   }
 
   /**
@@ -405,7 +412,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         for (const c of repo.listCandidates(t.id, batch)) repo.setCandidateSelected(c.id, picked.has(c.id))
       repo.updateTrack(t.id, { status: 'active' })
       const latest = repo.latestBatchId(t.id)
-      if (latest !== null && chosen.some(c => c.batchId === latest)) repo.setSetting(reviewedKey(t.id), latest)
+      if (latest !== null && chosen.some(c => c.batchId === latest)) {
+        const reviewed: Reviewed = { batchId: latest, candidateIds: repo.listCandidates(t.id, latest).map(c => c.id) }
+        repo.setSetting(reviewedKey(t.id), reviewed)
+      }
       // A product already tracked (in another track) only joins this one: the scheduler fills in the dimensions this track
       // adds before its next daily run. Starting a baseline beside that run would put two checks on one product.
       // A tracked one (or one in 建档中 for another track) that this track gives dimensions it lacks gets their cards at

@@ -153,6 +153,7 @@ const TEXT = {
   'pick.later': ['稍后再挑', 'Pick later'],
   'pick.start': ['开始跟踪 {count} 个', 'Track {count}'],
   'pick.starting': ['正在开始…', 'Starting…'],
+  'pick.early': ['推荐还在进行，之后找到的候选会放进「候选推荐」', 'The search is still running; what it finds later goes under “Suggestions”'],
 } as const satisfies Record<string, readonly [string, string]>
 export type OutpostKey = keyof typeof TEXT
 const language = (index: 0 | 1) => Object.fromEntries(Object.entries(TEXT).map(([key, pair]) => [key, pair[index]])) as Record<OutpostKey, string>

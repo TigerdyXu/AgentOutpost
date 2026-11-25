@@ -227,6 +227,19 @@ describe('step 2: picking products', () => {
     expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p-c1', tab: 'dossier' })
   })
 
+  it('tells, only while the round runs, that what is found after starting goes to 候选推荐', async () => {
+    const hint = '推荐还在进行，之后找到的候选会放进「候选推荐」'
+    await show(running([doubao, muse]))
+    expect(document.querySelector('.op-pick-early')?.textContent).toBe(hint)
+    // It sits in the footer, with the button that starts; starting is still possible.
+    expect(document.querySelector('.op-pick-foot')!.contains(document.querySelector('.op-pick-early'))).toBe(true)
+    expect(find('开始跟踪 2 个').hasAttribute('disabled')).toBe(false)
+    unmount()
+    await show(view([doubao, muse]))
+    expect(document.querySelector('.op-pick-early')).toBeNull()
+    expect(text()).not.toContain('候选推荐')
+  })
+
   it('says why starting failed and stays on the page', async () => {
     const { context } = await show(view(FIVE), {}, { 'POST tracks/:id/start': fail(400, '候选 c9 不是这个赛道的') })
     await click('开始跟踪 3 个')
@@ -475,6 +488,25 @@ describe('step 1: saying what to follow', () => {
     expect(context.navigate).toHaveBeenCalledWith({ page: 'newTrack', trackId: 't9' })
   })
 
+  it('takes a dimension that was typed but not added along with the form, instead of dropping it', async () => {
+    const api = stubApi({ 'GET state': state(), 'POST tracks': { trackId: 't9', batchId: 'b1' } })
+    await blank()
+    await type('input[name="name"]', 'Personal Agent')
+    await click('＋ 维度')
+    await type('input[name="dimension"]', ' 记忆 ')
+    await submit(form())
+    expect(api.requests.filter(r => r.method === 'POST').map(r => r.body)).toEqual([{ name: 'Personal Agent', brief: '', extraDimensions: ['记忆'] }])
+    unmount()
+    // One that is already there (or nothing at all) adds nothing, and does not stop the form.
+    const again = stubApi({ 'GET state': state(), 'POST tracks': { trackId: 't9', batchId: 'b1' } })
+    await blank()
+    await type('input[name="name"]', 'Personal Agent')
+    await click('＋ 维度')
+    await type('input[name="dimension"]', '体验')
+    await submit(form())
+    expect(again.requests.filter(r => r.method === 'POST').map(r => r.body)).toEqual([{ name: 'Personal Agent', brief: '', extraDimensions: [] }])
+  })
+
   it('says why the track could not be created and keeps what was typed', async () => {
     stubApi({ 'GET state': state(), 'POST tracks': fail(400, 'name must be at most 20 characters') })
     const context = await blank()
@@ -512,10 +544,17 @@ describe('step 1: saying what to follow', () => {
     ])
     expect(context.refresh).toHaveBeenCalled()
     expect(document.querySelector('.op-track-form')).toBeNull()
+    // A dimension typed in 改 but not added is saved too.
+    await click('改')
+    await click('＋ 维度')
+    await type('input[name="dimension"]', '隐私')
+    await click('保存')
+    expect(api.requests.filter(r => r.method === 'PATCH').at(-1)!.body).toEqual({ name: 'Personal Agent', brief: '个人代理', extraDimensions: ['记忆', '隐私'] })
+    expect(document.querySelector('.op-track-form')).toBeNull()
     // Leaving the edit untouched sends nothing.
     await click('改')
     await click('取消')
-    expect(api.requests.filter(r => r.method === 'PATCH')).toHaveLength(1)
+    expect(api.requests.filter(r => r.method === 'PATCH')).toHaveLength(2)
     expect(document.querySelector('.op-track-form')).toBeNull()
   })
 })

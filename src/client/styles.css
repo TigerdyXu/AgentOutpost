@@ -1432,6 +1432,15 @@ textarea.op-input {
   flex: 1 0 100%;
 }
 
+/* Starting before the round is over: where the later candidates will be. One line over the footer's row. */
+.op-pick-early {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .op-pick-count {
   font-weight: 650;
 }

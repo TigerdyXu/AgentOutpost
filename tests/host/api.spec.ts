@@ -505,6 +505,44 @@ describe('POST tracks/:id/start', () => {
     expect(ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().tracks.find(t => t.track.id === trackId)!.candidatesToReview).toBe(0)
   })
 
+  it('leaves what the batch finds after the user started tracking waiting to be looked at, not lost', async () => {
+    const later = gate()
+    const submit = (round: Parameters<Play>[0], name: string, tier: 'strong' | 'consider') => round.call('outpost_submit_candidate', {
+      name, company: `${name} Inc`, region: 'overseas', form: 'IDE', oneLiner: `${name} 是 AI 编辑器`, tier, reason: '热度高',
+      articles: [{ url: `https://example.com/${name}`, title: `${name} 发布`, publishedAt: '2026-11-20' }],
+    })
+    host.driver.script[RECOMMEND] = async round => {
+      await submit(round, 'Cursor', 'strong')
+      await submit(round, 'Zed', 'consider')
+      await later.promise
+      await submit(round, 'Windsurf', 'strong')
+      await round.done('推荐完了')
+      return completed()
+    }
+    const { trackId, batchId } = ok(await host.call('POST', 'tracks', { name: '编程 Agent', brief: '', extraDimensions: [] })).json<ApiResponse<'POST tracks'>>()
+    await vi.waitFor(() => { expect(repo.listCandidates(trackId)).toHaveLength(2) })
+    const waiting = async () => ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().tracks.find(t => t.track.id === trackId)!.candidatesToReview
+    expect(repo.getRun(batchId)!.status).toBe('running')
+    expect(await waiting()).toBe(2)
+
+    // The user picks Cursor from the two found so far, while the round goes on: Zed was seen and passed over.
+    const cursor = repo.listCandidates(trackId).find(c => repo.getProduct(c.productId)!.name === 'Cursor')!
+    ok(await host.call('POST', `tracks/${trackId}/start`, { candidateIds: [cursor.id] }))
+    expect(await waiting()).toBe(0)
+
+    // What it finds afterwards is new to the user: it waits under 「候选推荐」.
+    later.open()
+    await vi.waitFor(() => { expect(repo.getRun(batchId)!.status).toBe('done') })
+    expect(repo.listCandidates(trackId)).toHaveLength(3)
+    expect(await waiting()).toBe(1)
+    expect(repo.listCandidates(trackId).filter(c => c.selected).map(c => repo.getProduct(c.productId)!.name)).toEqual(['Cursor', 'Windsurf'])
+
+    // Starting again from that batch has everything in it seen.
+    const windsurf = repo.listCandidates(trackId).find(c => repo.getProduct(c.productId)!.name === 'Windsurf')!
+    ok(await host.call('POST', `tracks/${trackId}/start`, { candidateIds: [windsurf.id] }))
+    expect(await waiting()).toBe(0)
+  })
+
   it('fills in at once the dimensions a tracked product lacks when it joins a track that has them', async () => {
     const other = addTrack({ name: '老赛道' })
     addProduct('p0', 'Cursor', 'tracking', other.id)

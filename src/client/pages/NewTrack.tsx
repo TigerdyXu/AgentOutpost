@@ -89,17 +89,22 @@ function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSub
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
 
-  const addDimension = () => {
+  /** The custom labels with the draft added, unless it is empty, already there, or one too many. */
+  const withDraft = () => {
     const label = draft.trim()
     const known = new Set([...DEFAULT_LABELS, ...extra].map(sameLabel))
-    if (label && !known.has(sameLabel(label)) && extra.length < MAX_EXTRA_DIMENSIONS) setExtra([...extra, label])
+    return label && !known.has(sameLabel(label)) && extra.length < MAX_EXTRA_DIMENSIONS ? [...extra, label] : extra
+  }
+  const addDimension = () => {
+    setExtra(withDraft())
     setDraft('')
     setAdding(false)
   }
   const valid = name.trim() !== ''
+  // A label typed but not added yet goes along with the form: sending it must not drop it silently.
   const send = (event: FormEvent) => {
     event.preventDefault()
-    if (valid && !busy) onSubmit({ name: name.trim(), brief: brief.trim(), extra })
+    if (valid && !busy) onSubmit({ name: name.trim(), brief: brief.trim(), extra: withDraft() })
   }
 
   return <form className="op-track-form" onSubmit={send}>
@@ -440,6 +445,7 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
     <div className="op-pick-spacer" />
     <div className="op-pick-foot">
       {startProblem && <p className="op-pick-problem" role="alert">{startProblem}</p>}
+      {running && <p className="op-pick-early">{t('pick.early')}</p>}
       <span className="op-pick-count">{t('pick.selected', { count })}</span>
       {count > 0 && <span className="op-pick-cost">{cost}</span>}
       <span className="op-pick-actions">
