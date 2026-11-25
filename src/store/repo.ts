@@ -261,6 +261,8 @@ export class Repo {
 
   updateRun(id: Id, patch: Partial<Run>): void { this.patch(RUN, id, patch, RUN.props.filter(p => p !== 'id')) }
 
+  getRun(id: Id): Run | null { return this.get(RUN, id) ?? null }
+
   /** Runs dated `sinceDate` or later, newest first (the run log reads top-down). */
   listRuns(sinceDate: string): Run[] { return this.select(RUN, 'WHERE date >= ? ORDER BY rowid DESC', sinceDate) }
 

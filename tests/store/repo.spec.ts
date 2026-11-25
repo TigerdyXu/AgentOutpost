@@ -539,6 +539,14 @@ describe('Repo: briefs, runs, spending, settings', () => {
     expect(r).toEqual({ id: r.id, kind: 'daily', date: '2026-11-25', trackId: 't1', productId: 'p1', sessionId: null, status: 'queued', startedAt: null, endedAt: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null })
   })
 
+  it('getRun reads one run as it is now, or null', () => {
+    const repo = newRepo()
+    const r = repo.createRun({ kind: 'baseline', date: '2026-11-25', trackId: null, productId: 'p1' })
+    repo.updateRun(r.id, { status: 'running', progress: { done: 2, total: 6 } })
+    expect(repo.getRun(r.id)).toEqual({ ...r, status: 'running', progress: { done: 2, total: 6 } })
+    expect(repo.getRun('nope')).toBeNull()
+  })
+
   it('updateRun patches any field of a run, including usage and progress', () => {
     const repo = newRepo()
     const r = repo.createRun({ kind: 'baseline', date: '2026-11-25', trackId: null, productId: 'p1' })
