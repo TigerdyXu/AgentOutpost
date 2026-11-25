@@ -487,7 +487,12 @@ describe('the text of a card', () => {
     // The stylesheet lays the text out as it is written, and the gap as a block of its own.
     return import('../../src/client/styles.css?raw').then(({ default: css }) => {
       expect(css).toMatch(/\.op-dcard-text\s*\{[^}]*white-space:\s*pre-wrap/)
-      expect(css).toMatch(/\.op-para\s*\{[^}]*display:\s*block/)
+      const para = /\.op-para\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+      expect(para).toMatch(/display:\s*block/)
+      // A visible gap: a height, which `em` takes from the element's own font size, so that size may not be 0 (the gap would be 0px).
+      expect(para).toMatch(/height:\s*[\d.]+(em|px|rem)/)
+      if (/font-size:\s*0(?![.\d])/.test(para)) expect(para).not.toMatch(/height:[^;]*[\d.]em\b/)
+      expect(para).not.toMatch(/font-size:\s*0(?![.\d])/)
     })
   })
 })
@@ -663,6 +668,70 @@ describe('the ⋯ menu', () => {
     await act(async () => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
     expect(document.activeElement).not.toBe(first)
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
+  })
+})
+
+describe('the ⋯ menu, by keyboard', () => {
+  const more = () => find('更多操作')
+  const press = async (target: Element, key: string) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    await act(async () => { target.dispatchEvent(event) })
+    return event
+  }
+
+  it('leaves the arrow keys to the budget field, and walks the entries only from an entry', async () => {
+    await show()
+    await click(more())
+    await click(control('每日预算：不限'))
+    const input = document.querySelector<HTMLInputElement>('[role="menu"] input')!
+    input.focus()
+    for (const key of ['ArrowDown', 'ArrowUp']) {
+      const event = await press(input, key)
+      // Not taken by the menu: the browser's own step in a number field still happens, and the focus stays in it.
+      expect(event.defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(input)
+    }
+    // From an entry they do walk, and the key is taken.
+    const item = control('暂停跟踪')
+    item.focus()
+    const event = await press(item, 'ArrowDown')
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('takes Escape only while the menu is open', async () => {
+    await show()
+    const seen = vi.fn()
+    document.addEventListener('keydown', seen)
+    try {
+      // Closed: Escape on the button goes on to whoever listens above (it is not swallowed, nor does the button take focus).
+      more().focus()
+      await press(more(), 'Escape')
+      expect(seen).toHaveBeenCalledTimes(1)
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      // Open: the menu takes it and closes, and nobody above sees it.
+      await click(more())
+      seen.mockClear()
+      await press(document.activeElement!, 'Escape')
+      expect(seen).not.toHaveBeenCalled()
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      expect(document.activeElement).toBe(more())
+    } finally {
+      document.removeEventListener('keydown', seen)
+    }
+  })
+
+  it('puts the focus back on the budget entry after 取消', async () => {
+    await show()
+    await click(more())
+    await click(control('每日预算：不限'))
+    expect(document.querySelector('[role="menu"] input')).not.toBeNull()
+    await click('取消')
+    expect(document.querySelector('[role="menu"] input')).toBeNull()
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
+    expect(document.activeElement?.textContent).toBe('每日预算：不限')
+    // The menu is still open, and the entry can be opened again.
+    await click(document.activeElement!)
+    expect(document.querySelector('[role="menu"] input')).not.toBeNull()
   })
 })
 

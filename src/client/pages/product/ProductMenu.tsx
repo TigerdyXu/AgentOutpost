@@ -20,6 +20,8 @@ export function ProductMenu({ product, onChange }: { product: Product; onChange:
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const budgetItem = useRef<HTMLButtonElement>(null)
+  const backToItem = useRef(false)
   const [value, setValue] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -30,6 +32,10 @@ export function ProductMenu({ product, onChange }: { product: Product; onChange:
     setProblem(null)
     if (refocus) button.current?.focus()
   }
+  // Leaving the budget editor with 取消 puts the focus back on the entry that opened it.
+  useEffect(() => {
+    if (!editing && backToItem.current) { backToItem.current = false; budgetItem.current?.focus() }
+  }, [editing])
   const items = () => [...root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []]
 
   // Opening puts the focus on the first entry; a press anywhere else closes it.
@@ -43,8 +49,11 @@ export function ProductMenu({ product, onChange }: { product: Product; onChange:
   }, [open])
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.stopPropagation(); close(true); return }
+    // Only while the menu is open does Escape belong to it; closed, it goes on to whoever else wants it.
+    if (event.key === 'Escape') { if (open) { event.stopPropagation(); close(true) } return }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    // The arrows walk the entries; in the budget field they keep their own job (a step up or down).
+    if ((event.target as HTMLElement).getAttribute('role') !== 'menuitem') return
     const entries = items()
     if (entries.length === 0) return
     event.preventDefault()
@@ -82,7 +91,7 @@ export function ProductMenu({ product, onChange }: { product: Product; onChange:
     {open && <div className="op-menu-pop" id={menuId} role="menu" aria-label={t('product.more')}>
       {settled && <button type="button" role="menuitem" className="op-menu-item" disabled={busy}
         onClick={() => { void apply({ status: product.status === 'paused' ? 'tracking' : 'paused' }) }}>{t(product.status === 'paused' ? 'product.resume' : 'product.pause')}</button>}
-      {!editing && <button type="button" role="menuitem" className="op-menu-item"
+      {!editing && <button type="button" role="menuitem" className="op-menu-item" ref={budgetItem}
         onClick={() => { setValue(product.dailyBudgetYuan === null ? '' : String(product.dailyBudgetYuan)); setEditing(true) }}>{budget}</button>}
       {editing && <form className="op-menu-form" noValidate onSubmit={saveBudget}>
         <label className="op-menu-label">
@@ -92,7 +101,7 @@ export function ProductMenu({ product, onChange }: { product: Product; onChange:
         </label>
         <p className="op-menu-hint">{t('product.budgetHint')}</p>
         <div className="op-menu-actions">
-          <button type="button" className="op-button" data-size="small" onClick={() => { setEditing(false); setProblem(null) }}>{t('product.budgetCancel')}</button>
+          <button type="button" className="op-button" data-size="small" onClick={() => { backToItem.current = true; setEditing(false); setProblem(null) }}>{t('product.budgetCancel')}</button>
           <button type="submit" className="op-button" data-size="small" data-variant="primary" disabled={busy}>{t('product.budgetSave')}</button>
         </div>
       </form>}

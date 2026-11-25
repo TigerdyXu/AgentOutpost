@@ -1857,13 +1857,11 @@ textarea.op-input {
   white-space: pre-wrap;
 }
 
-/* The blank line between two paragraphs, as a gap of half a line. */
+/* The blank line between two paragraphs, as a gap of half a line: the block is clipped to that height, which `em` takes from the text's own size (never give this rule a font-size of 0, which would make the height 0). */
 .op-para {
   display: block;
   height: 0.55em;
   overflow: hidden;
-  font-size: 0;
-  line-height: 0;
 }
 
 /* Text the latest update added, while it is new. */
