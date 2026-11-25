@@ -6,35 +6,26 @@
  * A card that has been in the viewport and then leaves it counts as read (it fades); the panel then reads the state again,
  * so the middle column's 「n 条新」 and the sidebar count follow. Nothing is marked on rendering.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Brief, Finding, Id, Product, Source, Track } from '../../core/types.ts'
 import { call, describeError, usePoll } from '../api.ts'
 import type { T } from '../locales.ts'
-import { openKnownSession, SessionNavigationError } from '../navigation.ts'
-import { PROMOTED, UNOPENED, VERIFY_BUDGET } from '../notes.ts'
+import { PROMOTED, VERIFY_BUDGET } from '../notes.ts'
 import { useShell } from '../shell/context.ts'
+import { clockTime } from '../time.ts'
+import { FindingCard } from '../ui/FindingCard.tsx'
 import { ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
-import { SourceChip } from '../ui/SourceChip.tsx'
 import { Tag } from '../ui/Tag.tsx'
 
 /** How often an open page reads the brief again (a late finding, a brief written while it is open). */
 const POLL_MS = 5000
-
-const pad = (n: number) => String(n).padStart(2, '0')
 
 /** 「11月25日 · 周二」 for the local day `YYYY-MM-DD`. */
 function dayTitle(t: T, day: string): string {
   const [year = 0, month = 1, date = 1] = day.split('-').map(Number)
   const weekday = new Date(year, month - 1, date).getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6
   return t('today.date', { month, day: date, weekday: t(`weekday.${weekday}`) })
-}
-
-/** The time of day of an ISO instant on the reader's clock (`08:12`), or null for one that is no date. */
-function clockTime(iso: string): string | null {
-  const at = new Date(iso)
-  return Number.isNaN(at.getTime()) ? null : `${pad(at.getHours())}:${pad(at.getMinutes())}`
 }
 
 /**
@@ -57,102 +48,6 @@ function skippedNotes(t: T, skipped: Brief['skipped'], nameOf: (id: Id) => strin
     ...unchecked,
     ...failed,
   ]
-}
-
-/** Calls `onLeave` once the element has been in the viewport and then is not; never while `done`, nor where the browser has no observer. */
-function useLeaveViewport(ref: RefObject<Element | null>, done: boolean, onLeave: () => void): void {
-  const latest = useRef(onLeave)
-  latest.current = onLeave
-  useEffect(() => {
-    const element = ref.current
-    if (done || !element || typeof IntersectionObserver === 'undefined') return
-    let seen = false
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) seen = true
-        else if (seen) { observer.disconnect(); latest.current(); return }
-      }
-    })
-    observer.observe(element)
-    return () => { observer.disconnect() }
-  }, [ref, done])
-}
-
-interface CardProps {
-  finding: Finding
-  /** The day of the brief the card is in. */
-  day: string
-  product: Product
-  /** The track the product is in, when it is in one. */
-  trackName: string | undefined
-  sources: Source[]
-  /** Labels of the dimensions the finding changed, the first one first. */
-  changed: string[]
-  read: boolean
-  minor?: boolean
-  onRead: (id: Id) => void
-}
-
-function FindingCard({ finding, day, product, trackName, sources, changed, read, minor, onRead }: CardProps): ReactNode {
-  const { t, navigate, sessions } = useShell()
-  const card = useRef<HTMLElement>(null)
-  useLeaveViewport(card, read, () => { onRead(finding.id) })
-
-  const [asking, setAsking] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const opening = useRef<AbortController | null>(null)
-  useEffect(() => () => { opening.current?.abort() }, [])
-  /** 追问: the host starts the session; then it is opened in the workspace once DSH lists it. */
-  const ask = async () => {
-    setAsking(true)
-    setProblem(null)
-    const controller = new AbortController()
-    opening.current = controller
-    try {
-      const { sessionId } = await call('POST followup', { body: { findingId: finding.id } })
-      if (!sessions) throw new SessionNavigationError('not-ready')
-      await openKnownSession(sessions.catalog, sessionId as SessionId, sessions.open, controller.signal)
-    } catch (error) {
-      setProblem(error instanceof SessionNavigationError ? t(error.code === 'not-ready' ? 'today.sessionNotReady' : 'today.sessionNotListed')
-        : describeError(t, error instanceof Error ? error : new Error(String(error))))
-    } finally {
-      setAsking(false)
-    }
-  }
-
-  const promoted = finding.verifiedOn === day && finding.statusNote === PROMOTED
-  const unconfirmed = finding.status === 'unconfirmed'
-  // A chip that says 原文打不开 already tells it; the finding says it only when none does.
-  const sayUnopened = unconfirmed && finding.statusNote === UNOPENED && !sources.some(source => source.openedVia === 'unopened')
-  const plainNote = unconfirmed && finding.statusNote !== null && finding.statusNote !== UNOPENED ? finding.statusNote : null
-  return <article ref={card} className="op-card" data-read={read ? '' : undefined} data-minor={minor ? '' : undefined} data-importance={finding.importance}>
-    <div className="op-card-head">
-      <ProductIcon product={product} size={22} />
-      <span className="op-card-product">{product.name}</span>
-      {trackName && <span className="op-card-track">· {trackName}</span>}
-      {promoted && <Tag kind="promoted" />}
-      {finding.late && <Tag kind="late" />}
-      {finding.inference && <Tag kind="inference" />}
-      {(finding.importance === 'major' || finding.importance === 'notable') && <span className="op-card-level"><Tag kind={finding.importance} /></span>}
-    </div>
-    <h2 className="op-card-title">{finding.headline}</h2>
-    {finding.why.trim() && <p className="op-card-why"><span className="op-card-why-label">{t('today.why')}</span>{finding.why}</p>}
-    <div className="op-card-foot">
-      {sources.map(source => <SourceChip key={source.id} source={source} />)}
-      {unconfirmed && <span className="op-card-status">
-        <Tag kind="unconfirmed" />{sayUnopened && <Tag kind="unopened" />}{plainNote && <span className="op-card-note">{plainNote}</span>}
-      </span>}
-      {changed.length > 0 && <span className="op-card-changed">
-        {t('today.changed')}{changed.flatMap((label, i) => [i > 0 ? t('today.list') : '', <b key={label}>{label}</b>])}
-      </span>}
-      <span className="op-card-actions">
-        {changed.length > 0 && <button type="button" className="op-link"
-          onClick={() => { navigate({ page: 'product', productId: finding.productId, tab: 'dossier', expand: finding.dimensions[0]! }) }}>{t('today.look')}</button>}
-        <button type="button" className="op-link" disabled={asking} aria-busy={asking || undefined} onClick={() => { void ask() }}>{t('today.followup')}</button>
-      </span>
-    </div>
-    {problem && <p className="op-card-error" role="alert">{problem}</p>}
-  </article>
 }
 
 export function Today(): ReactNode {
@@ -233,8 +128,9 @@ export function Today(): ReactNode {
     const labels = new Map(tracks.flatMap(track => track.dimensions).map(dimension => [dimension.key, dimension.label] as const))
     // Only what the check verified went into the profile (design §8).
     const changed = finding.status === 'verified' ? finding.dimensions.map(key => labels.get(key) ?? key) : []
-    return <FindingCard key={finding.id} finding={finding} day={brief!.date} product={product} trackName={tracks[0]?.name}
+    return <FindingCard key={finding.id} finding={finding} product={product} trackName={tracks[0]?.name}
       sources={finding.sourceIds.flatMap(id => index.sources.get(id) ?? [])} changed={changed} read={finding.read || read.has(finding.id)}
+      promoted={finding.verifiedOn === brief!.date && finding.statusNote === PROMOTED}
       minor={isMinor} onRead={id => { void markRead(id) }} />
   }
 

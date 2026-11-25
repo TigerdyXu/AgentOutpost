@@ -11,6 +11,7 @@ import { call, usePoll } from '../api.ts'
 import type { T } from '../locales.ts'
 import { MenuIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { NewTrack } from '../pages/NewTrack.tsx'
+import { Product } from '../pages/Product.tsx'
 import { Today } from '../pages/Today.tsx'
 import { ShellContext, useShell, type SessionAccess, type Shell } from './context.ts'
 import { BUSY_POLL_MS, IDLE_POLL_MS, MiddleColumn } from './MiddleColumn.tsx'
@@ -20,7 +21,7 @@ import { useRoute, type Route } from './route.ts'
 const isBusy = (state: StateView | undefined, error: Error | undefined) => error !== undefined
   || !!state?.tracks.some(view => view.track.status === 'picking' || view.products.some(item => item.progress !== null))
 
-/** A page still to come (产品档案, 运行记录 and 设置 arrive with their own tasks): its title. */
+/** A page still to come (运行记录 and 设置 arrive with their own tasks): its title. */
 function Placeholder({ title }: { title: string }): ReactNode {
   return <div className="op-page"><h1 className="op-page-title">{title}</h1></div>
 }
@@ -42,10 +43,7 @@ function Page(): ReactNode {
   switch (route.page) {
     case 'today': return state && state.tracks.length === 0 ? <Welcome /> : <Today />
     case 'newTrack': return <NewTrack />
-    case 'product': {
-      const known = state?.tracks.flatMap(view => view.products).find(item => item.product.id === route.productId)
-      return <Placeholder title={known?.product.name ?? t('page.product')} />
-    }
+    case 'product': return <Product />
     case 'runs': return <Placeholder title={t('nav.runs')} />
     case 'settings': return <Placeholder title={t('nav.settings')} />
   }

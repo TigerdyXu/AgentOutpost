@@ -5,8 +5,8 @@
 import { act, type ComponentType, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { expect, vi } from 'vitest'
-import type { Brief, Finding, Product, Source, Track } from '../../src/core/types.ts'
-import type { Api, BriefView, StateView, TrackProductView, TrackView } from '../../src/host/api.ts'
+import type { Brief, CardVersion, Facts, Finding, Product, Run, Source, Track } from '../../src/core/types.ts'
+import type { Api, BriefView, ProductView, StateView, TrackProductView, TrackView } from '../../src/host/api.ts'
 import { zh, type T } from '../../src/client/locales.ts'
 import { ShellContext, type Shell } from '../../src/client/shell/context.ts'
 
@@ -145,6 +145,24 @@ export const brief = (extra: Partial<Brief> = {}): Brief => ({
 })
 /** `GET brief`'s answer: the brief, its findings, the products it names and the sources of the findings. */
 export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], prevDate: null, ...extra })
+
+/** A card of `dimension`, written at the baseline (version 1, nothing highlighted); `body` is the text, `[n]` citing `sourceIds[n - 1]`. */
+export const card = (productId: string, dimension: string, extra: Partial<CardVersion> = {}): CardVersion => ({
+  productId, dimension, version: 1, summary: `${dimension} 的一句话`, bullets: [`${dimension} 结论一`, `${dimension} 结论二`], body: `${dimension} 的全文。`,
+  sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-18T08:00:00.000Z', ...extra,
+})
+export const facts = (productId: string, extra: Partial<Facts> = {}): Facts => ({
+  productId, version: 1, form: 'App 内代理', platforms: '安卓 · iOS 内测', price: '免费', firstReleased: '2026-09', rivals: ['Meta Muse', '蚂蚁灵光'],
+  createdAt: '2026-11-18T08:00:00.000Z', ...extra,
+})
+/** `GET products/:id`'s answer: no card, no fact, no source and no progress until given. */
+export const productView = (p: Product, extra: Partial<ProductView> = {}): ProductView => ({
+  product: p, facts: null, cards: [], history: {}, sources: [], dimensions: [], progress: null, ...extra,
+})
+export const run = (id: string, productId: string | null, status: Run['status'], extra: Partial<Run> = {}): Run & { productName: string | null } => ({
+  id, kind: 'daily', date: '2026-11-25', trackId: null, productId, sessionId: null, status, startedAt: '2026-11-25T08:00:00.000Z', endedAt: null,
+  usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, productName: null, ...extra,
+})
 
 // ---- rendering ----
 

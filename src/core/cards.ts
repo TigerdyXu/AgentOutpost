@@ -1,8 +1,6 @@
 import { diffChars } from 'diff'
 import type { CardEdit, CardVersion, DimensionKey, Id, Span } from './types.ts'
 
-const FRESH_MS = 72 * 60 * 60 * 1000
-
 export type CardEditInput = Pick<CardEdit, 'summary' | 'bullets' | 'body' | 'sourceIds' | 'inferenceSpans' | 'changeNote' | 'findingIds'> & { productId: Id; dimension: DimensionKey }
 
 /**
@@ -43,11 +41,4 @@ export function applyCardEdit(prev: CardVersion | null, edit: CardEditInput, now
   }
 }
 
-/**
- * Whether the card's newest text is still highlighted as new: it was written no more than 72 hours ago (a full 72 hours
- * still counts). A stamp that cannot be read is not fresh; one slightly in the future (clock skew) is.
- */
-export function isFresh(card: CardVersion, now: Date): boolean {
-  const made = Date.parse(card.createdAt)
-  return !Number.isNaN(made) && now.getTime() - made <= FRESH_MS
-}
+export { isFresh } from './fresh.ts'

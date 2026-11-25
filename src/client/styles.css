@@ -1461,6 +1461,563 @@ textarea.op-input {
   }
 }
 
+/* ---- 产品档案 (mockup 4, option A): header, tabs, key facts, the cards, the open card, the feed, the sources ---- */
+
+.op-product {
+  display: flex;
+  flex-direction: column;
+}
+
+.op-phead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 14px;
+}
+
+.op-phead-titles {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.op-phead-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.op-phead-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+.op-status {
+  padding: 2px 9px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.op-status[data-status="tracking"] {
+  background: var(--dsw-alias-state-success-tertiary);
+  color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary));
+}
+
+.op-status[data-status="baselining"] {
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
+}
+
+.op-phead-meta {
+  margin: 3px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-phead-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.op-phead-error {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* The ⋯ menu: a small popover under its button. */
+.op-menu {
+  position: relative;
+}
+
+.op-menu-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 260px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-prominent);
+}
+
+.op-menu-item {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-menu-item:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.op-menu-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+}
+
+.op-menu-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.op-menu-hint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.op-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.op-menu-problem {
+  margin: 2px 6px 4px;
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Tabs: the open one in bold with a line under it; the counts after the names. */
+.op-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin-top: 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.op-tab[aria-selected="true"] {
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.op-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-tab-n {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-tabpanel {
+  min-width: 0;
+}
+
+/* Key facts: one row of equal cells that wraps on a narrow page; each cell draws the line on its own right and bottom, and the strip clips the outer ones. */
+.op-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 16px 0 0;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-fact {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 14px;
+  box-shadow: 0.5px 0.5px 0 0 var(--dsw-alias-border-l2);
+}
+
+.op-fact-k {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.op-fact-v {
+  margin: 2px 0 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.op-positioning {
+  margin: 14px 0 0;
+  font-size: max(17px, calc(var(--dsh-content-font-size) + 2px));
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* While the profile is being built: how far it is. */
+.op-baseline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 14px;
+}
+
+.op-baseline-bar {
+  flex: 0 1 320px;
+  min-width: 120px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-card-fill);
+}
+
+.op-baseline-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.op-baseline-text {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* The cards fill the width: as many columns as fit, none narrower than 300px. An open card takes the whole row. */
+.op-dgrid {
+  container: op-dossier / inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.op-dcard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+  scroll-margin-top: 16px;
+}
+
+.op-dcard > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.op-dcard[data-expanded] {
+  grid-column: 1 / -1;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.op-dcard[data-state="empty"] {
+  background: var(--dsw-alias-card-fill);
+}
+
+.op-dcard[data-state="baselining"] {
+  border-style: dashed;
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.op-dcard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.op-dcard-name {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.op-dcard-toggle {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-link);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.op-dcard-bullets {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+.op-dcard-bullets li {
+  margin: 2px 0;
+}
+
+.op-dcard-count {
+  margin: auto 0 0;
+  padding-top: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.op-dcard-placeholder {
+  margin: 10px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+/* Open: the text with its sources beside how the section changed. */
+.op-dcard-open {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 24px;
+  margin-top: 10px;
+}
+
+.op-dcard-main {
+  min-width: 0;
+}
+
+.op-dcard-text {
+  margin: 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* The blank line between two paragraphs, as a gap of half a line. */
+.op-para {
+  display: block;
+  height: 0.55em;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+}
+
+/* Text the latest update added, while it is new. */
+.op-added {
+  padding: 0 2px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: inherit;
+}
+
+.op-infer + .op-tag {
+  margin: 0 3px 0 5px;
+}
+
+.op-dcard-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.op-history {
+  min-width: 0;
+}
+
+.op-history-title {
+  margin: 0 0 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+}
+
+.op-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.op-history-item {
+  display: grid;
+  grid-template-columns: 44px 8px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.op-history-date {
+  padding-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every version a faded dot; the newest a solid one. */
+.op-history-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent);
+}
+
+.op-history-item[data-latest] .op-history-dot {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.op-history-note {
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.55;
+}
+
+@container op-dossier (max-width: 719px) {
+  .op-dcard-open {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+/* 动态: the brief's cards, and the findings that went unproven. */
+.op-feed .op-cards {
+  margin-top: 16px;
+}
+
+.op-card-unproven {
+  font-weight: 600;
+}
+
+/* 来源: a table that fills the width. */
+.op-sources-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-sources {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.5;
+}
+
+.op-sources th {
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.op-sources td {
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  vertical-align: top;
+}
+
+.op-sources tbody tr:first-child td {
+  border-top: 0;
+}
+
+.op-sources-title {
+  min-width: 260px;
+}
+
+.op-sources-title a {
+  margin-right: 8px;
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.op-sources-date,
+.op-sources-kind {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-sources-count {
+  display: block;
+  white-space: nowrap;
+}
+
+.op-sources-by {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
@@ -1503,9 +2060,19 @@ textarea.op-input {
     background: var(--dsw-alias-interactive-bg-hover);
   }
 
-  .op-link:not(:disabled):hover {
+  .op-link:not(:disabled):hover,
+  .op-dcard-toggle:hover,
+  .op-sources-title a:hover {
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+
+  .op-tab:not([aria-selected="true"]):hover {
+    color: var(--dsw-alias-label-primary);
+  }
+
+  .op-menu-item:not(:disabled):hover {
+    background: var(--dsw-alias-interactive-bg-hover);
   }
 
   .op-pick:not([data-picked], [data-tracked]):hover {
@@ -1530,6 +2097,10 @@ textarea.op-input {
 .op-filter button:focus-visible,
 .op-fold:focus-visible,
 .op-link:focus-visible,
+.op-tab:focus-visible,
+.op-dcard-toggle:focus-visible,
+.op-menu-item:focus-visible,
+.op-sources-title a:focus-visible,
 .op-chip-add:focus-visible,
 .op-chip-remove:focus-visible,
 .op-cite > a:focus-visible {
@@ -1549,7 +2120,9 @@ textarea.op-input {
 }
 
 /* A text link has no box to draw inside of. */
-.op-link:focus-visible {
+.op-link:focus-visible,
+.op-dcard-toggle:focus-visible,
+.op-sources-title a:focus-visible {
   border-radius: var(--dsw-radius-xs);
   outline-offset: 2px;
 }
