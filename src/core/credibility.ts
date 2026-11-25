@@ -1,3 +1,4 @@
+import { canonicalUrl } from './url.ts'
 import type { ClaimKind, FindingStatus, OpenedVia } from './types.ts'
 
 /** What one source contributed to one finding, as recorded by the verify step. */
@@ -15,21 +16,12 @@ export interface Verdict { status: FindingStatus; note: string | null; unconfirm
 /** How long an under-sourced finding stays 「待确认」 before it is 「未证实」 (spec §8). */
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
-/** Same page, whatever the scheme, `www.`, case, trailing slash, query or fragment: host + path. */
-function normalizeUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.hostname.toLowerCase().replace(/^www\./, '') + u.pathname.replace(/\/+$/, '')
-  } catch {
-    return url.trim().toLowerCase()
-  }
-}
-
 /**
  * Decides how far a finding can be trusted from the evidence its sources gave (spec §8):
  * - an official source speaking about its own product is enough on its own;
  * - anyone else's claim needs two independent sources, reposts of one press release counting once;
- * - a source that cannot be opened is not a false one: the finding waits as 「待确认」 with 「原文打不开」;
+ * - a source that cannot be opened is not a false one: the finding waits as 「待确认」 with 「原文打不开」 (neither plain
+ *   fetch nor browser opened it, and for a search snippet that does not match the quote the page is just as unseen);
  * - a source that was opened and does not hold the quote, or does not support the claim, is void, and a finding
  *   whose sources are all void is withdrawn.
  * A finding still short of that after 7 days from `firstSeen` is 「未证实」.
@@ -47,14 +39,17 @@ export function judge(input: { claimKind: ClaimKind; evidence: Evidence[]; first
     return { status: 'withdrawn', note: '引句在原文中找不到或不支持结论', unconfirmedUntil: null }
   }
 
-  const independent = new Set(valid.map((e) => e.syndicationGroup ?? normalizeUrl(e.url))).size
+  const independent = new Set(valid.map((e) => e.syndicationGroup ?? canonicalUrl(e.url))).size
   if (claimKind === 'self' && valid.some((e) => e.isOfficial)) return { status: 'verified', note: null, unconfirmedUntil: null }
   if (independent >= 2) return { status: 'verified', note: null, unconfirmedUntil: null }
+
+  // Unseen: never opened, or only a search snippet that did not match (spec §8.2).
+  const unseen = (e: Evidence) => e.openedVia === 'unopened' || (e.openedVia === 'snippet' && e.quoteFound !== true)
 
   const deadline = new Date(firstSeen.getTime() + WINDOW_MS)
   return {
     status: now.getTime() > deadline.getTime() ? 'unproven' : 'unconfirmed',
-    note: evidence.some((e) => e.openedVia === 'unopened') ? '原文打不开' : '只有一个来源',
+    note: evidence.some(unseen) ? '原文打不开' : '只有一个来源',
     unconfirmedUntil: deadline.toISOString(),
   }
 }

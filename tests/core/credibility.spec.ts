@@ -33,7 +33,7 @@ describe('judge', () => {
     expect(v.note).toBe('只有一个来源')
   })
 
-  it('counts the same page seen twice once, whatever the www, trailing slash, query or case', () => {
+  it('counts the same page seen twice once, whatever the www, trailing slash, tracking query, fragment or case', () => {
     const v = judge({
       claimKind: 'third-party',
       evidence: [
@@ -118,11 +118,42 @@ describe('judge', () => {
     expect(unopened.note).toBe('原文打不开')
   })
 
-  it('does not void a source that was never opened: a snippet that missed the quote just does not count', () => {
+  it('does not void a source that was never opened: a snippet that missed the quote is 原文打不开, not withdrawn', () => {
     // Only a page that was really opened (http or browser) can disprove a finding; a search snippet is a fragment.
-    const v = judge({ claimKind: 'self', evidence: [ev({ isOfficial: true, openedVia: 'snippet', quoteFound: false })], firstSeen: d0, now: d0 })
-    expect(v.status).toBe('unconfirmed')
-    expect(v.unconfirmedUntil).toBe(plusDays(d0, 7).toISOString())
+    for (const quoteFound of [false, null]) {
+      const v = judge({ claimKind: 'self', evidence: [ev({ isOfficial: true, openedVia: 'snippet', quoteFound })], firstSeen: d0, now: d0 })
+      expect(v).toEqual({ status: 'unconfirmed', note: '原文打不开', unconfirmedUntil: plusDays(d0, 7).toISOString() })
+    }
+    // After the 7 days it ages out like any other, keeping the reason.
+    const late = judge({ claimKind: 'self', evidence: [ev({ isOfficial: true, openedVia: 'snippet', quoteFound: false })], firstSeen: d0, now: plusDays(d0, 8) })
+    expect(late.status).toBe('unproven')
+    expect(late.note).toBe('原文打不开')
+    // A snippet that did match stays a confirmed source (see the snippet test above): no note, no wait.
+    expect(judge({ claimKind: 'self', evidence: [ev({ isOfficial: true, openedVia: 'snippet', quoteFound: true })], firstSeen: d0, now: d0 }).status).toBe('verified')
+  })
+
+  it('treats two confirmed WeChat articles from different accounts as two sources', () => {
+    const v = judge({
+      claimKind: 'third-party',
+      evidence: [
+        ev({ url: 'https://mp.weixin.qq.com/s?__biz=MzA1&mid=2650&idx=1&sn=aaa111&chksm=ee12&scene=21#wechat_redirect', openedVia: 'browser', quoteFound: true }),
+        ev({ url: 'https://mp.weixin.qq.com/s?__biz=MzB9&mid=2711&idx=1&sn=bbb222', openedVia: 'browser', quoteFound: true }),
+      ],
+      firstSeen: d0,
+      now: d0,
+    })
+    expect(v).toEqual({ status: 'verified', note: null, unconfirmedUntil: null })
+    // The same article reached by two share links is still one source.
+    const same = judge({
+      claimKind: 'third-party',
+      evidence: [
+        ev({ url: 'https://mp.weixin.qq.com/s?__biz=MzA1&mid=2650&idx=1&sn=aaa111', openedVia: 'browser', quoteFound: true }),
+        ev({ url: 'https://mp.weixin.qq.com/s?sn=aaa111&mid=2650&idx=1&__biz=MzA1&chksm=ee12&scene=21#wechat_redirect', openedVia: 'browser', quoteFound: true }),
+      ],
+      firstSeen: d0,
+      now: d0,
+    })
+    expect(same.status).toBe('unconfirmed')
   })
 
   it('withdraws a finding that has no source at all', () => {
