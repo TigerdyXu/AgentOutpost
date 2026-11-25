@@ -79,6 +79,31 @@ const recommends = (candidates: [string, 'strong' | 'consider' | 'excluded'][], 
   await round.done('推荐完了')
   return completed()
 }
+/** The dimension keys a baseline prompt asks for: its `- key：label` lines naming one of `known`. */
+const askedFor = (prompt: string, known: string[]) => [...prompt.matchAll(/^- ([\w-]+)：/gm)].map(m => m[1]!).filter(key => known.includes(key))
+/**
+ * A baseline agent that hands in a card for every dimension of `known` its prompt asks for, once `until` opens (or at
+ * once), and a checker that finds every quote: a baseline that ends with the product tracked.
+ */
+const baselines = (known: string[], until?: Promise<void>): Play => async round => {
+  await until
+  for (const dimension of askedFor(round.text, known)) {
+    await round.call('outpost_submit_card', {
+      dimension, summary: '面向开发者的 AI 编辑器', bullets: ['基于 VS Code'], body: '基于 VS Code 的编辑器[1]。',
+      sources: [{ url: 'https://windsurf.com/', title: 'Windsurf 官网', publisher: 'Windsurf', publishedAt: null, kind: 'official', isOfficial: true, quote: 'The AI IDE' }],
+    })
+  }
+  await round.done('建档完成')
+  return completed()
+}
+const checksAll: Play = async round => {
+  const pending = await round.call('outpost_read_pending') as Record<string, { sources: { sourceId: string; needsCheck: boolean }[] }[]>
+  for (const source of Object.values(pending).flat().flatMap(item => item.sources).filter(s => s.needsCheck))
+    await round.call('outpost_report_check', { sourceId: source.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true })
+  await round.done()
+  return completed()
+}
+
 /** A session that holds its round until `held` opens (or Outpost stops), then finishes. */
 const holds = (held: Promise<void>): Play => async round => {
   await Promise.race([held, new Promise(resolve => round.signal.addEventListener('abort', resolve))])
@@ -97,6 +122,20 @@ describe('routing', () => {
       expect(reply.status, `${method} ${path}`).toBe(404)
       expect(reply.json()).toEqual({ error: 'Unknown operation' })
     }
+  })
+
+  it('refuses a change not sent as JSON (415) and does nothing, while reads need no content type', async () => {
+    const reply = await host.call('POST', 'tracks', JSON.stringify({ name: 'AI 编程助手', brief: '', extraDimensions: [] }), { 'content-type': 'text/plain' })
+    expect(reply.status).toBe(415)
+    expect(reply.json()).toEqual({ error: '请求必须是 JSON' })
+    addProduct('p1', 'Cursor')
+    const finding = addFinding('p1')
+    expect((await host.call('POST', `findings/${finding.id}/read`, undefined, {})).status).toBe(415) // no body, no type: still refused
+    await flush()
+    expect(repo.listTracks()).toEqual([])
+    expect(repo.getFinding(finding.id)!.read).toBe(false)
+    expect(host.driver.runs).toEqual([])
+    expect(ok(await host.call('GET', 'state', undefined, {})).json()).toHaveProperty('tracks', [])
   })
 
   it('hands a param with an escaped slash to the route whole', async () => {
@@ -318,6 +357,32 @@ describe('PATCH tracks/:id', () => {
     expect(prompt).not.toContain('- audience：目标人群')
     await flush()
     expect(host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE))).toHaveLength(1) // not the paused one, not Zed
+  })
+
+  it('fills in a dimension added while a product is still in 建档中, once its baseline is over', async () => {
+    const held = gate()
+    host.driver.script[RECOMMEND] = recommends([['Windsurf', 'strong']])
+    const known = [...DEFAULT_DIMENSIONS.map(d => d.key), slugDimension('社区')]
+    host.driver.script[BASELINE] = baselines(known, held.promise)
+    host.driver.script['outpost-verify-'] = checksAll
+    const id = await create([])
+    await vi.waitFor(() => { expect(repo.listCandidates(id)).toHaveLength(1) })
+    ok(await host.call('POST', `tracks/${id}/start`, { candidateIds: repo.listCandidates(id).map(c => c.id) }))
+    const windsurf = repo.listCandidates(id)[0]!.productId
+    await vi.waitFor(() => { expect(host.driver.runs.map(r => r.title)).toEqual(['前哨 · 推荐 AI 编程助手', '前哨 · Windsurf 建档']) })
+
+    ok(await host.call('PATCH', `tracks/${id}`, { extraDimensions: ['社区'] })) // while its baseline (of the six) still runs
+    await flush()
+    const baselineRuns = () => host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE))
+    expect(baselineRuns()).toHaveLength(1) // nothing beside it
+
+    held.open()
+    await vi.waitFor(() => { expect(baselineRuns()).toHaveLength(2) })
+    const asked = (n: number) => askedFor(baselineRuns()[n]!.prompt, known)
+    expect(asked(0)).toEqual(DEFAULT_DIMENSIONS.map(d => d.key))
+    expect(asked(1)).toEqual([slugDimension('社区')]) // only the new one
+    await vi.waitFor(() => { expect(repo.latestCards(windsurf).map(c => c.dimension)).toContain(slugDimension('社区')) })
+    expect(repo.getProduct(windsurf)!.status).toBe('tracking')
   })
 
   it('refuses an unknown track and fields over their limits', async () => {
@@ -696,6 +761,19 @@ describe('runs', () => {
     expect(repo.getRun(runId)).toMatchObject({ kind: 'synthesize', date: TODAY })
     expect(runId).not.toBe(failed.id)
     await vi.waitFor(() => { expect(repo.getBrief(TODAY)!.gist).toBe('Cursor 的后台 Agent 正式上线。') })
+  })
+
+  it('retries a failed summary of some days ago by writing that day\'s brief again, answering with the new run', async () => {
+    const day = '2026-11-22' // three days ago: listed by GET runs, older than yesterday
+    addProduct('p1', 'Cursor')
+    const finding = addFinding('p1', {}, day)
+    putBrief(day, [finding.id], { gist: 'Cursor：后台 Agent 正式上线' })
+    const failed = addRun('synthesize', { status: 'failed', error: 'HTTP 503' }, day)
+    host.complete.mockResolvedValueOnce({ text: 'Cursor 的后台 Agent 正式上线。', usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0 } })
+    const { runId } = ok(await host.call('POST', `runs/${failed.id}/retry`)).json<ApiResponse<'POST runs/:id/retry'>>()
+    expect(runId).not.toBe(failed.id)
+    expect(repo.getRun(runId)).toMatchObject({ kind: 'synthesize', date: day })
+    await vi.waitFor(() => { expect(repo.getBrief(day)!.gist).toBe('Cursor 的后台 Agent 正式上线。') })
   })
 
   it('refuses a run that did not fail, a follow-up chat, and an unknown run', async () => {

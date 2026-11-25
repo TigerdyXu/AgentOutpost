@@ -231,6 +231,11 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   /** The newest baseline of the product that still runs: its progress is what 建档中 shows. */
   const progressOf = (productId: Id, active: Run[]) => active.find(r => r.productId === productId && r.kind === 'baseline')?.progress ?? null
   const recommending = (trackId: Id) => { const run = repo.latestRun('recommend', { trackId }); return run !== null && isActive(run) }
+  /**
+   * Tracked, or in 建档中: what a new dimension is filled in for at once (a baseline running for a product in 建档中 was
+   * asked for the dimensions it knew when it started; `topUpNow` asks for the rest once it is over).
+   */
+  const isWorkedOn = (p: Product) => p.status === 'tracking' || p.status === 'baselining'
   /** Whether the product has no card yet for one of `keys`. */
   const lacksCard = (productId: Id, keys: DimensionKey[]) => {
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
@@ -259,10 +264,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   /**
    * Calls `start` and answers with the first run matching `match` that did not exist before, looking again on each of the
    * next few turns of the event loop (the jobs create their run before their first wait, but some only after a short
-   * chain of steps); null if none turns up.
+   * chain of steps); null if none turns up. Runs dated before `since` (default: yesterday) are not looked at, so work
+   * counted toward an earlier day (a brief's summary is dated with the brief) must say so.
    */
-  const startedRun = async (match: (r: Run) => boolean, start: () => void): Promise<Id | null> => {
-    const since = shiftDate(rt.today(), -1)
+  const startedRun = async (match: (r: Run) => boolean, start: () => void, since = shiftDate(rt.today(), -1)): Promise<Id | null> => {
     const before = new Set(repo.listRuns(since).filter(match).map(r => r.id))
     start()
     for (let turn = 0; turn < 50; turn++) {
@@ -355,7 +360,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const had = new Set(current.dimensions.map(d => d.key))
       const added = updated.dimensions.filter(d => !had.has(d.key)).map(d => d.key)
       if (added.length) {
-        const lacking = repo.productsOfTrack(current.id).filter(p => p.status === 'tracking' && lacksCard(p.id, added)).map(p => p.id)
+        const lacking = repo.productsOfTrack(current.id).filter(p => isWorkedOn(p) && lacksCard(p.id, added)).map(p => p.id)
         if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products of track ${current.id}`)
       }
       return updated
@@ -400,8 +405,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       if (latest !== null && chosen.some(c => c.batchId === latest)) repo.setSetting(reviewedKey(t.id), latest)
       // A product already tracked (in another track) only joins this one: the scheduler fills in the dimensions this track
       // adds before its next daily run. Starting a baseline beside that run would put two checks on one product.
-      // A tracked one that this track gives dimensions it lacks gets their cards at once (Ruling 25), through the same
-      // path, which waits for its daily run if one is in flight.
+      // A tracked one (or one in 建档中 for another track) that this track gives dimensions it lacks gets their cards at
+      // once (Ruling 25), through the same path, which waits for its daily run or its baseline if one is in flight.
       const fresh: Id[] = []
       const lacking: Id[] = []
       const linked = new Set(repo.productsOfTrack(t.id).map(p => p.id))
@@ -411,7 +416,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
         repo.linkProduct(t.id, p.id)
         if (p.status === 'candidate' || p.status === 'archived') fresh.push(p.id)
-        else if (p.status === 'tracking' && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.push(p.id)
+        else if (isWorkedOn(p) && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.push(p.id)
       }
       rt.background(rt.scheduler.baseline(fresh), `baseline of the products of track ${t.id}`)
       if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products joining track ${t.id}`)
@@ -508,8 +513,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         }
         case 'synthesize': {
           // The model is asked only when the day has something to sum up; with nothing, the brief is rewritten all the same.
+          const yesterday = shiftDate(rt.today(), -1)
           const runId = await startedRun(r => r.kind === 'synthesize' && r.date === run.date,
-            () => { rt.background(rt.scheduler.rewriteBrief(run.date), `brief of ${run.date}`) })
+            () => { rt.background(rt.scheduler.rewriteBrief(run.date), `brief of ${run.date}`) },
+            run.date < yesterday ? run.date : yesterday) // its new run is dated with the brief, days ago perhaps
           return { runId: runId ?? run.id }
         }
         case 'followup':

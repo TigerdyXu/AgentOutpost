@@ -752,11 +752,44 @@ describe('Scheduler: top-ups the user asked for', () => {
     expect(dailyIds().filter(id => id === 'p2')).toEqual(['p2', 'p2'])
   })
 
-  it('leaves a product alone when it misses no card or is not tracked', async () => {
-    addProduct('p4', 'Zed', 'baselining', false)
+  it('leaves a product alone when it misses no card, or is neither tracked nor in 建档中', async () => {
     addProduct('p5', 'Cline Pro', 'paused', false)
-    await scheduler.topUpNow(['p1', 'p4', 'p5'])
+    await scheduler.topUpNow(['p1', 'p5'])
     expect(calls.rebaseline).toEqual([])
+  })
+
+  it('joins the baseline of a product in 建档中 that the top-ups do not know of, then fills in what it was not asked for', async () => {
+    addProduct('p4', 'Zed', 'baselining', false)
+    const first = gate()
+    const inFlight = new Map<Id, Promise<void>>() // as baselineProducts: a second request for a product joins the first
+    deps.rebaseline = ids => {
+      const id = ids[0]!
+      const running = inFlight.get(id)
+      if (running) return running
+      calls.rebaseline.push(ids)
+      events.push(`rebaseline ${id}`)
+      const work = (async () => {
+        if (calls.rebaseline.length === 1) await first.promise
+        // Zed's baseline fills in 定位, the one dimension known when it started, and Zed is tracked from then on.
+        if (!repo.latestCards(id).length) repo.addCardVersion({ productId: id, dimension: 'positioning', version: 1, summary: '编辑器', bullets: ['快'], body: '编辑器[1]', sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-25T00:00:00.000Z' })
+        repo.setProductStatus(id, 'tracking')
+        events.push(`rebaseline ${id} over`)
+      })().finally(() => { inFlight.delete(id) })
+      inFlight.set(id, work)
+      return work
+    }
+    scheduler = new Scheduler(deps)
+    const stuck = scheduler.runProductNow('p4') // 立即更新 of a product in 建档中: its baseline, outside the top-ups
+    await flush()
+    repo.updateTrack(trackId, { dimensions: [{ key: 'positioning', label: '定位' }, { key: 'community', label: '社区' }] }) // the user adds 社区
+    const forced = scheduler.topUpNow(['p4'])
+    await flush()
+    expect(calls.rebaseline).toEqual([['p4']]) // joined, not a second one beside it
+
+    first.open()
+    await Promise.all([stuck, forced])
+    expect(calls.rebaseline).toEqual([['p4'], ['p4']]) // 社区 asked for after the first one
+    expect(events.filter(e => e.startsWith('rebaseline p4'))).toEqual(['rebaseline p4', 'rebaseline p4 over', 'rebaseline p4', 'rebaseline p4 over'])
   })
 
   it('never runs beside a daily run in flight: it starts once that run is over', async () => {

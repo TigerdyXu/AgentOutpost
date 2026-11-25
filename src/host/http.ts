@@ -49,6 +49,21 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   catch { throw new ApiError(400, 'The request body is not JSON') }
 }
 
+/** Methods that only read: everything else changes something and must come as JSON. */
+const READS = new Set(['GET', 'HEAD', 'OPTIONS'])
+/** What a change is refused with when it is not sent as JSON. */
+export const NOT_JSON = '请求必须是 JSON'
+
+/**
+ * Whether the request says its body is JSON (`application/json`, any parameters, any case). A cross-site form or a
+ * plain cross-origin fetch can only send form or text types without the browser asking the server first, so requiring
+ * this keeps another web page from changing anything here, on top of the host's authentication.
+ */
+function sentAsJson(req: IncomingMessage): boolean {
+  const type = req.headers['content-type']
+  return typeof type === 'string' && type.split(';')[0]!.trim().toLowerCase() === 'application/json'
+}
+
 /** Response headers as superagent sends them (`src/app/http.ts:72-74`). */
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
@@ -95,9 +110,11 @@ export function matchRoute(pattern: string, path: string): Record<string, string
 }
 
 /**
- * Register the `/outpost` prefix route. Paths outside `/outpost/api/` answer 404; every API request goes to `handle`, whose
- * result is the response: JSON, or a `RawReply` sent as it is. A failure nobody expected is logged with its stack through
- * `ctx.logger` and answered with `INTERNAL_ERROR`. Authentication is the Web server's default, `required`.
+ * Register the `/outpost` prefix route. Paths outside `/outpost/api/` answer 404; a request that changes something (any
+ * method but GET, HEAD and OPTIONS) without `content-type: application/json` answers 415 `NOT_JSON`, unread. Every other
+ * API request goes to `handle`, whose result is the response: JSON, or a `RawReply` sent as it is. A failure nobody
+ * expected is logged with its stack through `ctx.logger` and answered with `INTERNAL_ERROR`. Authentication is the Web
+ * server's default, `required`.
  * @param ctx - the plugin's Context.
  * @param handle - answers one request, called with `<METHOD> <path>` and the request's parts.
  * @returns the disposer removing the route.
@@ -112,6 +129,7 @@ export function registerRoutes(ctx: Context, handle: (route: string, req: ApiReq
       ctx.logger.error('dsh-outpost: %s %s failed: %s', method, path, error instanceof Error ? error.stack ?? error.message : String(error))
     }
     try {
+      if (!READS.has(method) && !sentAsJson(req)) throw new ApiError(415, NOT_JSON) // before anything is read or done
       const parts: ApiRequestParts = { method, path, params: {}, query: Object.fromEntries(url.searchParams), body: () => readBody(req) }
       const value = await handle(`${method} ${path}`, parts)
       if (value instanceof RawReply) {

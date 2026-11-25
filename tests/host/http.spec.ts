@@ -17,8 +17,10 @@ function host() {
   return { ctx, routes, logger }
 }
 /** Call a captured route handler as the Web server would, with an incoming request carrying `body`. */
-async function request(route: Route, method: string, url: string, body?: string | Buffer) {
-  const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(body)]), { method, url, headers: {} })
+/** A change (anything but GET) is sent as the panel sends it, `content-type: application/json`, unless `headers` say otherwise. */
+async function request(route: Route, method: string, url: string, body?: string | Buffer, headers?: Record<string, string>) {
+  const sentHeaders = headers ?? (method === 'GET' ? {} : { 'content-type': 'application/json' })
+  const req = Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(body)]), { method, url, headers: sentHeaders })
   const sent = { status: 0, headers: {} as Record<string, string>, body: '' as string | Buffer, heads: 0 }
   const res = {
     writeHead: (status: number, headers: Record<string, string> = {}) => { sent.status = status; sent.headers = headers; sent.heads++; return res },
@@ -159,4 +161,27 @@ it('sends a raw reply with its own headers', async () => {
   expect(answer.status).toBe(200)
   expect(answer.headers).toEqual({ 'content-type': 'image/png', 'cache-control': 'max-age=86400', 'x-content-type-options': 'nosniff' })
   expect(Buffer.compare(answer.body as Buffer, bytes)).toBe(0)
+})
+
+it('refuses a change that is not sent as JSON, before it reaches the handler or its body is read', async () => {
+  const { ctx, routes } = host()
+  const handle = vi.fn(async (_route: string, req: ApiRequestParts) => ({ got: (await req.body()) ?? null }))
+  registerRoutes(ctx as never, handle)
+  const route = routes[0]!
+  // What a cross-site form or a plain fetch can send without asking first: refused.
+  for (const [method, headers] of [
+    ['POST', { 'content-type': 'text/plain' }], ['POST', { 'content-type': 'application/x-www-form-urlencoded' }],
+    ['POST', { 'content-type': 'multipart/form-data; boundary=x' }], ['POST', {}], ['PATCH', { 'content-type': 'text/plain;charset=UTF-8' }],
+    ['DELETE', {}], ['PUT', { 'content-type': 'application/jsonx' }],
+  ] as const) {
+    const answer = await request(route, method, '/outpost/api/tracks', '{"name":"x"}', headers)
+    expect(answer.status, `${method} ${JSON.stringify(headers)}`).toBe(415)
+    expect(answer.json()).toEqual({ error: '请求必须是 JSON' })
+  }
+  expect(handle).not.toHaveBeenCalled()
+  // JSON with any charset or case is fine, and a read needs no content type at all.
+  for (const type of ['application/json', 'application/json; charset=utf-8', 'Application/JSON;charset=UTF-8'])
+    expect((await request(route, 'POST', '/outpost/api/tracks', '{"name":"x"}', { 'content-type': type })).json(), type).toEqual({ got: { name: 'x' } })
+  expect((await request(route, 'GET', '/outpost/api/state')).status).toBe(200)
+  expect(handle).toHaveBeenCalledTimes(4)
 })

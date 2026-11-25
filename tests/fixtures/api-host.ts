@@ -47,12 +47,16 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   /** A runtime on this host (not started). */
   const create = () => new Runtime(ctx as never, config, { driver, model: { complete }, clock: clock.clock, icons })
 
-  /** Sends `METHOD /outpost/api/<path>` with an optional JSON body (a string is sent as is). */
-  async function call(method: string, path: string, body?: unknown): Promise<Reply> {
+  /**
+   * Sends `METHOD /outpost/api/<path>` with an optional JSON body (a string is sent as is). A change (anything but GET) is
+   * sent with `content-type: application/json`, as the panel sends it, unless `headers` say otherwise.
+   */
+  async function call(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Reply> {
     const route = routes[0]
     if (!route) throw new Error('no route registered')
     const raw = body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]
-    const req = Object.assign(Readable.from(raw), { method, url: `/outpost/api/${path}`, headers: {} })
+    const sentHeaders = headers ?? (method === 'GET' ? {} : { 'content-type': 'application/json' })
+    const req = Object.assign(Readable.from(raw), { method, url: `/outpost/api/${path}`, headers: sentHeaders })
     const sent = { status: 0, headers: {} as Record<string, string>, body: Buffer.alloc(0) }
     const res = {
       writeHead: (status: number, headers: Record<string, string> = {}) => { sent.status = status; sent.headers = headers; return res },

@@ -172,8 +172,9 @@ export class Scheduler {
    * throttles automatic retries, not what the user asks for; the window itself is left as it was, so the next day's
    * automatic top-up still counts this one. Like any top-up it never runs beside the product's daily run (it starts once
    * that is over) and never beside another baseline of it: one in flight, asked for before the new dimension, is waited
-   * for, and what it did not fill in is asked for after it. A product not tracked, or missing no card, is left alone.
-   * Resolves once each is over; never rejects.
+   * for, and what it did not fill in is asked for after it. A product in 建档中 has its baseline joined (`rebaseline`
+   * joins the one running, wherever it was started, or starts one) and is topped up after it the same way, once tracked.
+   * A product neither tracked nor in 建档中, or missing no card, is left alone. Resolves once each is over; never rejects.
    */
   topUpNow(productIds: Id[]): Promise<void> {
     return Promise.all([...new Set(productIds)].map(id => this.forcedTopUp(id))).then(() => {})
@@ -319,10 +320,19 @@ export class Scheduler {
 
   /** `topUpNow` of one product. */
   private forcedTopUp(productId: Id): Promise<void> {
+    if (this.stopped) return Promise.resolve()
     const due = () => !this.stopped && this.deps.repo.getProduct(productId)?.status === 'tracking' && this.missesCard(productId)
+    // After a baseline it waited for: one started meanwhile (by the day, say) was asked for the dimensions as they are
+    // now, so it joins that one; otherwise it asks for what is still missing.
+    const then = () => this.topUps.get(productId) ?? (due() ? this.startBaseline(productId, this.busy.get(productId)) : undefined)
     const running = this.topUps.get(productId)
-    // One started after it (by the day, say) was asked for the dimensions as they are now: join that one instead.
-    if (running) return running.then(() => this.topUps.get(productId) ?? (due() ? this.startBaseline(productId, this.busy.get(productId)) : undefined))
+    if (running) return running.then(then)
+    if (this.deps.repo.getProduct(productId)?.status === 'baselining') {
+      // Its baseline may have been started outside the top-ups (the day's stuck products, 「立即更新」): join it there.
+      return this.deps.rebaseline([productId])
+        .catch(error => { this.log(`baseline of product ${productId} failed: ${messageOf(error)}`) })
+        .then(then)
+    }
     return due() ? this.startBaseline(productId, this.busy.get(productId)) : Promise.resolve()
   }
 
