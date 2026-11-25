@@ -486,7 +486,13 @@ describe('outpost_read', () => {
     expect(r.product).toEqual({ name: 'Cursor', company: 'Anysphere', region: 'overseas', form: 'IDE', officialDomains: ['cursor.com'] })
     expect(r.dimensions).toEqual([{ key: 'positioning', label: '定位' }, { key: 'pricing', label: '价格' }])
     expect(r.facts).toEqual(facts)
-    expect(r.cards).toEqual([{ dimension: 'pricing', summary: '新摘要', bullets: ['新一', '新二'] }])
+    expect(r.cards).toEqual([{
+      dimension: 'pricing', summary: '新摘要', bullets: ['新一', '新二'], body: '新[1]',
+      sources: [ // in citation order, with what a proposed edit needs to cite them again
+        { url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q' },
+        { url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q' },
+      ],
+    }])
     expect(r.recentFindings).toEqual([
       { headline: '今天的发现', status: 'unconfirmed', createdAt: time.toISOString() },
       { headline: '三天前的发现', status: 'verified', createdAt: new Date(time.getTime() - 3 * DAY_MS).toISOString() },

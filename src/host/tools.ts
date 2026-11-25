@@ -236,7 +236,7 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       }),
 
     tool('outpost_read',
-      '读取这个产品现有的资料：基本信息、维度、关键事实、各维度档案卡片的摘要和要点、近 14 天已经提交过的发现（标题、状态、时间）、已经引用过的网址。开工前先读一遍：已经报告过的消息不要再提交，哪怕换了说法；已经引用过的网址不要当新来源。无参数。',
+      '读取这个产品现有的资料：基本信息、维度、关键事实、各维度档案卡片（摘要、要点、正文 body 和它引用的 sources，body 里的 [n] 指 sources 里的第 n 个）、近 14 天已经提交过的发现（标题、状态、时间）、已经引用过的网址。开工前先读一遍：已经报告过的消息不要再提交，哪怕换了说法；已经引用过的网址不要当新来源。无参数。',
       NoArguments, () => {
         const productId = needProduct()
         const product = repo.getProduct(productId) ?? reject('找不到这个产品')
@@ -248,7 +248,11 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
           product: { name: product.name, company: product.company, region: product.region, form: product.form, officialDomains: product.officialDomains },
           dimensions: repo.dimensionsOfProduct(productId),
           facts: facts && { form: facts.form, platforms: facts.platforms, price: facts.price, firstReleased: facts.firstReleased, rivals: facts.rivals },
-          cards: cards.map(c => ({ dimension: c.dimension, summary: c.summary, bullets: c.bullets })),
+          // The whole card, so that a proposed edit can start from its text and keep its citations.
+          cards: cards.map(c => ({
+            dimension: c.dimension, summary: c.summary, bullets: c.bullets, body: c.body,
+            sources: repo.getSources(c.sourceIds).map(s => ({ url: s.url, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, kind: s.kind, isOfficial: s.isOfficial, quote: s.quote })),
+          })),
           recentFindings: recent.map(f => ({ headline: f.headline, status: f.status, createdAt: f.createdAt })),
           knownUrls: distinctUrls(known.map(s => s.url)),
         }

@@ -13,8 +13,18 @@ export interface Evidence {
 
 export interface Verdict { status: FindingStatus; note: string | null; unconfirmedUntil: string | null }
 
-/** How long an under-sourced finding stays 「待确认」 before it is 「未证实」 (spec §8). */
-const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/** How many days an under-sourced finding stays 「待确认」 before it is 「未证实」 (spec §8). */
+export const UNCONFIRMED_WINDOW_DAYS = 7
+const WINDOW_MS = UNCONFIRMED_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+/** What the check found on one source. */
+type Seen = Pick<Evidence, 'openedVia' | 'quoteFound' | 'supportsClaim'>
+
+/** Void: really opened (not just a search snippet), and the page does not hold the quote or does not back the claim. */
+export const isVoidEvidence = (e: Seen): boolean => (e.openedVia === 'http' || e.openedVia === 'browser') && (e.quoteFound === false || e.supportsClaim === false)
+
+/** Valid: the quote was matched (on the page, or in a search snippet when the page would not open) and nothing says it fails the claim. */
+export const isValidEvidence = (e: Seen): boolean => e.quoteFound === true && e.supportsClaim !== false
 
 /**
  * Decides how far a finding can be trusted from the evidence its sources gave (spec §8):
@@ -29,13 +39,10 @@ const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 export function judge(input: { claimKind: ClaimKind; evidence: Evidence[]; firstSeen: Date; now: Date }): Verdict {
   const { claimKind, evidence, firstSeen, now } = input
 
-  // Void: really opened (not just a search snippet) and the page does not back the finding.
-  const isVoid = (e: Evidence) => (e.openedVia === 'http' || e.openedVia === 'browser') && (e.quoteFound === false || e.supportsClaim === false)
-  // Valid: the quote was matched (on the page, or in a search snippet when the page would not open) and nothing says it fails the claim.
-  const valid = evidence.filter((e) => e.quoteFound === true && e.supportsClaim !== false)
+  const valid = evidence.filter(isValidEvidence)
 
   // With no source at all there is nothing to hold on to: spec §8.1 says a claim without one is not taken in.
-  if (evidence.length === 0 || evidence.every(isVoid)) {
+  if (evidence.length === 0 || evidence.every(isVoidEvidence)) {
     return { status: 'withdrawn', note: '引句在原文中找不到或不支持结论', unconfirmedUntil: null }
   }
 
