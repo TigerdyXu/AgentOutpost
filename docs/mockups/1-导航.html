@@ -1,0 +1,214 @@
+<style>
+.oq *{box-sizing:border-box}
+.oq{--ink:rgb(15,17,21);--ink2:rgb(70,74,80);--line:rgba(0,0,0,.09);--blue:rgb(65,118,230);--blue-bg:rgb(237,243,254);--side:rgb(245,246,247)}
+.oq .win{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 10px 32px rgba(0,0,0,.08);margin-top:12px;text-align:left}
+.oq .tb{height:34px;background:var(--side);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:.5px solid var(--line)}
+.oq .tb .d{width:12px;height:12px;border-radius:50%}
+.oq .tb .w{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .bd{display:flex;height:600px}
+.oq svg.i{width:18px;height:18px;flex-shrink:0}
+/* dsh sidebar */
+.oq .dsh{width:212px;background:var(--side);border-right:.5px solid var(--line);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px;flex-shrink:0}
+.oq .brand{font-weight:600;padding:2px 8px 10px;display:flex;gap:8px;align-items:center}
+.oq .fish{width:20px;height:20px;border-radius:6px;background:var(--blue);display:inline-block}
+.oq .newb{background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:7px 10px;margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.oq .pr{display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;height:32px;color:rgb(53,54,56)}
+.oq .pr.on{background:rgba(0,0,0,.065);color:var(--ink);font-weight:600}
+.oq .badge{margin-left:auto;background:var(--blue);color:#fff;font-size:11px;font-weight:600;border-radius:9px;padding:1px 6px;line-height:16px}
+.oq .ws{margin-top:14px;font-size:12.5px;color:var(--ink2);padding:4px 8px;font-weight:600}
+.oq .sr{padding:6px 8px;border-radius:8px;font-size:13.5px;color:rgb(53,54,56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oq .dfoot{margin-top:auto;display:flex;gap:9px;align-items:center;padding:6px 8px;color:rgb(53,54,56)}
+/* outpost rail (option A) */
+.oq .rail{width:70px;border-right:.5px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;flex-shrink:0}
+.oq .ri{width:56px;padding:8px 0 6px;border-radius:10px;text-align:center;font-size:12px;color:rgb(53,54,56);position:relative;display:flex;flex-direction:column;align-items:center;gap:3px}
+.oq .ri.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .ri .rb{position:absolute;top:4px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--blue)}
+.oq .ri.last{margin-top:auto}
+/* middle column */
+.oq .mid{width:248px;border-right:.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:1px;font-size:14px;flex-shrink:0;background:#fff}
+.oq .mh{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-weight:700;font-size:16px}
+.oq .mbtn{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:7px;padding:4px 9px}
+.oq .gh{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink2);padding:12px 8px 4px}
+.oq .gh .n{margin-left:auto;font-weight:500}
+.oq .it{display:flex;align-items:center;gap:9px;padding:0 8px 0 10px;height:34px;border-radius:8px;color:var(--ink)}
+.oq .it.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .it .n{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .it.on .n{color:var(--blue)}
+.oq .nd{width:7px;height:7px;border-radius:50%;background:var(--blue);margin-left:auto}
+.oq .lg{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.oq .sep{height:.5px;background:var(--line);margin:10px 8px}
+.oq .mfoot{margin-top:auto}
+.oq .sub{color:var(--ink2)}
+/* content */
+.oq .main{flex:1;overflow:hidden;padding:22px 30px;min-width:0}
+.oq .oh{display:flex;align-items:flex-start;gap:14px}
+.oq .oh .lg{width:44px;height:44px;border-radius:12px;font-size:18px}
+.oq .oh h4{font-size:22px;font-weight:700;margin:0;display:flex;align-items:center;gap:10px;line-height:1.3}
+.oq .chip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgb(230,245,236);color:rgb(20,120,66)}
+.oq .meta{font-size:13px;color:var(--ink2);margin-top:3px}
+.oq .pos{font-size:15px;margin-top:6px}
+.oq .acts{margin-left:auto;display:flex;gap:8px;flex-shrink:0}
+.oq .btn{font-size:13px;padding:6px 12px;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.18);background:#fff;font-weight:500;white-space:nowrap}
+.oq .btn.pri{background:var(--ink);color:#fff;box-shadow:none}
+.oq .tabs{display:flex;gap:24px;border-bottom:.5px solid rgba(0,0,0,.12);margin-top:18px;font-size:14.5px}
+.oq .tab{padding:8px 0;color:var(--ink2)}
+.oq .tab.on{color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--ink)}
+.oq .tab .c{font-size:11px;background:var(--blue);color:#fff;border-radius:8px;padding:0 5px;margin-left:4px}
+.oq .doc{display:flex;gap:28px;margin-top:18px}
+.oq .toc{width:104px;font-size:13px;color:var(--ink2);display:flex;flex-direction:column;gap:9px;flex-shrink:0;padding-top:2px}
+.oq .toc .on{color:var(--ink);font-weight:600}
+.oq .toc .u::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--blue);margin-left:6px;vertical-align:middle}
+.oq .sec h5{font-size:16px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.oq .sec p{font-size:15px;line-height:1.75;margin:0 0 16px;color:var(--ink)}
+.oq sup.ref{color:var(--blue);font-size:11px;font-weight:600}
+.oq .upd{font-size:11.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:6px;padding:1px 7px}
+.oq mark.add{background:rgb(222,234,253);color:inherit;border-radius:3px;padding:0 2px}
+.oq .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.oq .tag{font-size:13px;padding:3px 10px;border-radius:14px;box-shadow:0 0 0 .5px rgba(0,0,0,.16)}
+.oq .note{font-size:12px;color:var(--ink2);margin-top:8px}
+.oq .opt-desc{font-size:14px;line-height:1.7;margin:4px 0 0}
+.oq .opt-desc b{font-weight:600}
+</style>
+
+<div class="oq">
+<h2>前哨装进 DeepSeek Harness 之后，导航怎么排？</h2>
+<p class="subtitle">两个方案都沿用你习惯的「左 · 中 · 右」。点选你更喜欢的那个，再在终端里说说感觉。<br>
+配色直接用 dsh 自己的：白底、DeepSeek 蓝、近黑字，装进去跟桌面版是一体的（我的决定，可改）。图里的产品内容都是<b>示例文字</b>，不是真实调研。</p>
+
+<div class="options">
+
+<!-- ============ A ============ -->
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content">
+<h3>三栏：前哨自带一级菜单</h3>
+<p class="opt-desc">dsh 侧栏旁边，前哨再放一条自己的图标栏（哨报 · 赛道 · 专题 · 运行 · 设置），然后才是子菜单和内容。<br>
+<b>好处：</b>和 RepoRadar 一模一样，五个一级入口一直看得见。<b>代价：</b>屏幕上实际是四栏，内容区窄一截；dsh 侧栏不收起时会显得挤。</p>
+
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据</span></div>
+ <div class="bd">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新会话</div>
+   <div class="pr"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>自动化任务</div>
+   <div class="pr on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="badge">3</span></div>
+   <div class="ws">Test1</div>
+   <div class="sr">前哨 · 豆包·小豆 日更</div>
+   <div class="sr">前哨 · Meta Muse 日更</div>
+   <div class="sr">InfoCapture 摘要重构</div>
+   <div class="dfoot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="rail">
+   <div class="ri"><span class="rb"></span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7M7 16h4"/></svg>哨报</div>
+   <div class="ri on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>赛道</div>
+   <div class="ri"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/></svg>专题</div>
+   <div class="ri"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>运行</div>
+   <div class="ri last"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="mid">
+   <div class="mh">赛道<span class="mbtn">＋ 新赛道</span></div>
+   <div class="gh">Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览</div>
+   <div class="it sub">对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="nd"></span></div>
+   <div class="it on"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots</div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+   <div class="it sub">候选推荐<span class="n">3 条待看</span></div>
+   <div class="gh">AI 眼镜<span class="n">4</span></div>
+  </div>
+  <div class="main">
+   <div class="oh">
+    <span class="lg" style="background:#3c6cf5">豆</span>
+    <div><h4>豆包·小豆 <span class="chip">跟踪中</span></h4>
+     <div class="meta">字节跳动 · 11-18 建档 · 今天 08:12 更新 · 今日 2 条新动态</div></div>
+    <div class="acts"><span class="btn">⋯</span><span class="btn pri">立即更新</span></div>
+   </div>
+   <div class="tabs"><span class="tab on">档案</span><span class="tab">动态<span class="c">2</span></span><span class="tab">专题</span><span class="tab">来源 38</span></div>
+   <div class="doc">
+    <div class="toc"><span class="on u">定位</span><span>目标人群</span><span>价值场景</span><span>体验</span><span>关键技术</span><span>商业化</span></div>
+    <div class="sec">
+     <h5>定位 <span class="upd">今天改过</span></h5>
+     <p>【示例】住在豆包 App 里的个人代理：记住你的习惯，替你跨 App 跑腿。<mark class="add">11-25 起对全部安卓用户开放，不再需要邀请码。</mark><sup class="ref">[3]</sup></p>
+     <h5>目标人群</h5>
+     <div class="tags"><span class="tag">豆包重度用户</span><span class="tag">一二线上班族</span><span class="tag">高频出行 / 购物</span></div>
+     <h5>价值场景</h5>
+     <p>【示例】出差订票改签、跨平台比价下单、整理群聊里的待办。<sup class="ref">[1][5]</sup></p>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+<!-- ============ B ============ -->
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content">
+<h3>两栏：dsh 侧栏就是一级菜单（我推荐）</h3>
+<p class="opt-desc">点 dsh 侧栏里的「前哨」进来，中栏从上到下：<b>今日哨报</b> → 各赛道和它的产品 → 运行记录 / 设置。<br>
+<b>好处：</b>少一栏，内容区宽出一截；进出方式和 dsh 里其他面板（自动化任务、Superagent）完全一样，侧栏上的「3」一眼就知道今天有新东西。<b>代价：</b>赛道多了中栏会变长，靠「每个赛道可折叠」解决。</p>
+
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据</span></div>
+ <div class="bd">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新会话</div>
+   <div class="pr"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>自动化任务</div>
+   <div class="pr on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="badge">3</span></div>
+   <div class="ws">Test1</div>
+   <div class="sr">前哨 · 豆包·小豆 日更</div>
+   <div class="sr">前哨 · Meta Muse 日更</div>
+   <div class="sr">InfoCapture 摘要重构</div>
+   <div class="dfoot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="mid">
+   <div class="mh"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7M7 16h4"/></svg>今日哨报<span class="n" style="color:var(--blue);font-weight:600">3 条新</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="nd"></span></div>
+   <div class="it on"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots</div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+   <div class="it sub">候选推荐<span class="n">3 条待看</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>AI 眼镜<span class="n">4</span></div>
+   <div class="mfoot">
+    <div class="sep"></div>
+    <div class="it sub"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>运行记录<span class="n">今天 ¥4.2</span></div>
+    <div class="it sub"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+   </div>
+  </div>
+  <div class="main">
+   <div class="oh">
+    <span class="lg" style="background:#3c6cf5">豆</span>
+    <div><h4>豆包·小豆 <span class="chip">跟踪中</span></h4>
+     <div class="meta">字节跳动 · 11-18 建档 · 今天 08:12 更新 · 今日 2 条新动态</div></div>
+    <div class="acts"><span class="btn">⋯</span><span class="btn pri">立即更新</span></div>
+   </div>
+   <div class="tabs"><span class="tab on">档案</span><span class="tab">动态<span class="c">2</span></span><span class="tab">专题</span><span class="tab">来源 38</span></div>
+   <div class="doc">
+    <div class="toc"><span class="on u">定位</span><span>目标人群</span><span>价值场景</span><span>体验</span><span>关键技术</span><span>商业化</span></div>
+    <div class="sec">
+     <h5>定位 <span class="upd">今天改过</span></h5>
+     <p>【示例】住在豆包 App 里的个人代理：记住你的习惯，替你跨 App 跑腿。<mark class="add">11-25 起对全部安卓用户开放，不再需要邀请码。</mark><sup class="ref">[3]</sup></p>
+     <h5>目标人群</h5>
+     <div class="tags"><span class="tag">豆包重度用户</span><span class="tag">一二线上班族</span><span class="tag">高频出行 / 购物</span></div>
+     <h5>价值场景</h5>
+     <p>【示例】出差订票改签、跨平台比价下单、整理群聊里的待办。<sup class="ref">[1][5]</sup></p>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+</div>
+<p class="note">两个方案右栏完全一样（产品档案页），只比导航。档案页、今日哨报、选赛道/推荐流程的样子，下一步单独给你挑。</p>
+</div>

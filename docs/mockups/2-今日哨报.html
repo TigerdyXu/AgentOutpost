@@ -1,0 +1,239 @@
+<style>
+.oq *{box-sizing:border-box}
+.oq{--ink:rgb(15,17,21);--ink2:rgb(70,74,80);--line:rgba(0,0,0,.09);--blue:rgb(65,118,230);--blue-bg:rgb(237,243,254);--side:rgb(245,246,247)}
+.oq .win{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 10px 32px rgba(0,0,0,.08);margin-top:12px;text-align:left}
+.oq .tb{height:34px;background:var(--side);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:.5px solid var(--line)}
+.oq .tb .d{width:12px;height:12px;border-radius:50%}
+.oq .tb .w{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .bd{display:flex;height:900px}
+.oq svg.i{width:18px;height:18px;flex-shrink:0}
+.oq .dsh{width:200px;background:var(--side);border-right:.5px solid var(--line);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px;flex-shrink:0}
+.oq .brand{font-weight:600;padding:2px 8px 10px;display:flex;gap:8px;align-items:center}
+.oq .fish{width:20px;height:20px;border-radius:6px;background:var(--blue);display:inline-block}
+.oq .newb{background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:7px 10px;margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.oq .pr{display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;height:32px;color:rgb(53,54,56)}
+.oq .pr.on{background:rgba(0,0,0,.065);color:var(--ink);font-weight:600}
+.oq .badge{margin-left:auto;background:var(--blue);color:#fff;font-size:11px;font-weight:600;border-radius:9px;padding:1px 6px;line-height:16px}
+.oq .ws{margin-top:14px;font-size:12.5px;color:var(--ink2);padding:4px 8px;font-weight:600}
+.oq .sr{padding:6px 8px;border-radius:8px;font-size:13.5px;color:rgb(53,54,56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oq .dfoot{margin-top:auto;display:flex;gap:9px;align-items:center;padding:6px 8px;color:rgb(53,54,56)}
+.oq .mid{width:244px;border-right:.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:1px;font-size:14px;flex-shrink:0;background:#fff}
+.oq .mh{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-weight:700;font-size:16px}
+.oq .mbtn{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:7px;padding:4px 9px}
+.oq .gh{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink2);padding:12px 8px 4px}
+.oq .gh .n{margin-left:auto;font-weight:500}
+.oq .it{display:flex;align-items:center;gap:9px;padding:0 8px 0 10px;height:34px;border-radius:8px;color:var(--ink)}
+.oq .it.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .it .n{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .it.on .n{color:var(--blue)}
+.oq .nd{width:7px;height:7px;border-radius:50%;background:var(--blue);margin-left:auto}
+.oq .lg{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.oq .sep{height:.5px;background:var(--line);margin:10px 8px}
+.oq .mfoot{margin-top:auto}
+.oq .sub{color:var(--ink2)}
+.oq .main{flex:1;overflow:hidden;padding:24px 34px;min-width:0}
+.oq .col{max-width:760px;margin:0 auto}
+/* today page */
+.oq .dayh{display:flex;align-items:flex-end;gap:12px}
+.oq .dayh h4{font-size:24px;font-weight:700;margin:0;line-height:1.2}
+.oq .dayh .meta{font-size:13px;color:var(--ink2);margin-top:5px}
+.oq .nav{margin-left:auto;display:flex;gap:6px;align-items:center}
+.oq .btn{font-size:13px;padding:6px 11px;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.18);background:#fff;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.oq .gist{margin-top:16px;background:var(--blue-bg);border-radius:12px;padding:13px 16px;font-size:15px;line-height:1.7}
+.oq .gist b{color:var(--blue)}
+.oq .chips{display:flex;gap:6px;margin:16px 0 4px}
+.oq .fc{font-size:13px;padding:4px 11px;border-radius:15px;box-shadow:0 0 0 .5px rgba(0,0,0,.16);color:var(--ink2)}
+.oq .fc.on{background:var(--ink);color:#fff;box-shadow:none;font-weight:600}
+.oq .card{border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.13);padding:15px 18px;background:#fff;margin-top:12px}
+.oq .card.read{opacity:.62}
+.oq .ch{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2)}
+.oq .ch .pn{font-weight:600;color:var(--ink)}
+.oq .lvl{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:auto}
+.oq .lvl.hi{background:rgb(255,238,230);color:rgb(196,72,20)}
+.oq .lvl.md{background:var(--blue-bg);color:var(--blue)}
+.oq .hl{font-size:16.5px;font-weight:650;margin:8px 0 4px;line-height:1.5}
+.oq .why{font-size:15px;line-height:1.7;color:rgb(45,48,54)}
+.oq .why i{font-style:normal;font-weight:600;color:var(--ink)}
+.oq .cf{display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap}
+.oq .src{font-size:12.5px;padding:2px 9px;border-radius:12px;background:var(--side);color:var(--ink2)}
+.oq .act{margin-left:auto;display:flex;gap:14px;font-size:13.5px;font-weight:600;color:var(--blue)}
+.oq .act span{display:inline-flex;align-items:center;gap:4px}
+.oq .chg{font-size:12.5px;color:var(--ink2)}
+.oq .chg b{color:var(--ink);font-weight:600}
+.oq .quiet{margin-top:14px;font-size:14px;color:var(--ink2);display:flex;align-items:center;gap:8px}
+.oq .quiet .lg{opacity:.75}
+.oq .fold{margin-top:12px;font-size:14px;color:var(--ink2);padding:11px 16px;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.13);display:flex;align-items:center;gap:8px}
+/* grouped (B) */
+.oq .pg{margin-top:16px;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.13);overflow:hidden}
+.oq .pgh{display:flex;align-items:center;gap:9px;padding:12px 16px;font-size:15px;font-weight:650;background:#fff;border-bottom:.5px solid var(--line)}
+.oq .pgh .open{margin-left:auto;font-size:13px;font-weight:600;color:var(--blue)}
+.oq .row{display:flex;gap:12px;padding:12px 16px;border-bottom:.5px solid var(--line);align-items:flex-start}
+.oq .row:last-child{border-bottom:0}
+.oq .dot{width:8px;height:8px;border-radius:50%;margin-top:8px;flex-shrink:0}
+.oq .row .t{font-size:15.5px;font-weight:600;line-height:1.5}
+.oq .row .w2{font-size:14.5px;line-height:1.65;color:rgb(45,48,54);margin-top:2px}
+.oq .row .s{font-size:12.5px;color:var(--ink2);margin-top:6px}
+.oq .opt-desc{font-size:14px;line-height:1.7;margin:4px 0 0}
+.oq .opt-desc b{font-weight:600}
+.oq .note{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.7}
+.oq .ix{margin-top:28px;background:#fff;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);padding:16px 20px;font-size:14.5px;line-height:1.8;color:var(--ink)}
+.oq .ix h3{font-size:16px;margin-bottom:6px}
+.oq .ix ul{margin:0;padding-left:20px}
+</style>
+
+<div class="oq">
+<h2>今日哨报：每天打开前哨第一眼看到的页面</h2>
+<p class="subtitle">两种排法，内容相同（3 条值得看 + 2 条小更新 + 2 个产品今天没动静）。点选你更喜欢的，在终端说感觉。图里产品动态都是<b>示例</b>，不是真实调研。</p>
+
+<div class="options">
+
+<!-- ============ A ============ -->
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content">
+<h3>按重要程度排成一条（我推荐）</h3>
+<p class="opt-desc">顶上一句话总结今天，下面一张卡一件事，最重要的在最上面；小更新折叠成一行，没动静的产品只在末尾点个名。<br>
+<b>好处：</b>30 秒扫完，先看最该看的。<b>代价：</b>想看「某个产品今天怎么样」要用上面的赛道筛选或进产品页。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新会话</div>
+   <div class="pr"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>自动化任务</div>
+   <div class="pr on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="badge">3</span></div>
+   <div class="ws">Test1</div>
+   <div class="sr">追问 · 豆包·小豆 全量开放</div>
+   <div class="sr">前哨 · 豆包·小豆 日更</div>
+   <div class="sr">前哨 · Meta Muse 日更</div>
+   <div class="dfoot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="mid">
+   <div class="mh"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7M7 16h4"/></svg>今日哨报<span class="n">3 条新</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+   <div class="it sub">候选推荐<span class="n">3 条待看</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>AI 眼镜<span class="n">4</span></div>
+   <div class="mfoot"><div class="sep"></div>
+    <div class="it sub"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>运行记录<span class="n">今天 ¥4.2</span></div>
+    <div class="it sub"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+   </div>
+  </div>
+  <div class="main"><div class="col">
+   <div class="dayh"><div><h4>11月25日 · 周二</h4><div class="meta">08:12 跑完 · 9 个产品 · 3 条值得看 · 每条都过了核查</div></div>
+    <div class="nav"><span class="btn">‹ 昨天</span><span class="btn">全部已读</span></div></div>
+   <div class="gist">今天的主线是<b>「从内测走向全量」</b>：豆包·小豆对全部安卓用户开放，Meta Muse 开放第三方技能接入；OpenAI Dots 的更新日志里第一次出现记忆导出。</div>
+   <div class="chips"><span class="fc on">全部 3</span><span class="fc">Personal Agent 3</span><span class="fc">AI 眼镜 0</span></div>
+
+   <div class="card">
+    <div class="ch"><span class="lg" style="background:#3c6cf5">豆</span><span class="pn">豆包·小豆</span>· Personal Agent<span class="lvl hi">重要</span></div>
+    <div class="hl">对全部安卓用户开放，不再需要邀请码</div>
+    <div class="why"><i>为什么值得注意：</i>跨 App 代办从内测转全量，说明成功率过了他们自己的门槛；接下来看 iOS 跟进节奏和第三方 App 的配合度。</div>
+    <div class="cf"><span class="src">官方公众号</span><span class="src">应用商店更新日志</span><span class="src">36氪</span><span class="chg">改了档案：<b>定位</b>、<b>商业化</b></span>
+     <span class="act"><span>看改动 →</span><span>追问</span></span></div>
+   </div>
+
+   <div class="card">
+    <div class="ch"><span class="lg" style="background:#0866ff">M</span><span class="pn">Meta Muse</span>· Personal Agent<span class="lvl hi">重要</span></div>
+    <div class="hl">开放第三方技能接入，首批 12 家合作方</div>
+    <div class="why"><i>为什么值得注意：</i>从「自己做全部能力」转向平台化，和豆包·小豆的「自己跑腿」路线分开了，对比矩阵里「生态开放度」一栏已更新。</div>
+    <div class="cf"><span class="src">Meta 开发者博客</span><span class="src">The Verge</span><span class="chg">改了档案：<b>关键技术</b></span>
+     <span class="act"><span>看改动 →</span><span>追问</span></span></div>
+   </div>
+
+   <div class="card">
+    <div class="ch"><span class="lg" style="background:#111">D</span><span class="pn">OpenAI Dots</span>· Personal Agent<span class="lvl md">值得留意</span></div>
+    <div class="hl">iOS 版更新日志出现「导出记忆」</div>
+    <div class="why"><i>为什么值得注意：</i>记忆可迁移是用户锁定的反面，信号很弱但方向值得盯；暂未写进档案，等第二个来源。</div>
+    <div class="cf"><span class="src">App Store 更新日志</span><span class="chg">只有 1 个来源，<b>待确认</b></span>
+     <span class="act"><span>追问</span></span></div>
+   </div>
+
+   <div class="fold"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>另有 2 条小更新（文案调整、修 bug），点开看</div>
+   <div class="quiet">今天没动静：<span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光 <span class="lg" style="background:#444">G</span>Grok Bots</div>
+  </div></div>
+ </div>
+</div>
+</div>
+</div>
+
+<!-- ============ B ============ -->
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content">
+<h3>按产品分组</h3>
+<p class="opt-desc">同样的一句话总结，下面每个产品一块，块里列它今天的变化；没动静的产品合成一行。<br>
+<b>好处：</b>按产品对号入座，很整齐。<b>代价：</b>重要的事可能排在第三块里，得自己扫一遍才知道今天最该看什么。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd" style="height:780px">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新会话</div>
+   <div class="pr"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>自动化任务</div>
+   <div class="pr on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="badge">3</span></div>
+   <div class="ws">Test1</div>
+   <div class="sr">前哨 · 豆包·小豆 日更</div>
+   <div class="sr">前哨 · Meta Muse 日更</div>
+   <div class="dfoot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="mid">
+   <div class="mh"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7M7 16h4"/></svg>今日哨报<span class="n">3 条新</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+   <div class="it sub">候选推荐<span class="n">3 条待看</span></div>
+   <div class="mfoot"><div class="sep"></div>
+    <div class="it sub">运行记录<span class="n">今天 ¥4.2</span></div>
+    <div class="it sub">设置</div>
+   </div>
+  </div>
+  <div class="main"><div class="col">
+   <div class="dayh"><div><h4>11月25日 · 周二</h4><div class="meta">08:12 跑完 · 9 个产品 · 3 条值得看</div></div>
+    <div class="nav"><span class="btn">‹ 昨天</span><span class="btn">全部已读</span></div></div>
+   <div class="gist">今天的主线是<b>「从内测走向全量」</b>：豆包·小豆对全部安卓用户开放，Meta Muse 开放第三方技能接入。</div>
+
+   <div class="pg">
+    <div class="pgh"><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="open">打开档案 →</span></div>
+    <div class="row"><span class="dot" style="background:rgb(226,96,40)"></span><div><div class="t">开放第三方技能接入，首批 12 家合作方</div><div class="w2">从自己做全部能力转向平台化，和豆包·小豆的路线分开了。</div><div class="s">Meta 开发者博客 · The Verge · 改了档案：关键技术</div></div></div>
+   </div>
+   <div class="pg">
+    <div class="pgh"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="open">打开档案 →</span></div>
+    <div class="row"><span class="dot" style="background:rgb(226,96,40)"></span><div><div class="t">对全部安卓用户开放，不再需要邀请码</div><div class="w2">跨 App 代办从内测转全量；接下来看 iOS 跟进节奏。</div><div class="s">官方公众号 · 36氪 · 改了档案：定位、商业化</div></div></div>
+    <div class="row"><span class="dot" style="background:rgb(173,178,184)"></span><div><div class="t" style="font-weight:500">设置页文案调整</div></div></div>
+   </div>
+   <div class="pg">
+    <div class="pgh"><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="open">打开档案 →</span></div>
+    <div class="row"><span class="dot" style="background:var(--blue)"></span><div><div class="t">iOS 版更新日志出现「导出记忆」</div><div class="w2">信号弱但方向值得盯；只有 1 个来源，待确认。</div><div class="s">App Store 更新日志</div></div></div>
+   </div>
+   <div class="quiet">今天没动静：<span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光 <span class="lg" style="background:#444">G</span>Grok Bots</div>
+  </div></div>
+ </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="ix">
+<h3>两种排法共用的交互（我的提议，可改）</h3>
+<ul>
+<li><b>看改动 →</b>：跳到这个产品的档案，直接滚到被改的那一段，新加的字用浅蓝底标出来。</li>
+<li><b>追问</b>：新开一个 dsh 会话，把这条动态和这个产品的档案一起带进去，你直接接着问（左边会话列表里会出现「追问 · …」）。</li>
+<li><b>已读</b>：滚过去就算读过，卡片变淡；dsh 侧栏「前哨」上的数字随之减少，清零就不再显示。</li>
+<li><b>只有一个来源的</b>：标「待确认」，不写进档案；等第二个独立来源出现才算数。</li>
+<li><b>‹ 昨天</b>：往回翻每天的哨报；没动静的日子只有一行「今天没有值得看的变化」。</li>
+</ul>
+</div>
+</div>

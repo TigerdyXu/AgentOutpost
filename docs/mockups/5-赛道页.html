@@ -1,0 +1,216 @@
+<style>
+.oq *{box-sizing:border-box}
+.oq{--ink:rgb(15,17,21);--ink2:rgb(70,74,80);--line:rgba(0,0,0,.09);--blue:rgb(65,118,230);--blue-bg:rgb(237,243,254);--side:rgb(245,246,247)}
+.oq .win{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 10px 32px rgba(0,0,0,.08);margin-top:12px;text-align:left}
+.oq .win p{color:var(--ink)}
+.oq .tb{height:34px;background:var(--side);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:.5px solid var(--line)}
+.oq .tb .d{width:12px;height:12px;border-radius:50%}
+.oq .tb .w{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .bd{display:flex;height:900px}
+.oq svg.i{width:18px;height:18px;flex-shrink:0}
+.oq .dsh{width:200px;background:var(--side);border-right:.5px solid var(--line);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px;flex-shrink:0}
+.oq .brand{font-weight:600;padding:2px 8px 10px;display:flex;gap:8px;align-items:center}
+.oq .fish{width:20px;height:20px;border-radius:6px;background:var(--blue);display:inline-block}
+.oq .newb{background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:7px 10px;margin-bottom:10px}
+.oq .pr{display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;height:32px;color:rgb(53,54,56)}
+.oq .pr.on{background:rgba(0,0,0,.065);color:var(--ink);font-weight:600}
+.oq .badge{margin-left:auto;background:var(--blue);color:#fff;font-size:11px;font-weight:600;border-radius:9px;padding:1px 6px;line-height:16px}
+.oq .mid{width:244px;border-right:.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:1px;font-size:14px;flex-shrink:0;background:#fff}
+.oq .mh{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-weight:700;font-size:16px}
+.oq .mbtn{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:7px;padding:4px 9px}
+.oq .gh{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink2);padding:12px 8px 4px}
+.oq .gh .n{margin-left:auto;font-weight:500}
+.oq .it{display:flex;align-items:center;gap:9px;padding:0 8px 0 10px;height:34px;border-radius:8px;color:var(--ink)}
+.oq .it.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .it .n{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .nd{width:7px;height:7px;border-radius:50%;background:var(--blue);margin-left:auto}
+.oq .sub{color:var(--ink2)}
+.oq .lg{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.oq .main{flex:1;overflow:hidden;padding:22px 30px;min-width:0}
+.oq .th{display:flex;align-items:flex-start;gap:12px}
+.oq .th h4{font-size:22px;font-weight:700;margin:0}
+.oq .th .meta{font-size:13px;color:var(--ink2);margin-top:3px}
+.oq .acts{margin-left:auto;display:flex;gap:8px}
+.oq .btn{font-size:13px;padding:6px 12px;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.18);background:#fff;font-weight:500;white-space:nowrap}
+.oq .btn.pri{background:var(--ink);color:#fff;box-shadow:none}
+.oq .gist{margin-top:14px;background:var(--blue-bg);border-radius:12px;padding:12px 16px;font-size:15px;line-height:1.7}
+.oq .gist b{color:var(--blue)}
+.oq .inf{font-size:11.5px;font-weight:600;color:rgb(150,95,10);background:rgb(253,243,224);border-radius:6px;padding:1px 7px;margin-left:4px}
+.oq .sh{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:650;margin:18px 0 8px}
+.oq .sh .lk{margin-left:auto;font-size:13px;font-weight:600;color:var(--blue)}
+.oq .sh .n{font-weight:500;color:var(--ink2);font-size:13px}
+/* matrix */
+.oq table.mx{width:100%;border-collapse:separate;border-spacing:0;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);overflow:hidden;font-size:14px;table-layout:fixed}
+.oq .mx th,.oq .mx td{padding:9px 12px;border-bottom:.5px solid var(--line);border-right:.5px solid var(--line);text-align:left;vertical-align:top;line-height:1.55}
+.oq .mx tr:last-child td{border-bottom:0}
+.oq .mx th:last-child,.oq .mx td:last-child{border-right:0}
+.oq .mx thead th{background:#fff;font-weight:650;font-size:14px}
+.oq .mx thead th .lg{margin-right:6px;vertical-align:-4px}
+.oq .mx td.k{font-weight:600;color:var(--ink2);width:92px;background:rgb(250,251,252)}
+.oq .mx th.k{width:92px;background:rgb(250,251,252)}
+.oq .mx td.u{background:rgb(246,249,255)}
+.oq .mx td.u::after{content:"今天";font-size:10.5px;font-weight:700;color:var(--blue);margin-left:6px}
+/* map */
+.oq .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.oq .map{position:relative;height:300px;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);overflow:hidden;background:#fff}
+.oq .map .ax{position:absolute;background:rgba(0,0,0,.12)}
+.oq .map .lb{position:absolute;font-size:12px;color:var(--ink2)}
+.oq .map .pt{position:absolute;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;transform:translate(-10px,-10px);white-space:nowrap}
+.oq .map .pt .lg{box-shadow:0 0 0 3px #fff}
+.oq .map svg.arr{position:absolute;inset:0;width:100%;height:100%}
+.oq .map .ghost{position:absolute;width:12px;height:12px;border-radius:50%;border:1.5px dashed rgb(65,118,230);background:#fff;transform:translate(-6px,-6px)}
+.oq .map .gl{position:absolute;font-size:11.5px;color:rgb(70,74,80)}
+.oq .map .ed{position:absolute;right:10px;top:10px;font-size:12px;font-weight:600;color:var(--blue)}
+.oq .topics{display:flex;flex-direction:column;gap:8px}
+.oq .tp{border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:11px 14px}
+.oq .tp .t{font-size:15px;font-weight:650}
+.oq .tp .m{font-size:12.5px;color:var(--ink2);margin-top:3px}
+.oq .tp.add{box-shadow:none;background:var(--side);color:var(--ink2);font-size:14px}
+.oq .topics.row{flex-direction:row}
+.oq .topics.row .tp{flex:1}
+.oq .opt-desc{font-size:14px;line-height:1.7;margin:4px 0 0}
+.oq .opt-desc b{font-weight:600}
+.oq .ix{margin-top:24px;background:#fff;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);padding:16px 20px;font-size:14.5px;line-height:1.8;color:var(--ink)}
+.oq .ix h3{font-size:16px;margin-bottom:6px}
+.oq .ix ul{margin:0;padding-left:20px}
+</style>
+
+<div class="oq">
+<h2>赛道页：把同一赛道的产品放在一起比</h2>
+<p class="subtitle">点中栏「赛道概览 · 对比矩阵」进来。两种都有：一句话格局、对比矩阵、专题入口。区别是要不要一张「定位地图」。内容是<b>示例</b>。</p>
+
+<div class="options">
+
+<!-- ============ A: map + matrix ============ -->
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content">
+<h3>定位地图 + 矩阵（我推荐）</h3>
+<p class="opt-desc">上半屏左边一张二维地图：每个产品一个点，虚线圈和连线表示「建档以来往哪边挪了」；右边是专题。下半屏是对比矩阵。地图的两条轴由 AI 按赛道提议，你可以改。<br>
+<b>好处：</b>一眼看出谁和谁是一类、谁在转向，这是跟踪了一段时间之后最有价值的东西。<b>代价：</b>地图位置是 AI 的判断，会标「推论」；轴选得不好，图就没意义。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd">
+  <div class="dsh"><div class="brand"><span class="fish"></span>DeepSeek Harness</div><div class="newb">＋ 新会话</div><div class="pr">自动化任务</div><div class="pr on">前哨<span class="badge">2</span></div></div>
+  <div class="mid">
+   <div class="mh">前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it sub">今日哨报<span class="n">2 条新</span></div>
+   <div class="gh">Personal Agent<span class="n">5</span></div>
+   <div class="it on">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse</div>
+   <div class="it"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+   <div class="it sub">候选推荐<span class="n">1 条待看</span></div>
+  </div>
+  <div class="main">
+   <div class="th"><div><h4>Personal Agent</h4><div class="meta">跟踪 5 个 · 11-18 起 · 每天 08:00 · 关注：定位 人群 场景 体验 技术 商业化 记忆</div></div><div class="acts"><span class="btn">赛道设置</span><span class="btn pri">＋ 新专题</span></div></div>
+   <div class="gist">格局：<b>三条路线</b>——豆包·小豆、OpenAI Dots 押「通用跑腿」；Meta Muse、Grok Bots 走「社交入口」；蚂蚁灵光走「服务直达」。本周最大的变化是 Meta Muse 开始平台化。<span class="inf">AI 归纳</span></div>
+   <div class="two" style="margin-top:14px">
+    <div>
+     <div class="sh" style="margin-top:0">定位地图<span class="n">· 虚线圈 = 11-18 时的位置，连线 = 挪到了哪</span></div>
+     <div class="map">
+      <span class="ed">换轴</span>
+      <div class="ax" style="left:50%;top:14px;bottom:28px;width:.5px"></div>
+      <div class="ax" style="top:50%;left:14px;right:14px;height:.5px"></div>
+      <span class="lb" style="left:14px;bottom:8px">← 寄生在已有 App 里</span>
+      <span class="lb" style="right:14px;bottom:8px">独立 App / 系统级 →</span>
+      <span class="lb" style="left:calc(50% + 6px);top:10px">↑ 替你办事</span>
+      <span class="lb" style="left:calc(50% + 6px);top:calc(50% + 4px)">↓ 陪聊问答</span>
+      <svg class="arr" viewBox="0 0 100 100" preserveAspectRatio="none">
+       <line x1="22" y1="46" x2="33.2" y2="35.2" stroke="rgb(65,118,230)" stroke-width="1.6" stroke-opacity=".75" vector-effect="non-scaling-stroke"/>
+       <line x1="29" y1="36" x2="26.6" y2="23.4" stroke="rgb(65,118,230)" stroke-width="1.6" stroke-opacity=".75" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <span class="ghost" style="left:22%;top:46%"></span><span class="gl" style="left:calc(22% - 52px);top:calc(46% + 8px)">11-18 时</span>
+      <span class="ghost" style="left:29%;top:36%"></span>
+      <span class="pt" style="left:26%;top:22%"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</span>
+      <span class="pt" style="left:34%;top:34%"><span class="lg" style="background:#0866ff">M</span>Meta Muse</span>
+      <span class="pt" style="left:70%;top:28%"><span class="lg" style="background:#111">D</span>OpenAI Dots</span>
+      <span class="pt" style="left:64%;top:44%"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</span>
+      <span class="pt" style="left:18%;top:68%"><span class="lg" style="background:#444">G</span>Grok Bots</span>
+     </div>
+    </div>
+    <div>
+     <div class="sh" style="margin-top:0">专题<span class="n">· 跨产品深挖一个问题</span></div>
+     <div class="topics">
+      <div class="tp"><div class="t">记忆能力横评：谁记得住、谁让你带走</div><div class="m">5 个产品 · 11-22 首版 · 每周一更新 · 上次改了 2 处</div></div>
+      <div class="tp"><div class="t">跨 App 代办的成功率从哪来</div><div class="m">豆包·小豆、OpenAI Dots · 11-24 · 一次性</div></div>
+      <div class="tp add">＋ 写一个问题，AI 去深挖，比如「谁在做主动提醒，做到什么程度」</div>
+     </div>
+    </div>
+   </div>
+   <div class="sh">对比矩阵<span class="n">· 点格子跳到对应产品的那张卡</span><span class="lk">导出表格</span></div>
+   <table class="mx">
+    <thead><tr><th class="k"></th><th><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</th><th><span class="lg" style="background:#0866ff">M</span>Meta Muse</th><th><span class="lg" style="background:#111">D</span>OpenAI Dots</th><th><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</th><th><span class="lg" style="background:#444">G</span>Grok Bots</th></tr></thead>
+    <tbody>
+     <tr><td class="k">入口</td><td class="u">豆包 App 内</td><td>WhatsApp / IG + 眼镜</td><td>独立 App</td><td>独立 App</td><td>X 内置</td></tr>
+     <tr><td class="k">杀手场景</td><td>订票改签、比价</td><td>社交里的提醒与代回</td><td>记忆 + 主动提醒</td><td>生活缴费、预约</td><td>自建 bot 分享</td></tr>
+     <tr><td class="k">记忆</td><td>偏好卡片，可删</td><td>跨应用长期记忆</td><td class="u">可导出（待确认）</td><td>仅服务记录</td><td>按 bot 隔离</td></tr>
+     <tr><td class="k">生态开放</td><td>自己点第三方 App</td><td class="u">开放技能接入</td><td>插件 / API</td><td>支付宝小程序</td><td>用户自建</td></tr>
+     <tr><td class="k">商业化</td><td class="u">免费，导流推测</td><td>免费</td><td>订阅</td><td>免费，交易抽佣</td><td>X Premium</td></tr>
+    </tbody>
+   </table>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+<!-- ============ B: matrix only ============ -->
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content">
+<h3>只要矩阵</h3>
+<p class="opt-desc">一句话格局 + 专题一行 + 对比矩阵铺满。<br>
+<b>好处：</b>全是有出处的事实，干净。<b>代价：</b>「谁和谁一类、谁在转向」得自己从表里读出来。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd" style="height:580px">
+  <div class="dsh"><div class="brand"><span class="fish"></span>DeepSeek Harness</div><div class="newb">＋ 新会话</div><div class="pr">自动化任务</div><div class="pr on">前哨<span class="badge">2</span></div></div>
+  <div class="mid">
+   <div class="mh">前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it sub">今日哨报<span class="n">2 条新</span></div>
+   <div class="gh">Personal Agent<span class="n">5</span></div>
+   <div class="it on">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse</div>
+   <div class="it"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</div>
+  </div>
+  <div class="main">
+   <div class="th"><div><h4>Personal Agent</h4><div class="meta">跟踪 5 个 · 11-18 起 · 每天 08:00</div></div><div class="acts"><span class="btn">赛道设置</span><span class="btn pri">＋ 新专题</span></div></div>
+   <div class="gist">格局：<b>三条路线</b>——通用跑腿、社交入口、服务直达。本周最大的变化是 Meta Muse 开始平台化。<span class="inf">AI 归纳</span></div>
+   <div class="sh">专题</div>
+   <div class="topics row">
+    <div class="tp"><div class="t">记忆能力横评</div><div class="m">每周一更新</div></div>
+    <div class="tp"><div class="t">跨 App 代办的成功率从哪来</div><div class="m">11-24 · 一次性</div></div>
+    <div class="tp add">＋ 新专题</div>
+   </div>
+   <div class="sh">对比矩阵<span class="lk">导出表格</span></div>
+   <table class="mx">
+    <thead><tr><th class="k"></th><th><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</th><th><span class="lg" style="background:#0866ff">M</span>Meta Muse</th><th><span class="lg" style="background:#111">D</span>OpenAI Dots</th><th><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</th><th><span class="lg" style="background:#444">G</span>Grok Bots</th></tr></thead>
+    <tbody>
+     <tr><td class="k">入口</td><td class="u">豆包 App 内</td><td>WhatsApp / IG + 眼镜</td><td>独立 App</td><td>独立 App</td><td>X 内置</td></tr>
+     <tr><td class="k">杀手场景</td><td>订票改签、比价</td><td>社交里的提醒与代回</td><td>记忆 + 主动提醒</td><td>生活缴费、预约</td><td>自建 bot 分享</td></tr>
+     <tr><td class="k">记忆</td><td>偏好卡片，可删</td><td>跨应用长期记忆</td><td class="u">可导出（待确认）</td><td>仅服务记录</td><td>按 bot 隔离</td></tr>
+     <tr><td class="k">生态开放</td><td>自己点第三方 App</td><td class="u">开放技能接入</td><td>插件 / API</td><td>支付宝小程序</td><td>用户自建</td></tr>
+     <tr><td class="k">商业化</td><td class="u">免费，导流推测</td><td>免费</td><td>订阅</td><td>免费，交易抽佣</td><td>X Premium</td></tr>
+    </tbody>
+   </table>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="ix">
+<h3>专题怎么用（两种一样，我的提议，可改）</h3>
+<ul>
+<li><b>发起</b>：写一个问题，选涉及哪几个产品，选「一次性」或「每周更新」。</li>
+<li><b>结果</b>：一份带出处的横评，结构和档案卡片一样（结论在前、展开看全文）；每周更新的专题也有「这一版改了什么」。</li>
+<li><b>入口</b>：赛道页上列全部专题；产品页的「专题」页签只列和这个产品有关的。</li>
+<li><b>矩阵的行</b>就是赛道的关注维度（每格是那张卡的一句话版本），在「赛道设置」里加减。</li>
+</ul>
+</div>
+</div>

@@ -1,0 +1,233 @@
+<style>
+.oq *{box-sizing:border-box}
+.oq{--ink:rgb(15,17,21);--ink2:rgb(70,74,80);--line:rgba(0,0,0,.09);--blue:rgb(65,118,230);--blue-bg:rgb(237,243,254);--side:rgb(245,246,247)}
+.oq .win{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 10px 32px rgba(0,0,0,.08);margin-top:12px;text-align:left;position:relative}
+.oq .tb{height:34px;background:var(--side);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:.5px solid var(--line)}
+.oq .tb .d{width:12px;height:12px;border-radius:50%}
+.oq .tb .w{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .bd{display:flex;height:860px;position:relative}
+.oq svg.i{width:18px;height:18px;flex-shrink:0}
+.oq .dsh{width:200px;background:var(--side);border-right:.5px solid var(--line);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px;flex-shrink:0}
+.oq .brand{font-weight:600;padding:2px 8px 10px;display:flex;gap:8px;align-items:center}
+.oq .fish{width:20px;height:20px;border-radius:6px;background:var(--blue);display:inline-block}
+.oq .newb{background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:7px 10px;margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.oq .pr{display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;height:32px;color:rgb(53,54,56)}
+.oq .pr.on{background:rgba(0,0,0,.065);color:var(--ink);font-weight:600}
+.oq .ws{margin-top:14px;font-size:12.5px;color:var(--ink2);padding:4px 8px;font-weight:600}
+.oq .sr{padding:6px 8px;border-radius:8px;font-size:13.5px;color:rgb(53,54,56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oq .dfoot{margin-top:auto;display:flex;gap:9px;align-items:center;padding:6px 8px;color:rgb(53,54,56)}
+.oq .mid{width:244px;border-right:.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:1px;font-size:14px;flex-shrink:0;background:#fff}
+.oq .mh{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-weight:700;font-size:16px}
+.oq .mbtn{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:7px;padding:4px 9px}
+.oq .gh{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink2);padding:12px 8px 4px}
+.oq .gh .n{margin-left:auto;font-weight:500}
+.oq .it{display:flex;align-items:center;gap:9px;padding:0 8px 0 10px;height:34px;border-radius:8px;color:var(--ink)}
+.oq .it.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .it .n{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .it.on .n{color:var(--blue)}
+.oq .sub{color:var(--ink2)}
+.oq .sep{height:.5px;background:var(--line);margin:10px 8px}
+.oq .mfoot{margin-top:auto}
+.oq .lg{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.oq .main{flex:1;overflow:hidden;padding:22px 30px 0;min-width:0;display:flex;flex-direction:column}
+.oq .btn{font-size:13px;padding:6px 12px;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.18);background:#fff;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.oq .btn.pri{background:var(--ink);color:#fff;box-shadow:none;font-weight:600}
+/* steps */
+.oq .steps{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--ink2)}
+.oq .st{display:flex;align-items:center;gap:6px}
+.oq .st .c{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;box-shadow:0 0 0 .5px rgba(0,0,0,.2)}
+.oq .st.done .c{background:var(--blue-bg);color:var(--blue);box-shadow:none}
+.oq .st.cur{color:var(--ink);font-weight:600}
+.oq .st.cur .c{background:var(--ink);color:#fff;box-shadow:none}
+.oq .bar{width:28px;height:.5px;background:rgba(0,0,0,.2)}
+.oq h4{font-size:22px;font-weight:700;margin:14px 0 0}
+.oq .brief{margin-top:10px;display:flex;gap:10px;align-items:flex-start;background:var(--side);border-radius:12px;padding:11px 14px;font-size:14.5px;line-height:1.65}
+.oq .brief b{font-weight:600}
+.oq .brief .btn{margin-left:auto}
+.oq .kw{display:inline-block;font-size:12.5px;padding:1px 8px;border-radius:10px;background:#fff;box-shadow:0 0 0 .5px rgba(0,0,0,.14);margin:2px 2px 0 0}
+.oq .refine{margin-top:12px;display:flex;gap:10px;align-items:center}
+.oq .found{font-size:14px;color:var(--ink2)}
+.oq .found b{color:var(--ink)}
+.oq .inp{flex:1;min-width:0;max-width:520px;margin-left:auto;font-size:14px;color:rgb(120,124,130);background:#fff;border-radius:10px;padding:8px 12px;box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.04)}
+.oq .scroll{flex:1;overflow:hidden;margin-top:6px}
+.oq .sh{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;margin:16px 0 8px}
+.oq .sh .n{font-weight:500;color:var(--ink2)}
+.oq .sh .lk{margin-left:auto;font-size:13px;font-weight:600;color:var(--blue)}
+.oq .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.oq .cc{border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:13px 15px;position:relative;background:#fff}
+.oq .cc.sel{box-shadow:0 0 0 1.5px var(--blue);background:rgb(250,252,255)}
+.oq .ck{position:absolute;top:13px;right:13px;width:20px;height:20px;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center}
+.oq .cc.sel .ck{background:var(--blue);box-shadow:none}
+.oq .ct{display:flex;align-items:center;gap:9px;padding-right:28px}
+.oq .ct .lg{width:30px;height:30px;border-radius:9px;font-size:13px}
+.oq .ct .nm{font-size:15.5px;font-weight:650;line-height:1.25}
+.oq .ct .co{font-size:12.5px;color:var(--ink2)}
+.oq .one{font-size:14.5px;line-height:1.6;margin-top:9px}
+.oq .heat{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;color:var(--ink2)}
+.oq .hb{display:flex;gap:2px;align-items:flex-end;height:14px}
+.oq .hb i{width:4px;border-radius:1px;background:var(--blue);display:block}
+.oq .hb i.o{background:rgba(65,118,230,.25)}
+.oq .why{font-size:13px;line-height:1.6;color:rgb(45,48,54);margin-top:7px}
+.oq .why b{font-weight:600;color:var(--ink)}
+.oq .cc.mini{padding:11px 14px}
+.oq .cc.mini .one{display:none}
+.oq .ex{font-size:13.5px;color:var(--ink2);border-radius:12px;padding:10px 14px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);margin-top:4px}
+.oq .foot{position:absolute;left:444px;right:0;bottom:0;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-top:.5px solid var(--line);padding:12px 30px;display:flex;align-items:center;gap:14px;font-size:14px}
+.oq .foot b{font-weight:650}
+.oq .foot .sp{margin-left:auto;display:flex;gap:8px}
+.oq .cost{color:var(--ink2)}
+/* modal (option A) */
+.oq .mask{position:absolute;inset:0;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center}
+.oq .dlg{width:640px;background:#fff;border-radius:16px;box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 24px 60px rgba(0,0,0,.22);padding:22px 24px}
+.oq .dlg h5{font-size:18px;margin:12px 0 4px}
+.oq .lrow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:.5px solid var(--line);font-size:14.5px}
+.oq .lrow .co{font-size:12.5px;color:var(--ink2)}
+.oq .lrow .cb{width:18px;height:18px;border-radius:5px;box-shadow:0 0 0 1px rgba(0,0,0,.25);flex-shrink:0}
+.oq .lrow .cb.on{background:var(--blue);box-shadow:none}
+.oq .lrow .h{margin-left:auto;font-size:12.5px;color:var(--ink2)}
+.oq .dlgf{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.oq .opt-desc{font-size:14px;line-height:1.7;margin:4px 0 0}
+.oq .opt-desc b{font-weight:600}
+.oq .ix{margin-top:24px;background:#fff;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);padding:16px 20px;font-size:14.5px;line-height:1.8;color:var(--ink)}
+.oq .ix h3{font-size:16px;margin-bottom:6px}
+.oq .ix ul{margin:0;padding-left:20px}
+</style>
+
+<div class="oq">
+<h2>第一次用：新建赛道 → AI 推荐 → 勾选产品</h2>
+<p class="subtitle">AI 找候选要 1～3 分钟（得真去搜）。两种做法的区别主要在：等的时候你能不能走开，以及挑选时屏幕够不够用。图里候选都是<b>示例</b>，热度数字是编的。</p>
+
+<div class="options">
+
+<!-- ============ B (recommended) shown first as option b ============ -->
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content">
+<h3>在右栏里原地展开（我推荐）</h3>
+<p class="opt-desc">点「＋ 新赛道」后，中栏立刻出现这个赛道（标「挑选中」），右栏变成一页「挑产品」：候选一边搜一边冒出来，卡片铺满整个右栏，宽屏自动多几列；顶上有一句话调整框，说「多找些国内的」就重新推荐。<br>
+<b>好处：</b>等的时候可以去看别的，回来接着挑；挑的时候信息够多。<b>代价：</b>没有「一步一步被带着走」的感觉，第一次用要自己看懂页面。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新会话</div>
+   <div class="pr"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>自动化任务</div>
+   <div class="pr on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨</div>
+   <div class="ws">Test1</div>
+   <div class="sr">前哨 · 推荐 Personal Agent</div>
+   <div class="dfoot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>设置</div>
+  </div>
+  <div class="mid">
+   <div class="mh"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14l11-5 2 4-11 5z"/><path d="M14 9l4-2 2 4-4 2"/><path d="M9 16l-2 5M11 15l2 6"/></svg>前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it sub"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h7M7 13h7M7 16h4"/></svg>今日哨报<span class="n">还没有</span></div>
+   <div class="gh"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>Personal Agent<span class="n">挑选中</span></div>
+   <div class="it on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg>挑产品<span class="n">已选 5</span></div>
+   <div class="mfoot"><div class="sep"></div>
+    <div class="it sub">运行记录</div>
+    <div class="it sub">设置</div>
+   </div>
+  </div>
+  <div class="main">
+   <div class="steps"><span class="st done"><span class="c">✓</span>说清关注什么</span><span class="bar"></span><span class="st cur"><span class="c">2</span>挑产品</span><span class="bar"></span><span class="st"><span class="c">3</span>建档（约 15 分钟）</span></div>
+   <h4>Personal Agent</h4>
+   <div class="brief"><div>能替人跨 App 办事、有长期记忆的个人代理；国内外都看。<br>关注：<span class="kw">定位</span><span class="kw">目标人群</span><span class="kw">价值场景</span><span class="kw">体验</span><span class="kw">关键技术</span><span class="kw">＋ 记忆</span></div><span class="btn">改</span></div>
+   <div class="refine"><span class="found">找到 <b>14 个</b>候选，按热度和贴合度排好 · 用时 2 分 10 秒</span><span class="inp">一句话调整，比如「多找些国内的」「去掉硬件类」</span></div>
+   <div class="scroll">
+    <div class="sh">强烈推荐<span class="n">6</span><span class="lk">全选这一组</span></div>
+    <div class="grid">
+     <div class="cc sel"><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg></span>
+      <div class="ct"><span class="lg" style="background:#3c6cf5">豆</span><div><div class="nm">豆包·小豆</div><div class="co">字节跳动 · 国内 · App 内代理</div></div></div>
+      <div class="one">嵌在豆包里，替你跨 App 跑腿，主打出行和购物。</div>
+      <div class="heat"><span class="hb"><i style="height:5px"></i><i style="height:7px"></i><i style="height:6px"></i><i style="height:10px"></i><i style="height:14px"></i></span>近 30 天 41 篇报道 · 热度上升</div>
+      <div class="why"><b>为什么推荐：</b>国内用户量最大的同类，正在从内测走向全量。</div></div>
+     <div class="cc sel"><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg></span>
+      <div class="ct"><span class="lg" style="background:#0866ff">M</span><div><div class="nm">Meta Muse</div><div class="co">Meta · 海外 · 独立 App + 眼镜</div></div></div>
+      <div class="one">跨 WhatsApp / Instagram 的个人代理，长期记忆是卖点。</div>
+      <div class="heat"><span class="hb"><i style="height:8px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:11px"></i><i style="height:13px"></i></span>近 30 天 57 篇报道 · 持续高位</div>
+      <div class="why"><b>为什么推荐：</b>海外声量最高，社交入口路线的代表。</div></div>
+     <div class="cc sel"><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg></span>
+      <div class="ct"><span class="lg" style="background:#111">D</span><div><div class="nm">OpenAI Dots</div><div class="co">OpenAI · 海外 · 独立 App</div></div></div>
+      <div class="one">OpenAI 的个人代理产品线，主打记忆与主动提醒。</div>
+      <div class="heat"><span class="hb"><i style="height:4px"></i><i style="height:6px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:14px"></i></span>近 30 天 38 篇报道 · 热度上升</div>
+      <div class="why"><b>为什么推荐：</b>模型厂商亲自下场，决定行业天花板。</div></div>
+     <div class="cc sel"><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg></span>
+      <div class="ct"><span class="lg" style="background:#ff7a1a">灵</span><div><div class="nm">蚂蚁灵光</div><div class="co">蚂蚁集团 · 国内 · 独立 App</div></div></div>
+      <div class="one">生活服务场景的个人代理，背靠支付宝服务生态。</div>
+      <div class="heat"><span class="hb"><i style="height:3px"></i><i style="height:5px"></i><i style="height:11px"></i><i style="height:9px"></i><i style="height:8px"></i></span>近 30 天 19 篇报道 · 发布后回落</div>
+      <div class="why"><b>为什么推荐：</b>「服务直达」路线的代表，和豆包是两种打法。</div></div>
+     <div class="cc sel"><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M5 12l4 4 10-10"/></svg></span>
+      <div class="ct"><span class="lg" style="background:#444">G</span><div><div class="nm">Grok Bots</div><div class="co">xAI · 海外 · X 内置</div></div></div>
+      <div class="one">嵌在 X 里、可以自建和分享的个人 bot。</div>
+      <div class="heat"><span class="hb"><i style="height:9px"></i><i style="height:7px"></i><i style="height:6px"></i><i style="height:6px"></i><i style="height:7px"></i></span>近 30 天 22 篇报道 · 平稳</div>
+      <div class="why"><b>为什么推荐：</b>「用户自建代理」这条路线目前只有它在推。</div></div>
+     <div class="cc"><span class="ck"></span>
+      <div class="ct"><span class="lg" style="background:#7a4dff">I</span><div><div class="nm">Instrict</div><div class="co">初创 · 海外 · 浏览器插件</div></div></div>
+      <div class="one">在浏览器里替你完成表单、比价和预订。</div>
+      <div class="heat"><span class="hb"><i class="o" style="height:3px"></i><i style="height:4px"></i><i style="height:6px"></i><i style="height:9px"></i><i style="height:12px"></i></span>近 30 天 9 篇报道 · 快速上升</div>
+      <div class="why"><b>为什么推荐：</b>小团队里增长最快的一个，值得早看。</div></div>
+    </div>
+    <div class="sh">可以考虑<span class="n">5</span></div>
+    <div class="grid">
+     <div class="cc mini"><span class="ck"></span><div class="ct"><span class="lg" style="background:#1aa260">V</span><div><div class="nm">某手机厂商代理</div><div class="co">国内 · 系统级</div></div></div><div class="why"><b>为什么：</b>系统级入口，但还没正式发布。</div></div>
+     <div class="cc mini"><span class="ck"></span><div class="ct"><span class="lg" style="background:#c2410c">K</span><div><div class="nm">某国内助手 Agent 版</div><div class="co">国内 · App</div></div></div><div class="why"><b>为什么：</b>能力接近，但「个人」属性弱。</div></div>
+     <div class="cc mini"><span class="ck"></span><div class="ct"><span class="lg" style="background:#0f766e">P</span><div><div class="nm">某开源个人代理</div><div class="co">开源 · 自部署</div></div></div><div class="why"><b>为什么：</b>技术参考价值高，用户量小。</div></div>
+    </div>
+   </div>
+  </div>
+  <div class="foot"><span>已选 <b>5 个</b></span><span class="cost">预计每天 ¥3～5 · 首次建档约 15 分钟，建好后明早出第一份哨报</span><span class="sp"><span class="btn">稍后再挑</span><span class="btn pri">开始跟踪 5 个</span></span></div>
+ </div>
+</div>
+</div>
+</div>
+
+<!-- ============ A ============ -->
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content">
+<h3>弹出对话框，一步一步走</h3>
+<p class="opt-desc">点「＋ 新赛道」弹一个框：第 1 步写关注什么，第 2 步等 AI 推荐并勾选，第 3 步确认开始。<br>
+<b>好处：</b>被带着走，不会漏步骤。<b>代价：</b>搜索那 2 分钟只能干等，关掉就得重来；框只有 640 宽，候选只能列成一行一个，看不到推荐理由和热度。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd" style="height:600px">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb">新会话</div>
+   <div class="pr">自动化任务</div>
+   <div class="pr on">前哨</div>
+  </div>
+  <div class="mid"><div class="mh">前哨<span class="mbtn">＋ 新赛道</span></div><div class="it sub">今日哨报</div></div>
+  <div class="main"></div>
+  <div class="mask">
+   <div class="dlg">
+    <div class="steps"><span class="st done"><span class="c">✓</span>关注什么</span><span class="bar"></span><span class="st cur"><span class="c">2</span>挑产品</span><span class="bar"></span><span class="st"><span class="c">3</span>确认</span></div>
+    <h5>Personal Agent：AI 推荐了 14 个候选</h5>
+    <div class="lrow"><span class="cb on"></span><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆<span class="co">字节跳动</span><span class="h">热度 ▲</span></div>
+    <div class="lrow"><span class="cb on"></span><span class="lg" style="background:#0866ff">M</span>Meta Muse<span class="co">Meta</span><span class="h">热度 ●</span></div>
+    <div class="lrow"><span class="cb on"></span><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="co">OpenAI</span><span class="h">热度 ▲</span></div>
+    <div class="lrow"><span class="cb on"></span><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光<span class="co">蚂蚁集团</span><span class="h">热度 ▼</span></div>
+    <div class="lrow"><span class="cb on"></span><span class="lg" style="background:#444">G</span>Grok Bots<span class="co">xAI</span><span class="h">热度 ●</span></div>
+    <div class="lrow"><span class="cb"></span><span class="lg" style="background:#7a4dff">I</span>Instrict<span class="co">初创</span><span class="h">热度 ▲</span></div>
+    <div class="lrow" style="color:var(--ink2)">还有 8 个，往下滚动…</div>
+    <div class="dlgf"><span class="btn">上一步</span><span class="btn pri">下一步：确认</span></div>
+   </div>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="ix">
+<h3>B 里的几个细节（我的提议，可改）</h3>
+<ul>
+<li><b>第 1 步很短</b>：只要赛道名和一句话「关注什么」，六个默认维度（定位、人群、场景、体验、关键技术、商业化）已勾好，可以加自己的，比如「记忆」。</li>
+<li><b>「强烈推荐」默认勾上</b>，其余不勾；底栏实时显示已选几个、预计每天花多少。</li>
+<li><b>被排除的也告诉你</b>：列表最后有「没推荐的 3 个，以及为什么」，免得你怀疑漏了。</li>
+<li><b>点「开始跟踪」之后</b>：中栏这个赛道下立刻列出 5 个产品，各自显示「建档中」和进度；建好一个亮一个，不用等全部完成。</li>
+<li><b>以后加产品</b>：赛道下的「候选推荐」会每周自动刷新一次，有新冒头的产品就放进去等你看。</li>
+</ul>
+</div>
+</div>

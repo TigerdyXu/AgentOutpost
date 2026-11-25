@@ -1,0 +1,217 @@
+<style>
+.oq *{box-sizing:border-box}
+.oq{--ink:rgb(15,17,21);--ink2:rgb(70,74,80);--line:rgba(0,0,0,.09);--blue:rgb(65,118,230);--blue-bg:rgb(237,243,254);--side:rgb(245,246,247)}
+.oq .win{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 10px 32px rgba(0,0,0,.08);margin-top:12px;text-align:left}
+.oq .tb{height:34px;background:var(--side);display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:.5px solid var(--line)}
+.oq .tb .d{width:12px;height:12px;border-radius:50%}
+.oq .tb .w{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .bd{display:flex;height:960px}
+.oq svg.i{width:18px;height:18px;flex-shrink:0}
+.oq .dsh{width:200px;background:var(--side);border-right:.5px solid var(--line);padding:12px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px;flex-shrink:0}
+.oq .brand{font-weight:600;padding:2px 8px 10px;display:flex;gap:8px;align-items:center}
+.oq .fish{width:20px;height:20px;border-radius:6px;background:var(--blue);display:inline-block}
+.oq .newb{background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:7px 10px;margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.oq .pr{display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;height:32px;color:rgb(53,54,56)}
+.oq .pr.on{background:rgba(0,0,0,.065);color:var(--ink);font-weight:600}
+.oq .badge{margin-left:auto;background:var(--blue);color:#fff;font-size:11px;font-weight:600;border-radius:9px;padding:1px 6px;line-height:16px}
+.oq .mid{width:244px;border-right:.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:1px;font-size:14px;flex-shrink:0;background:#fff}
+.oq .mh{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-weight:700;font-size:16px}
+.oq .mbtn{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:7px;padding:4px 9px}
+.oq .gh{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink2);padding:12px 8px 4px}
+.oq .gh .n{margin-left:auto;font-weight:500}
+.oq .it{display:flex;align-items:center;gap:9px;padding:0 8px 0 10px;height:34px;border-radius:8px;color:var(--ink)}
+.oq .it.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.oq .it .n{margin-left:auto;font-size:12px;color:var(--ink2)}
+.oq .nd{width:7px;height:7px;border-radius:50%;background:var(--blue);margin-left:auto}
+.oq .sub{color:var(--ink2)}
+.oq .lg{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.oq .main{flex:1;overflow:hidden;padding:22px 30px;min-width:0}
+.oq .oh{display:flex;align-items:flex-start;gap:14px}
+.oq .oh .lg{width:44px;height:44px;border-radius:12px;font-size:18px}
+.oq .oh h4{font-size:22px;font-weight:700;margin:0;display:flex;align-items:center;gap:10px;line-height:1.3}
+.oq .chip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:10px;background:rgb(230,245,236);color:rgb(20,120,66)}
+.oq .meta{font-size:13px;color:var(--ink2);margin-top:3px}
+.oq .acts{margin-left:auto;display:flex;gap:8px;flex-shrink:0}
+.oq .btn{font-size:13px;padding:6px 12px;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.18);background:#fff;font-weight:500;white-space:nowrap}
+.oq .btn.pri{background:var(--ink);color:#fff;box-shadow:none}
+.oq .tabs{display:flex;gap:24px;border-bottom:.5px solid rgba(0,0,0,.12);margin-top:16px;font-size:14.5px}
+.oq .tab{padding:8px 0;color:var(--ink2)}
+.oq .tab.on{color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--ink)}
+.oq .tab .c{font-size:11px;background:var(--blue);color:#fff;border-radius:8px;padding:0 5px;margin-left:4px}
+.oq .facts{display:flex;gap:0;margin-top:16px;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);overflow:hidden}
+.oq .fact{flex:1;padding:10px 14px;border-right:.5px solid var(--line)}
+.oq .fact:last-child{border-right:0}
+.oq .fact .k{font-size:12px;color:var(--ink2)}
+.oq .fact .v{font-size:15px;font-weight:600;margin-top:2px}
+.oq .pos{margin-top:14px;font-size:17px;font-weight:600;line-height:1.6}
+/* grid cards (B) */
+.oq .fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:14px}
+.oq .fc{border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:14px 16px;background:#fff}
+.oq .fc.exp{grid-column:1/-1;box-shadow:0 0 0 1.5px var(--blue)}
+.oq .fh{display:flex;align-items:center;gap:8px;font-size:15.5px;font-weight:650}
+.oq .fh .r{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue)}
+.oq .upd{font-size:11.5px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:6px;padding:1px 7px}
+.oq .inf{font-size:11.5px;font-weight:600;color:rgb(150,95,10);background:rgb(253,243,224);border-radius:6px;padding:1px 7px}
+.oq .fc ul{margin:8px 0 0;padding-left:18px;font-size:14.5px;line-height:1.7}
+.oq .fc li{margin:2px 0}
+.oq sup.ref{color:var(--blue);font-size:11px;font-weight:600}
+.oq mark.add{background:rgb(222,234,253);color:inherit;border-radius:3px;padding:0 2px}
+.oq .ff{font-size:12.5px;color:var(--ink2);margin-top:8px}
+.oq .xp{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:24px;margin-top:10px}
+.oq .win p{color:var(--ink)}
+.oq .xp p{font-size:15px;line-height:1.8;margin:0 0 10px}
+.oq .hist{border-left:0;font-size:13.5px}
+.oq .hist .t{font-size:13px;font-weight:650;color:var(--ink2);margin-bottom:6px}
+.oq .he{display:flex;gap:10px;padding:5px 0;align-items:flex-start;line-height:1.55}
+.oq .he .dt{width:44px;flex-shrink:0;color:var(--ink2);font-size:12.5px;padding-top:1px}
+.oq .he .b{width:8px;height:8px;border-radius:50%;background:var(--blue);margin-top:6px;flex-shrink:0}
+.oq .he .b.o{background:rgba(65,118,230,.3)}
+.oq .srcs{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
+.oq .src{font-size:12.5px;padding:2px 9px;border-radius:12px;background:var(--side);color:var(--ink2)}
+/* long doc (A) */
+.oq .doc{display:flex;gap:30px;margin-top:16px}
+.oq .toc{width:112px;font-size:13.5px;color:var(--ink2);display:flex;flex-direction:column;gap:10px;flex-shrink:0;padding-top:2px}
+.oq .toc .on{color:var(--ink);font-weight:600}
+.oq .sec{flex:1;min-width:0}
+.oq .sec h5{font-size:17px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.oq .sec p{font-size:15px;line-height:1.8;margin:0 0 18px}
+.oq .opt-desc{font-size:14px;line-height:1.7;margin:4px 0 0}
+.oq .opt-desc b{font-weight:600}
+.oq .ix{margin-top:24px;background:#fff;border-radius:12px;box-shadow:0 0 0 .5px rgba(0,0,0,.12);padding:16px 20px;font-size:14.5px;line-height:1.8;color:var(--ink)}
+.oq .ix h3{font-size:16px;margin-bottom:6px}
+.oq .ix ul{margin:0;padding-left:20px}
+</style>
+
+<div class="oq">
+<h2>产品档案页：天天要读的那一页，宽屏下怎么排？</h2>
+<p class="subtitle">两种都铺满右栏。区别在于：一页长文往下读，还是先看每个维度的结论、想细看再展开。产品内容是<b>示例</b>，不是真实调研。</p>
+
+<div class="options">
+
+<!-- ============ A: cards ============ -->
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content">
+<h3>结论卡片 + 原地展开（我推荐）</h3>
+<p class="opt-desc">顶上一行关键事实和一句话定位；下面每个维度一张卡，只放 2～3 句结论，卡片铺满宽度（宽屏 3 列，窄屏 2 列）。点「展开」，这张卡就占满一整行，左边是全文和出处，右边是「这一节怎么变过来的」。<br>
+<b>好处：</b>一屏看全六个维度，字少；变化史就在旁边。<b>代价：</b>想从头到尾通读要一张张点开（也可以「全部展开」）。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb">＋ 新会话</div>
+   <div class="pr">自动化任务</div>
+   <div class="pr on">前哨<span class="badge">2</span></div>
+  </div>
+  <div class="mid">
+   <div class="mh">前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it sub">今日哨报<span class="n">2 条新</span></div>
+   <div class="gh">Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse</div>
+   <div class="it on"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+   <div class="it"><span class="lg" style="background:#111">D</span>OpenAI Dots<span class="nd"></span></div>
+   <div class="it"><span class="lg" style="background:#444">G</span>Grok Bots</div>
+  </div>
+  <div class="main">
+   <div class="oh"><span class="lg" style="background:#3c6cf5">豆</span>
+    <div><h4>豆包·小豆 <span class="chip">跟踪中</span></h4><div class="meta">字节跳动 · 11-18 建档 · 今天 08:12 更新</div></div>
+    <div class="acts"><span class="btn">全部展开</span><span class="btn">⋯</span><span class="btn pri">立即更新</span></div></div>
+   <div class="tabs"><span class="tab on">档案</span><span class="tab">动态<span class="c">2</span></span><span class="tab">专题</span><span class="tab">来源 38</span></div>
+   <div class="facts">
+    <div class="fact"><div class="k">形态</div><div class="v">App 内代理</div></div>
+    <div class="fact"><div class="k">平台</div><div class="v">安卓 · iOS 内测</div></div>
+    <div class="fact"><div class="k">价格</div><div class="v">免费</div></div>
+    <div class="fact"><div class="k">首发</div><div class="v">2026-09</div></div>
+    <div class="fact"><div class="k">对标</div><div class="v">Muse · 灵光</div></div>
+   </div>
+   <div class="pos">住在豆包里的个人代理：记住你的习惯，替你跨 App 跑腿。</div>
+   <div class="fg">
+    <div class="fc exp">
+     <div class="fh">定位 <span class="upd">今天改过</span><span class="r">收起 ↑</span></div>
+     <div class="xp">
+      <div>
+       <p>小豆是豆包从「聊天助手」走向「办事代理」的那一步：不再只回答问题，而是替你在别的 App 里点完整个流程。官方口径是「你的个人代理」，宣传重点放在出行和购物这两类高频、步骤多的事情上。<sup class="ref">[1][2]</sup></p>
+       <p><mark class="add">11-25 起对全部安卓用户开放，不再需要邀请码；iOS 仍是内测。</mark><sup class="ref">[3]</sup> 和 Meta Muse 走社交入口、蚂蚁灵光走服务直达不同，小豆押的是「手机上的通用跑腿」。<span class="inf">推论</span></p>
+       <div class="srcs"><span class="src">[1] 官方发布会 · 09-16</span><span class="src">[2] 官网产品页</span><span class="src">[3] 官方公众号 · 11-25</span></div>
+      </div>
+      <div class="hist"><div class="t">这一节怎么变过来的</div>
+       <div class="he"><span class="dt">11-25</span><span class="b"></span><span>补上「安卓全量、iOS 内测」</span></div>
+       <div class="he"><span class="dt">11-22</span><span class="b o"></span><span>加了与 Meta Muse、蚂蚁灵光的路线对比</span></div>
+       <div class="he"><span class="dt">11-18</span><span class="b o"></span><span>建档</span></div>
+      </div>
+     </div>
+    </div>
+    <div class="fc"><div class="fh">目标人群<span class="r">展开</span></div><ul><li>豆包现有重度用户，先从存量里转化</li><li>一二线 25～40 岁上班族</li><li>出行、购物频率高的人</li></ul><div class="ff">6 个来源</div></div>
+    <div class="fc"><div class="fh">价值场景<span class="r">展开</span></div><ul><li>出差订票、改签<sup class="ref">[5]</sup></li><li>跨平台比价下单</li><li>把群聊里的事变成待办</li></ul><div class="ff">8 个来源</div></div>
+    <div class="fc"><div class="fh">体验<span class="r">展开</span></div><ul><li>一句话发起，过程看得见</li><li>第三方 App 一改版就容易失败<sup class="ref">[12][15]</sup></li></ul><div class="ff">11 个来源 · 含用户评价</div></div>
+    <div class="fc"><div class="fh">关键技术<span class="r">展开</span></div><ul><li>看懂屏幕 + 模拟点击</li><li>端上和云端分工</li><li>长期记忆做成「偏好卡片」</li></ul><div class="ff">5 个来源</div></div>
+    <div class="fc"><div class="fh">商业化 <span class="upd">今天改过</span><span class="r">展开</span></div><ul><li>目前免费</li><li>可能把流量导向自家电商和本地生活 <span class="inf">推论</span></li></ul><div class="ff">3 个来源</div></div>
+   </div>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+<!-- ============ B: long doc ============ -->
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content">
+<h3>一页长文 + 左侧目录</h3>
+<p class="opt-desc">像一份报告：左边目录，右边从定位一路写到商业化，正文铺满剩下的宽度。<br>
+<b>好处：</b>适合坐下来通读，复制出去也方便。<b>代价：</b>宽屏下一行字很长，读着累；六个维度要一直往下滚才看得全；变化史只能放到「动态」页签里。</p>
+<div class="win">
+ <div class="tb"><span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span><span class="w">示例数据，非真实调研</span></div>
+ <div class="bd" style="height:640px">
+  <div class="dsh">
+   <div class="brand"><span class="fish"></span>DeepSeek Harness</div>
+   <div class="newb">＋ 新会话</div>
+   <div class="pr">自动化任务</div>
+   <div class="pr on">前哨<span class="badge">2</span></div>
+  </div>
+  <div class="mid">
+   <div class="mh">前哨<span class="mbtn">＋ 新赛道</span></div>
+   <div class="it sub">今日哨报<span class="n">2 条新</span></div>
+   <div class="gh">Personal Agent<span class="n">5</span></div>
+   <div class="it sub">赛道概览 · 对比矩阵</div>
+   <div class="it"><span class="lg" style="background:#0866ff">M</span>Meta Muse</div>
+   <div class="it on"><span class="lg" style="background:#3c6cf5">豆</span>豆包·小豆</div>
+   <div class="it"><span class="lg" style="background:#ff7a1a">灵</span>蚂蚁灵光</div>
+  </div>
+  <div class="main">
+   <div class="oh"><span class="lg" style="background:#3c6cf5">豆</span>
+    <div><h4>豆包·小豆 <span class="chip">跟踪中</span></h4><div class="meta">字节跳动 · 11-18 建档 · 今天 08:12 更新</div></div>
+    <div class="acts"><span class="btn">⋯</span><span class="btn pri">立即更新</span></div></div>
+   <div class="tabs"><span class="tab on">档案</span><span class="tab">动态<span class="c">2</span></span><span class="tab">专题</span><span class="tab">来源 38</span></div>
+   <div class="doc">
+    <div class="toc"><span class="on">定位</span><span>目标人群</span><span>价值场景</span><span>体验</span><span>关键技术</span><span>商业化</span></div>
+    <div class="sec">
+     <h5>定位 <span class="upd">今天改过</span></h5>
+     <p>小豆是豆包从「聊天助手」走向「办事代理」的那一步：不再只回答问题，而是替你在别的 App 里点完整个流程。官方口径是「你的个人代理」，宣传重点放在出行和购物这两类高频、步骤多的事情上。<sup class="ref">[1][2]</sup> <mark class="add">11-25 起对全部安卓用户开放，不再需要邀请码；iOS 仍是内测。</mark><sup class="ref">[3]</sup> 和 Meta Muse 走社交入口、蚂蚁灵光走服务直达不同，小豆押的是「手机上的通用跑腿」。<span class="inf">推论</span></p>
+     <h5>目标人群</h5>
+     <p>首先是豆包现有的重度用户，先从存量里转化；其次是一二线 25～40 岁的上班族，尤其是出行、购物频率高的人。官方没有公布具体用户数，以上来自发布会口径和第三方报道的交叉印证。<sup class="ref">[1][6][7]</sup></p>
+     <h5>价值场景</h5>
+     <p>出差订票、改签；跨平台比价下单；把群聊里提到的事变成待办。用户评价里提到最多的是订票改签，其次是比价。<sup class="ref">[5][8]</sup></p>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="ix">
+<h3>两种都有的细节（我的提议，可改）</h3>
+<ul>
+<li><b>出处</b>：正文里的 [3] 鼠标停上去就显示来源标题、日期和原文那一句；点了打开原网页。</li>
+<li><b>推论要标出来</b>：没有一手来源、是 AI 自己归纳的判断，挂一个橙色「推论」标签，不和事实混在一起。</li>
+<li><b>今天改过</b>：新加的字浅蓝底，三天后自动褪掉。</li>
+<li><b>维度可以自定义</b>：赛道里加了「记忆」这类维度，每个产品的档案就多一张卡 / 多一节。</li>
+</ul>
+</div>
+</div>
