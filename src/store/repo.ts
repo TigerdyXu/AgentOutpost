@@ -48,7 +48,7 @@ const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', finding
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup'>>
-type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late'>>
+type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late' | 'sourceIds'>>
 type TrackPatch = Partial<Pick<Track, 'name' | 'brief' | 'dimensions' | 'status'>>
 
 /**
@@ -122,7 +122,12 @@ export class Repo {
     })
   }
 
+  getProduct(id: Id): Product | null { return this.get(PRODUCT, id) ?? null }
+
   setProductStatus(id: Id, status: ProductStatus): void { this.patch(PRODUCT, id, { status }, ['status']) }
+
+  /** Sets where the product's icon file is kept (null clears it); nothing else about the product changes. */
+  setProductIcon(id: Id, iconPath: string | null): void { this.patch(PRODUCT, id, { iconPath }, ['iconPath']) }
 
   /** Puts the product in the track's tracked list; linking twice is harmless. */
   linkProduct(trackId: Id, productId: Id): void {
@@ -175,7 +180,7 @@ export class Repo {
     return finding
   }
 
-  updateFinding(id: Id, patch: FindingPatch): void { this.patch(FINDING, id, patch, ['status', 'statusNote', 'unconfirmedUntil', 'read', 'late']) }
+  updateFinding(id: Id, patch: FindingPatch): void { this.patch(FINDING, id, patch, ['status', 'statusNote', 'unconfirmedUntil', 'read', 'late', 'sourceIds']) }
 
   /** The findings of that day's brief (see `addFinding`), oldest first. */
   findingsOfDate(date: string): Finding[] { return this.select(FINDING, 'WHERE date = ? ORDER BY rowid', date) }

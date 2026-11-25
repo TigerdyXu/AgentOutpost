@@ -282,6 +282,23 @@ describe('Repo: tracks and products', () => {
     expect(repo.upsertProduct(product({ name: 'cursor 2', company: 'anysphere inc' })).id).toBe('fixed-id')
   })
 
+  it('getProduct reads one product by id, or null when there is none', () => {
+    const repo = newRepo()
+    const p = repo.upsertProduct(product({ officialDomains: ['cursor.com', 'docs.cursor.com'] }))
+    expect(repo.getProduct(p.id)).toEqual(p)
+    expect(repo.getProduct('nope')).toBeNull()
+  })
+
+  it('setProductIcon sets the icon path and touches nothing else; a null clears it', () => {
+    const repo = newRepo()
+    const p = repo.upsertProduct(product({ status: 'candidate' }))
+    repo.setProductIcon(p.id, '/data/icons/cursor.png')
+    expect(repo.getProduct(p.id)).toEqual({ ...p, iconPath: '/data/icons/cursor.png' })
+    repo.setProductIcon(p.id, null)
+    expect(repo.getProduct(p.id)).toEqual(p)
+    expect(() => repo.setProductIcon('nope', 'x.png')).toThrow(/unknown/)
+  })
+
   it('setProductStatus moves a product between statuses', () => {
     const repo = newRepo()
     const p = repo.upsertProduct(product({ status: 'candidate' }))
@@ -369,6 +386,13 @@ describe('Repo: sources and findings', () => {
     expect(repo.findingsOfProduct('p1')[0]).toMatchObject({ status: 'verified', statusNote: null, unconfirmedUntil: null, read: false, late: true })
     expect(() => repo.updateFinding(f.id, { headline: 'x' } as never)).toThrow(/cannot update/)
     expect(() => repo.updateFinding('nope', { read: true })).toThrow(/unknown/)
+  })
+
+  it('updateFinding can replace the source list, which is how a corroborating source is attached', () => {
+    const repo = newRepo()
+    const f = repo.addFinding(findingSpec({ sourceIds: ['s1'] }))
+    repo.updateFinding(f.id, { sourceIds: ['s1', 's2'] })
+    expect(repo.findingsOfProduct('p1')[0]).toEqual({ ...f, sourceIds: ['s1', 's2'] })
   })
 
   it('findingsOfDate returns the findings of that day, including one that landed after midnight', () => {
