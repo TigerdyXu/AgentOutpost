@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Config } from '../../src/config.ts'
 import { unreadCount } from '../../src/core/brief.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../../src/core/dimensions.ts'
 import type { Brief, Dimension, Finding, Id, ProductStatus, Run, Source, Track } from '../../src/core/types.ts'
@@ -295,6 +296,30 @@ describe('PATCH tracks/:id', () => {
     expect(custom(later)).toEqual([{ key: `${growth}-2`, label: '用户增长与留存策略总结' }]) // not the old card's key
   })
 
+  it('fills in a dimension the user adds at once for the track\'s tracked products, whatever the 7-day window', async () => {
+    const id = await create([])
+    addProduct('p1', 'Cursor', 'tracking', id)
+    addProduct('p2', 'Windsurf', 'paused', id)
+    addProduct('p3', 'Zed', 'tracking', id)
+    for (const dim of DEFAULT_DIMENSIONS) { card('p1', dim.key, 1, []); card('p2', dim.key, 1, []); card('p3', dim.key, 1, []) }
+    const community = { key: slugDimension('社区'), label: '社区' }
+    repo.linkProduct(addTrack({ name: '开源', dimensions: [...DEFAULT_DIMENSIONS, community] }).id, 'p3')
+    card('p3', community.key, 1, []) // Zed has that card already, from another track with the same dimension
+    addRun('baseline', { status: 'done', startedAt: '2026-11-24T08:00:00.000Z', endedAt: '2026-11-24T08:20:00.000Z' }, '2026-11-24', { productId: 'p1' })
+
+    ok(await host.call('PATCH', `tracks/${id}`, { name: '编程 Agent' })) // nothing new: nothing to fill in
+    await flush()
+    expect(host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE))).toEqual([])
+
+    ok(await host.call('PATCH', `tracks/${id}`, { extraDimensions: ['社区'] }))
+    await vi.waitFor(() => { expect(host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE)).map(r => r.title)).toEqual(['前哨 · Cursor 建档']) })
+    const prompt = host.driver.runs.find(r => r.title === '前哨 · Cursor 建档')!.prompt
+    expect(prompt).toContain(`- ${community.key}：社区`) // asks for the new one only
+    expect(prompt).not.toContain('- audience：目标人群')
+    await flush()
+    expect(host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE))).toHaveLength(1) // not the paused one, not Zed
+  })
+
   it('refuses an unknown track and fields over their limits', async () => {
     const id = await create([])
     expect((await host.call('PATCH', 'tracks/nope', { name: '新名字' })).status).toBe(404)
@@ -347,7 +372,7 @@ describe('recommendations', () => {
     const { trackId, batchId } = ok(await host.call('POST', 'tracks', { name: 'AI 编程助手', brief: '', extraDimensions: [] })).json<ApiResponse<'POST tracks'>>()
     await flush()
     const early = ok(await host.call('GET', `tracks/${trackId}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>()
-    expect(early).toMatchObject({ batchId, running: true, elapsedSec: 0 })
+    expect(early).toMatchObject({ batchId, running: true, status: 'running', error: null, elapsedSec: 0 })
     expect(early.candidates.map(c => [c.product.name, c.tier, c.batchId])).toEqual([['Cursor', 'strong', batchId]])
 
     host.clock.set('2026-11-25T07:02:10')
@@ -356,9 +381,29 @@ describe('recommendations', () => {
     await vi.waitFor(() => { expect(repo.getRun(batchId)!.status).toBe('done') })
     host.clock.set('2026-11-25T07:30')
     const done = ok(await host.call('GET', `tracks/${trackId}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>()
-    expect(done).toMatchObject({ batchId, running: false, elapsedSec: 130 }) // the time it took, not the time since
+    expect(done).toMatchObject({ batchId, running: false, status: 'done', error: null, elapsedSec: 130 }) // the time it took, not the time since
     expect(done.candidates.map(c => c.product.name)).toEqual(['Cursor', 'Windsurf'])
     expect((await host.call('GET', 'tracks/nope/candidates')).status).toBe(404)
+  })
+})
+
+describe('a recommendation that could not run', () => {
+  it('says why its batch is empty: the run\'s status and error', async () => {
+    await rt.stop()
+    host.cleanup()
+    host = apiHost({ config: dataDir => Config({ dataDir, dailyBudgetYuan: 0 }) }) // nothing may be spent today
+    rt = host.create()
+    rt.start()
+    repo = rt.repo
+    const { trackId, batchId } = ok(await host.call('POST', 'tracks', { name: 'AI 编程助手', brief: '', extraDimensions: [] })).json<ApiResponse<'POST tracks'>>()
+    const view = ok(await host.call('GET', `tracks/${trackId}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>()
+    expect(view).toEqual({ batchId, running: false, status: 'skipped', error: '今日总预算已用完', elapsedSec: 0, candidates: [] })
+    expect(host.driver.runs).toEqual([])
+  })
+
+  it('has no status before the track ever had one', async () => {
+    const track = addTrack({ status: 'picking' })
+    expect(ok(await host.call('GET', `tracks/${track.id}/candidates`)).json()).toEqual({ batchId: null, running: false, status: null, error: null, elapsedSec: 0, candidates: [] })
   })
 })
 
@@ -390,6 +435,23 @@ describe('POST tracks/:id/start', () => {
     expect(host.driver.runs.filter(r => r.sessionId.startsWith(BASELINE)).map(r => r.title)).toEqual(['前哨 · Windsurf 建档'])
     // What was not picked is not waiting to be looked at any more.
     expect(ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().tracks.find(t => t.track.id === trackId)!.candidatesToReview).toBe(0)
+  })
+
+  it('fills in at once the dimensions a tracked product lacks when it joins a track that has them', async () => {
+    const other = addTrack({ name: '老赛道' })
+    addProduct('p0', 'Cursor', 'tracking', other.id)
+    for (const dim of DEFAULT_DIMENSIONS) card('p0', dim.key, 1, [])
+    addRun('baseline', { status: 'done', startedAt: '2026-11-24T08:00:00.000Z', endedAt: '2026-11-24T08:20:00.000Z' }, '2026-11-24', { productId: 'p0' })
+    host.driver.script[RECOMMEND] = recommends([['Cursor', 'strong']])
+    const { trackId, batchId } = ok(await host.call('POST', 'tracks', { name: '编程 Agent', brief: '', extraDimensions: ['定价模式'] })).json<ApiResponse<'POST tracks'>>()
+    await vi.waitFor(() => { expect(repo.getRun(batchId)!.status).toBe('done') })
+
+    ok(await host.call('POST', `tracks/${trackId}/start`, { candidateIds: repo.listCandidates(trackId).map(c => c.id) }))
+    await vi.waitFor(() => { expect(host.driver.runs.map(r => r.title)).toContain('前哨 · Cursor 建档') })
+    const prompt = host.driver.runs.find(r => r.title === '前哨 · Cursor 建档')!.prompt
+    expect(prompt).toContain(`- ${slugDimension('定价模式')}：定价模式`) // what the new track adds
+    expect(prompt).not.toContain('- audience：目标人群') // not what it has
+    expect(repo.getProduct('p0')!.status).toBe('tracking') // stays tracked meanwhile
   })
 
   it('refuses no candidates, a candidate of another track and an unknown track', async () => {

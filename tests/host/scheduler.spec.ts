@@ -726,3 +726,82 @@ describe('Scheduler: work started from outside the day', () => {
     await expect(scheduler.idle()).resolves.toBeUndefined()
   })
 })
+
+describe('Scheduler: top-ups the user asked for', () => {
+  /** A baseline that records its run (so the 7-day window sees it) and fills in nothing, like one whose card was rejected. */
+  const failingBaseline = (log: string[]) => async (ids: Id[]) => {
+    for (const id of ids) { log.push(`${id} ${localDate(clock.clock.now())}`); recordBaseline(id, 'failed') }
+  }
+
+  it('fills in missing cards at once whatever the 7-day window, which still holds for the automatic top-up the next day', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    const toppedUp: string[] = []
+    deps.rebaseline = failingBaseline(toppedUp)
+    scheduler = new Scheduler(deps)
+    clock.set('2026-11-25T08:00')
+    await scheduler.runDay(DAY) // the day tops Windsurf up once: the window starts
+    expect(toppedUp).toEqual(['p2 2026-11-25'])
+
+    clock.set('2026-11-25T10:00') // the user adds a dimension to the track: no waiting a week
+    await scheduler.topUpNow(['p2'])
+    expect(toppedUp).toEqual(['p2 2026-11-25', 'p2 2026-11-25'])
+
+    clock.set('2026-11-26T08:00')
+    await scheduler.runDay('2026-11-26') // the next day's automatic top-up still waits out the 7 days
+    expect(toppedUp).toEqual(['p2 2026-11-25', 'p2 2026-11-25'])
+    expect(dailyIds().filter(id => id === 'p2')).toEqual(['p2', 'p2'])
+  })
+
+  it('leaves a product alone when it misses no card or is not tracked', async () => {
+    addProduct('p4', 'Zed', 'baselining', false)
+    addProduct('p5', 'Cline Pro', 'paused', false)
+    await scheduler.topUpNow(['p1', 'p4', 'p5'])
+    expect(calls.rebaseline).toEqual([])
+  })
+
+  it('never runs beside a daily run in flight: it starts once that run is over', async () => {
+    repo.updateTrack(trackId, { dimensions: [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }] })
+    repo.addCardVersion({ productId: 'p1', dimension: 'business', version: 1, summary: '订阅', bullets: ['按月'], body: '订阅[1]', sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-20T00:00:00.000Z' })
+    holds.p1 = gate()
+    const now = scheduler.runProductNow('p1') // complete, so it goes straight to its daily run
+    await flush()
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p1' AND dimension = 'business'").run() // as if just added
+    const forced = scheduler.topUpNow(['p1'])
+    await flush()
+    expect(calls.rebaseline).toEqual([])
+    holds.p1!.open()
+    await Promise.all([now, forced])
+    expect(calls.rebaseline).toEqual([['p1']])
+    expect(events.indexOf('daily p1 done')).toBeLessThan(events.indexOf('rebaseline p1'))
+  })
+
+  it('joins a top-up in flight, then fills in what that one was not asked for', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    const first = gate()
+    let running = 0
+    let overlapped = false
+    deps.rebaseline = async ids => {
+      calls.rebaseline.push(ids)
+      if (++running > 1) overlapped = true
+      if (calls.rebaseline.length === 1) await first.promise
+      running--
+    }
+    scheduler = new Scheduler(deps)
+    const earlier = scheduler.baseline(['p2']) // asked for before the user added the dimension
+    const forced = scheduler.topUpNow(['p2'])
+    await flush()
+    expect(calls.rebaseline).toEqual([['p2']]) // not a second one beside it
+
+    first.open()
+    await Promise.all([earlier, forced])
+    expect(calls.rebaseline).toEqual([['p2'], ['p2']]) // the card is still missing: one more, after the first
+    expect(overlapped).toBe(false)
+  })
+
+  it('starts nothing once the scheduler is stopped', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    scheduler.stop()
+    await scheduler.topUpNow(['p2'])
+    expect(calls.rebaseline).toEqual([])
+  })
+})

@@ -167,6 +167,19 @@ export class Scheduler {
   }
 
   /**
+   * Fills in the missing cards of tracked products now, because the user gave them dimensions they lack (a dimension
+   * added to their track, or a track they joined). It is the day's top-up without the `TOP_UP_EVERY_DAYS` window, which
+   * throttles automatic retries, not what the user asks for; the window itself is left as it was, so the next day's
+   * automatic top-up still counts this one. Like any top-up it never runs beside the product's daily run (it starts once
+   * that is over) and never beside another baseline of it: one in flight, asked for before the new dimension, is waited
+   * for, and what it did not fill in is asked for after it. A product not tracked, or missing no card, is left alone.
+   * Resolves once each is over; never rejects.
+   */
+  topUpNow(productIds: Id[]): Promise<void> {
+    return Promise.all([...new Set(productIds)].map(id => this.forcedTopUp(id))).then(() => {})
+  }
+
+  /**
    * Writes the brief of `date` again (a summary whose model call failed, retried), queued behind the writes of that brief
    * already waiting. Resolves with whether it went through; once the scheduler stopped, nothing is written.
    */
@@ -304,13 +317,23 @@ export class Scheduler {
     return this.startBaseline(productId)
   }
 
+  /** `topUpNow` of one product. */
+  private forcedTopUp(productId: Id): Promise<void> {
+    const due = () => !this.stopped && this.deps.repo.getProduct(productId)?.status === 'tracking' && this.missesCard(productId)
+    const running = this.topUps.get(productId)
+    // One started after it (by the day, say) was asked for the dimensions as they are now: join that one instead.
+    if (running) return running.then(() => this.topUps.get(productId) ?? (due() ? this.startBaseline(productId, this.busy.get(productId)) : undefined))
+    return due() ? this.startBaseline(productId, this.busy.get(productId)) : Promise.resolve()
+  }
+
   /**
    * Starts the product's baseline (`rebaseline`), after `after` (its daily run in flight) if given, as its top-up in
-   * flight; resolves once it is over, never rejects.
+   * flight; resolves once it is over, never rejects. One that was waiting when the scheduler stopped does not start.
    */
   private startBaseline(productId: Id, after?: Promise<unknown>): Promise<void> {
     const rebaseline = () => this.deps.rebaseline([productId])
-    const work: Promise<void> = (after ? after.then(rebaseline, rebaseline) : rebaseline())
+    const later = () => this.stopped ? undefined : rebaseline()
+    const work: Promise<void> = (after ? after.then(later, later) : rebaseline())
       .catch(error => { this.log(`baseline of product ${productId} failed: ${messageOf(error)}`) })
       .finally(() => { if (this.topUps.get(productId) === work) this.topUps.delete(productId) })
     this.topUps.set(productId, work)
@@ -325,11 +348,17 @@ export class Scheduler {
    */
   private needsTopUp(productId: Id, date: string): boolean {
     const { repo } = this.deps
-    const have = new Set(repo.latestCards(productId).map(c => c.dimension))
-    if (!repo.dimensionsOfProduct(productId).some(d => !have.has(d.key))) return false
+    if (!this.missesCard(productId)) return false
     const since = shiftDate(date, 1 - TOP_UP_EVERY_DAYS)
     return !repo.listRuns(since).some(r => r.kind === 'baseline' && r.productId === productId && r.date <= date
       && r.startedAt !== null && r.endedAt !== null && r.error !== STOPPED_ERROR)
+  }
+
+  /** Whether a dimension of the product (of any of its tracks) has no card yet. */
+  private missesCard(productId: Id): boolean {
+    const { repo } = this.deps
+    const have = new Set(repo.latestCards(productId).map(c => c.dimension))
+    return repo.dimensionsOfProduct(productId).some(d => !have.has(d.key))
   }
 
   /**

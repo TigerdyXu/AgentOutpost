@@ -12,7 +12,7 @@ import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import type {
-  Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, Source, Track,
+  Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
 import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
@@ -63,6 +63,9 @@ export interface CandidatesView {
   /** The latest recommendation of the track (its run id), or null when it never had one. */
   batchId: Id | null
   running: boolean
+  /** That run's status, and why it was skipped or failed (「今日总预算已用完」, say): what explains an empty list. Null without a run. */
+  status: RunStatus | null
+  error: string | null
   /** How long the recommendation has run, or ran, in whole seconds. */
   elapsedSec: number
   candidates: (Candidate & { product: Product })[]
@@ -91,12 +94,18 @@ export interface Api {
   'POST brief/read-all': { body: { date: string }; response: { ok: true } }
   /** Creates the track (status `picking`; dimensions: the six defaults, then the custom ones) and starts its recommendation. */
   'POST tracks': { body: { name: string; brief: string; extraDimensions: string[] }; response: { trackId: Id; batchId: Id } }
-  /** `extraDimensions` replaces the custom dimensions; a label the track keeps keeps its key. */
+  /**
+   * `extraDimensions` replaces the custom dimensions; a label the track keeps keeps its key. A dimension added is filled in
+   * at once for the track's tracked products that lack its card.
+   */
   'PATCH tracks/:id': { body: { name?: string; brief?: string; extraDimensions?: string[] }; response: Track }
   /** A new batch, with the user's one-sentence adjustment; 409 while the previous one still runs. */
   'POST tracks/:id/recommend': { body?: { refine?: string }; response: { batchId: Id } }
   'GET tracks/:id/candidates': { response: CandidatesView }
-  /** The track becomes `active`, the chosen products join it, and those new to Outpost are baselined (建档中). */
+  /**
+   * The track becomes `active`, the chosen products join it, and those new to Outpost are baselined (建档中); a tracked one
+   * that the track gives dimensions it lacks gets their cards at once.
+   */
   'POST tracks/:id/start': { body: { candidateIds: Id[] }; response: { ok: true } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
@@ -222,6 +231,11 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   /** The newest baseline of the product that still runs: its progress is what 建档中 shows. */
   const progressOf = (productId: Id, active: Run[]) => active.find(r => r.productId === productId && r.kind === 'baseline')?.progress ?? null
   const recommending = (trackId: Id) => { const run = repo.latestRun('recommend', { trackId }); return run !== null && isActive(run) }
+  /** Whether the product has no card yet for one of `keys`. */
+  const lacksCard = (productId: Id, keys: DimensionKey[]) => {
+    const have = new Set(repo.latestCards(productId).map(c => c.dimension))
+    return keys.some(key => !have.has(key))
+  }
 
   /** Today's brief, and its main findings that are still shown, by id. */
   const today = () => {
@@ -336,7 +350,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const body = TrackPatch.parse(await req.body())
       // The track's own dimensions are among the keys in use, so a label it keeps keeps its key.
       const dimensions = body.extraDimensions && trackDimensions(rt, body.extraDimensions)
-      return repo.updateTrack(current.id, { name: body.name, brief: body.brief, dimensions })
+      const updated = repo.updateTrack(current.id, { name: body.name, brief: body.brief, dimensions })
+      // The user asked for these: fill them in now (Ruling 25), not after the 7 days that pace automatic top-ups.
+      const had = new Set(current.dimensions.map(d => d.key))
+      const added = updated.dimensions.filter(d => !had.has(d.key)).map(d => d.key)
+      if (added.length) {
+        const lacking = repo.productsOfTrack(current.id).filter(p => p.status === 'tracking' && lacksCard(p.id, added)).map(p => p.id)
+        if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products of track ${current.id}`)
+      }
+      return updated
     },
 
     'POST tracks/:id/recommend': async req => {
@@ -355,6 +377,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       return {
         batchId,
         running: run !== null && isActive(run),
+        status: run?.status ?? null,
+        error: run?.error ?? null,
         elapsedSec: Number.isNaN(started) ? 0 : Math.max(0, Math.floor((ended - started) / 1000)),
         candidates: batchId === null ? [] : repo.listCandidates(t.id, batchId).flatMap(c => {
           const p = repo.getProduct(c.productId)
@@ -376,14 +400,21 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       if (latest !== null && chosen.some(c => c.batchId === latest)) repo.setSetting(reviewedKey(t.id), latest)
       // A product already tracked (in another track) only joins this one: the scheduler fills in the dimensions this track
       // adds before its next daily run. Starting a baseline beside that run would put two checks on one product.
+      // A tracked one that this track gives dimensions it lacks gets their cards at once (Ruling 25), through the same
+      // path, which waits for its daily run if one is in flight.
       const fresh: Id[] = []
+      const lacking: Id[] = []
+      const linked = new Set(repo.productsOfTrack(t.id).map(p => p.id))
       for (const c of chosen) {
         const p = repo.getProduct(c.productId)
         if (!p) continue
+        const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
         repo.linkProduct(t.id, p.id)
         if (p.status === 'candidate' || p.status === 'archived') fresh.push(p.id)
+        else if (p.status === 'tracking' && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.push(p.id)
       }
       rt.background(rt.scheduler.baseline(fresh), `baseline of the products of track ${t.id}`)
+      if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products joining track ${t.id}`)
       return { ok: true }
     },
 
