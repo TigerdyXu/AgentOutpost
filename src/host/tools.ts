@@ -5,6 +5,7 @@
  */
 import { z } from 'zod'
 import { normalizeDate } from '../core/dates.ts'
+import { isValidEvidence, isVoidEvidence } from '../core/credibility.ts'
 import { findingKey, isDuplicate, type RecentFinding } from '../core/dedupe.ts'
 import { weeklyHeat } from '../core/hotness.ts'
 import type { Id, Source, Span } from '../core/types.ts'
@@ -300,10 +301,13 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       }),
 
     tool('outpost_read_pending',
-      '核查阶段：读取这个产品等着核查的内容，分三组：pendingFindings（新提交的发现）、pendingCardEdits（待核的卡片修改）、unconfirmedFindings（上次没核实、需要再试的发现）。每条有 itemId、claimKind（self 官方说自己的事，third-party 别人的说法，卡片修改为 null）、claim（要核的话）、detail（补充说明或卡片正文）、sources（每个有 sourceId、url、quote）。无参数。',
+      '核查阶段：读取这个产品等着核查的内容，分三组：pendingFindings（新提交的发现）、pendingCardEdits（待核的卡片修改）、unconfirmedFindings（上次没核实、需要再试的发现）。每条有 itemId、claimKind（self 官方说自己的事，third-party 别人的说法，卡片修改为 null）、claim（要核的话）、detail（补充说明或卡片正文）、sources（每个有 sourceId、url、quote、needsCheck；needsCheck 为 false 的已经核过，不用再打开）。无参数。',
       NoArguments, () => {
         const { findings, unconfirmed, cardEdits } = waiting(needProduct())
-        const sourcesOf = (ids: Id[]) => repo.getSources(ids).map(s => ({ sourceId: s.id, url: s.url, quote: s.quote }))
+        // A source needs opening until a check has settled it: its quote matched (valid) or its page did not back the claim (void).
+        // Never checked, not opened, a search snippet that did not match, an opened page the checker was unsure of: all still open.
+        const settled = (s: Source) => { const seen = { ...s, openedVia: s.openedVia ?? 'unopened' as const }; return isValidEvidence(seen) || isVoidEvidence(seen) }
+        const sourcesOf = (ids: Id[]) => repo.getSources(ids).map(s => ({ sourceId: s.id, url: s.url, quote: s.quote, needsCheck: !settled(s) }))
         const findingItem = (f: (typeof findings)[number]) => ({ itemId: f.id, claimKind: f.claimKind, claim: f.headline, detail: f.why, sources: sourcesOf(f.sourceIds) })
         return {
           pendingFindings: findings.map(findingItem),

@@ -531,9 +531,33 @@ describe('verification tools', () => {
     repo.setCardEditStatus(appliedEdit.id, 'applied')
 
     const r = await toolbox('verify')('outpost_read_pending') as Record<string, unknown[]>
-    expect(r.pendingFindings).toEqual([{ itemId: pending.finding.id, claimKind: 'self', claim: '待核查的发现', detail: '官方说了', sources: [{ sourceId: pending.source.id, url: 'https://seed.example/p', quote: '待核引句' }] }])
-    expect(r.unconfirmedFindings).toEqual([{ itemId: unconfirmed.finding.id, claimKind: 'third-party', claim: '待确认的发现', detail: '旧', sources: [{ sourceId: unconfirmed.source.id, url: 'https://seed.example/u', quote: '原话' }] }])
-    expect(r.pendingCardEdits).toEqual([{ itemId: edit.id, claimKind: null, dimension: 'pricing', claim: '卡片摘要', detail: '卡片正文[1]', sources: [{ sourceId: editSource.id, url: 'https://cursor.com/pricing', quote: '卡片引句' }] }])
+    expect(r.pendingFindings).toEqual([{ itemId: pending.finding.id, claimKind: 'self', claim: '待核查的发现', detail: '官方说了', sources: [{ sourceId: pending.source.id, url: 'https://seed.example/p', quote: '待核引句', needsCheck: true }] }])
+    expect(r.unconfirmedFindings).toEqual([{ itemId: unconfirmed.finding.id, claimKind: 'third-party', claim: '待确认的发现', detail: '旧', sources: [{ sourceId: unconfirmed.source.id, url: 'https://seed.example/u', quote: '原话', needsCheck: true }] }])
+    expect(r.pendingCardEdits).toEqual([{ itemId: edit.id, claimKind: null, dimension: 'pricing', claim: '卡片摘要', detail: '卡片正文[1]', sources: [{ sourceId: editSource.id, url: 'https://cursor.com/pricing', quote: '卡片引句', needsCheck: true }] }])
+  })
+
+  it('outpost_read_pending says which sources still need opening: only those not seen yet', async () => {
+    const seen = (openedVia: Source['openedVia'], quoteFound: boolean | null, supportsClaim: boolean | null = null) => ({ openedVia, quoteFound, supportsClaim })
+    const checks = {
+      never: seen(null, null),
+      unopened: seen('unopened', null),
+      snippetMissed: seen('snippet', false),
+      openedUnsure: seen('http', null),
+      confirmed: seen('http', true, true),
+      snippetMatched: seen('snippet', true),
+      quoteMissing: seen('browser', false),
+      contradicts: seen('http', true, false),
+    }
+    const ids = Object.entries(checks).map(([name, check]) => [name, repo.addSource({ url: `https://seed.example/${name}`, title: 't', publisher: 'p', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, ...check }).id] as const)
+    const f = repo.addFinding({
+      productId: product.id, runId: run.id, headline: '待确认', why: '旧', importance: 'notable', claimKind: 'third-party', sourceIds: ids.map(([, id]) => id), status: 'unconfirmed',
+      statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'checks', verifiedOn: null,
+    })
+
+    const r = await toolbox('verify')('outpost_read_pending') as { unconfirmedFindings: { itemId: string; sources: { sourceId: string; needsCheck: boolean }[] }[] }
+
+    const flags = Object.fromEntries(r.unconfirmedFindings.find(i => i.itemId === f.id)!.sources.map(s => [ids.find(([, id]) => id === s.sourceId)![0], s.needsCheck]))
+    expect(flags).toEqual({ never: true, unopened: true, snippetMissed: true, openedUnsure: true, confirmed: false, snippetMatched: false, quoteMissing: false, contradicts: false })
   })
 
   it('outpost_report_check records what the checker saw on the source', async () => {

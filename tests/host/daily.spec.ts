@@ -144,6 +144,16 @@ describe('runDailyProduct', () => {
     expect(repo.latestCards('p1')).toEqual([])
   })
 
+  it('marks the product failed when the check stops without finishing', async () => {
+    driver.script[DAILY] = oneFinding
+    driver.script[VERIFY] = () => completed() // never calls outpost_done
+
+    const run = await runDailyProduct(deps, 'p1', DAY)
+
+    expect(run).toMatchObject({ status: 'failed', error: '核查没有完成：会话没有调用 outpost_done 就停了，这次不下结论' })
+    expect(repo.findingsOfDate(DAY)).toMatchObject([{ status: 'pending' }]) // not 待确认 with a false 「原文打不开」
+  })
+
   it('still checks what a failed daily session handed in', async () => {
     driver.script[DAILY] = async r => {
       await r.call('outpost_submit_finding', finding)

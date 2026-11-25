@@ -71,7 +71,7 @@ const spanText = (body: string, spans: Span[]) => spans.map(s => body.slice(s.st
 
 // ---- the checker, scripted ----
 
-interface PendingSource { sourceId: string; url: string; quote: string }
+interface PendingSource { sourceId: string; url: string; quote: string; needsCheck: boolean }
 interface PendingItem { itemId: string; claimKind: string | null; claim: string; sources: PendingSource[] }
 interface Pending { pendingFindings: PendingItem[]; pendingCardEdits: PendingItem[]; unconfirmedFindings: PendingItem[] }
 interface Check { openedVia: OpenedVia; quoteFound: boolean | null; supportsClaim?: boolean | null; syndicationGroup?: string | null }
@@ -319,6 +319,7 @@ describe('verifyProduct', () => {
   it('starts no session when nothing waits for the checker', async () => {
     const old = addFinding([addSource('https://news.example/rumor')], { claimKind: 'third-party', status: 'unconfirmed', statusNote: '只有一个来源' })
     addFinding([official('https://cursor.com/a')], { status: 'verified', dedupeKey: 'k2' })
+    driver.script[VERIFY] = reportCheck(UNOPENED)
 
     await verifyProduct(deps, 'p1', 'daily') // within 7 days: waits for the next check with a session
     expect(driver.runs).toHaveLength(1)
@@ -328,6 +329,57 @@ describe('verifyProduct', () => {
     expect(driver.runs).toHaveLength(1)
     expect(finding(old.id).status).toBe('unproven')
     expect(repo.runsOfDate(localDate(daysAfterStart(UNCONFIRMED_WINDOW_DAYS + 1)), 'verify')).toEqual([])
+  })
+
+  it('does not judge a check that stopped without outpost_done, and the next check reuses what it reported', async () => {
+    const sources = [official('https://cursor.com/'), addSource('https://news.example/cursor-review')]
+    const edit = addEdit({ dimension: 'positioning', body: 'Cursor 是 AI 编辑器[1]，评测说它很快[2]。', sourceIds: sources.map(s => s.id), changeNote: '建档' })
+    // The checker reports the first source, then runs out (no outpost_done, not even after the reminder).
+    driver.script[VERIFY] = async r => {
+      if (r.kind === 'run') await r.call('outpost_report_check', { sourceId: sources[0]!.id, ...SEEN })
+      return completed()
+    }
+
+    const error = await verifyProduct(deps, 'p1', 'baseline').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(VerifyNotRun)
+    expect((error as VerifyNotRun).message).toBe('会话没有调用 outpost_done 就停了，这次不下结论')
+    expect(repo.runsOfDate(TODAY, 'verify')[0]).toMatchObject({ status: 'failed', error: '会话没有调用 outpost_done 就停了，这次不下结论' })
+    expect(driver.nudges).toHaveLength(1) // it was reminded once
+    expect(repo.pendingCardEdits('p1').map(e => e.id)).toEqual([edit.id]) // not rejected for the source it never reached
+    expect(card('positioning')).toBeUndefined()
+    expect(repo.getSources([sources[0]!.id])[0]).toMatchObject({ openedVia: 'http', quoteFound: true }) // the report it made is kept
+
+    // The next check is told the first source is done, reports only the other one, and finishes: the card is written.
+    let offered: PendingSource[] = []
+    driver.script[VERIFY] = async r => {
+      offered = everySource(await readPending(r))
+      for (const s of offered.filter(s => s.needsCheck)) await r.call('outpost_report_check', { sourceId: s.sourceId, ...SEEN })
+      await r.done()
+      return completed()
+    }
+    await verifyProduct(deps, 'p1', 'baseline')
+    expect(offered.map(s => [s.sourceId, s.needsCheck])).toEqual([[sources[0]!.id, false], [sources[1]!.id, true]])
+    expect(card('positioning')).toMatchObject({ version: 1, sourceIds: sources.map(s => s.id) })
+  })
+
+  it('rejects a daily card edit with no valid source left, as a baseline card would be', async () => {
+    const f = addFinding([official('https://cursor.com/changelog/2-0')])
+    const misquoted = addSource('https://blog.example/misquote')
+    addEdit({ dimension: 'business', body: '团队版 40 美元[1]。', sourceIds: [misquoted.id], findingIds: [f.id] })
+    const unseen = addSource('https://mp.weixin.qq.com/s?__biz=MzC&mid=2&idx=1&sn=y')
+    addEdit({ dimension: 'technology', body: '后台 Agent 上线[1]。', sourceIds: [unseen.id], findingIds: [f.id] })
+    const fine = official('https://cursor.com/changelog/2-0')
+    addEdit({ dimension: 'experience', body: '上手更快[1]。', sourceIds: [fine.id], findingIds: [f.id] })
+    driver.script[VERIFY] = reportCheck(s => s.sourceId === misquoted.id ? NOT_THERE : s.sourceId === unseen.id ? UNOPENED : SEEN)
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(finding(f.id).status).toBe('verified')
+    expect(card('business')).toBeUndefined() // its only source does not hold the quote
+    expect(card('technology')).toBeUndefined() // nobody could see its only source
+    expect(card('experience')).toMatchObject({ version: 1, sourceIds: [fine.id] })
+    expect(repo.pendingCardEdits('p1')).toEqual([])
   })
 
   it('rejects when the check was skipped for the budget, leaving everything as it was', async () => {
@@ -399,6 +451,29 @@ describe('verifyProduct', () => {
     expect(repo.getProduct('p1')!.status).toBe('tracking')
     expect(card('positioning')).toMatchObject({ version: 1, changeNote: '建档' })
     expect(driver.runs.map(r => r.title)).toEqual(['前哨 · Cursor 建档', '前哨 · Cursor 建档核查'])
+  })
+})
+
+describe('verifyProduct inside the baseline', () => {
+  it('keeps a product in baseline when its check stopped part-way', async () => {
+    repo.setProductStatus('p1', 'candidate')
+    driver.script['outpost-baseline-'] = async r => {
+      await r.call('outpost_submit_card', {
+        dimension: 'positioning', summary: '面向专业开发者的 AI 编辑器', bullets: ['基于 VS Code'], body: 'Cursor 是基于 VS Code 的编辑器[1]。',
+        sources: [{ url: 'https://cursor.com/', title: 'Cursor 官网', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'The AI Code Editor' }],
+      })
+      await r.done()
+      return completed()
+    }
+    driver.script[VERIFY] = () => completed() // runs out of room before reporting anything
+
+    startBaseline({ ...deps, verifyProduct: (id, scope) => verifyProduct(deps, id, scope) }, ['p1'])
+    await runner.idle()
+
+    expect(repo.getProduct('p1')!.status).toBe('baselining') // not tracked with an empty dossier
+    expect(repo.runsOfDate(TODAY, 'baseline')[0]).toMatchObject({ status: 'failed', error: '核查没有完成：会话没有调用 outpost_done 就停了，这次不下结论' })
+    expect(repo.pendingCardEdits('p1')).toHaveLength(1) // the card waits for a check that finishes
+    expect(card('positioning')).toBeUndefined()
   })
 })
 

@@ -15,20 +15,20 @@
 只有工具提交的结果会被保存，不要在对话里写报告。
 
 ## 步骤
-1. 调用 outpost_read_pending。pendingFindings 是新发现，pendingCardEdits 是档案卡片，unconfirmedFindings 是之前没核实、还在等佐证的发现。每条有 claim（要核的话）和 sources（sourceId、url、quote）。卡片的 detail 是正文，第 n 个来源对应正文里标 [n] 的那句。
-2. 逐个来源打开原文：
+1. 调用 outpost_read_pending。pendingFindings 是新发现，pendingCardEdits 是档案卡片，unconfirmedFindings 是之前没核实、还在等佐证的发现。每条有 claim（要核的话）和 sources（sourceId、url、quote、needsCheck）。卡片的 detail 是正文，第 n 个来源对应正文里标 [n] 的那句。needsCheck 为 false 的来源已经核过，不要再打开，也不用报告。
+2. 逐个打开 needsCheck 为 true 的来源：
    - 先用 web_fetch 打开 url。
-   - 打不开，或拿到的是验证页、登录页、「环境异常」之类的页面（公众号、知乎、小红书常这样）：本会话有浏览器工具就用浏览器打开；没有就跳过这一步。
+   - 打不开，或拿到的是验证页、登录页、人机验证、「环境异常」之类的页面（公众号、知乎常这样），这都算没打开：本会话有浏览器工具就用浏览器打开；没有就跳过这一步。
    - 还打不开：用 web_search 搜引句或标题，看搜索结果的摘要里能不能对上原话。
-3. 在页面（或摘要）里找 quote 那句原话，再看原文是否支持 claim（卡片按标 [n] 的那句），然后对这个来源调用 outpost_report_check：
-   - openedVia：web_fetch 打开的填 http，浏览器打开的填 browser，只在搜索摘要里对上的填 snippet，都不行填 unopened。
-   - quoteFound：找到原话填 true；打开了却找不到填 false；没看到页面填 null。
+3. 在原文（或摘要）里找 quote 那句原话，再看是否支持 claim（卡片按标 [n] 的那句），然后调用 outpost_report_check：
+   - openedVia：web_fetch 打开了原文填 http，浏览器打开的填 browser，只在搜索摘要里对上的填 snippet，都不行填 unopened。验证页、登录页上本来就没有原话：对它不要报 http + false，那会把真实的发现撤回，要报 unopened。
+   - quoteFound：找到原话填 true；看到了原文却找不到填 false；没看到原文填 null。
    - supportsClaim：支持填 true；不支持或说的是另一回事填 false；拿不准填 null。
    - 几个来源是同一篇通稿的转载：都填同一个 syndicationGroup，值为原始通稿的网址。
-   每个来源都要报告，打不开的也报告（unopened）。
-4. 补佐证（只限发现，卡片不能补）。规则：产品官方说自己的事（claimKind 为 self，来源是官网域名下的页面、官方公众号或官方账号），一个来源就够；其他情况要两个独立来源，同一通稿的转载只算一个。只差一个来源的，最多搜 3 次、打开 3 个网页，找一个独立来源（self 的也可以找官方原文）。找到就用 outpost_add_source 补上，quote 从原文逐字复制，再对它调用 outpost_report_check。找不到就算了，不要硬凑。
-5. unconfirmedFindings：它的来源也按第 2、3 步再核一次（之前打不开的，今天可能打得开），然后做第 4 步。
-6. 全部做完调用 outpost_done，summary 一句话，如「核了 6 个来源，2 个打不开，补到 1 个佐证」。
+   打不开的也要报告（unopened）。
+4. 补佐证（只限发现，卡片不能补）。规则：产品官方说自己的事（claimKind 为 self，来源是官网域名下的页面、官方公众号或官方账号），一个来源就够；其他情况要两个独立来源，同一通稿的转载只算一个。只差一个来源的，最多搜 3 次、打开 3 个网页，找一个独立来源。找到就用 outpost_add_source 补上，quote 从原文逐字复制，再对它调用 outpost_report_check。找不到就算了。
+5. unconfirmedFindings：只重开 needsCheck 为 true 的来源（之前打不开、或摘要没对上的），已经核实的不要再打开；然后做第 4 步。
+6. 全部做完调用 outpost_done，summary 一句话。
 
 ## 规则
 - 只报告你实际看到的；没看到、拿不准就填 null，不要猜。

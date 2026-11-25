@@ -18,7 +18,13 @@ export type VerifyScope = 'baseline' | 'daily'
 /** The note of a finding that was 「待确认」 and has now been confirmed (design §7.4: it shows as 「已证实」). */
 export const PROMOTED_NOTE = '已证实'
 
-/** The check did not run, so nothing was judged: its run was skipped (budget) or failed (error, time-out, stop). */
+/** Why a check whose session ended without `outpost_done` (out of room, or it just stopped) decides nothing. */
+export const STOPPED_EARLY = '会话没有调用 outpost_done 就停了，这次不下结论'
+
+/**
+ * The check did not run to its end, so nothing was judged: its run was skipped (budget), failed (error, time-out, stop),
+ * or ended without `outpost_done` (then it is recorded as failed).
+ */
 export class VerifyNotRun extends Error {
   /** @param run - the `verify` run as it ended; its `error` is the reason. */
   constructor(readonly run: Run) {
@@ -32,11 +38,11 @@ export class VerifyNotRun extends Error {
  * - every `pending` and `unconfirmed` finding gets `judge`'s verdict (the 7-day window counts from its `createdAt`;
  *   one that was 「待确认」 and is now verified gets the note 「已证实」). A finding found verified gets `verifiedOn` =
  *   the day being processed (`date`), unless it already has one, so a promotion shows in that day's brief;
- * - a daily card edit (one resting on findings) becomes the dimension's next version once all its findings are verified,
- *   is rejected once any of them is withdrawn or unproven, and otherwise waits for the next check;
- * - a baseline card edit (resting on no finding) loses its void sources and their `[n]` (the rest renumbered), and
- *   becomes the dimension's first version if a valid source remains; otherwise it is rejected and the dimension stays
- *   empty (「暂无可核实的信息」);
+ * - a card edit is written only with its void sources and their `[n]` removed (the rest renumbered), and only if a
+ *   valid source remains; otherwise it is rejected (a dimension without a card shows 「暂无可核实的信息」);
+ * - a daily card edit (one resting on findings) is written that way once all its findings are verified, is rejected
+ *   once any of them is withdrawn or unproven, and otherwise waits for the next check;
+ * - a baseline card edit (resting on no finding) is written that way, normally as version 1;
  * - of several pending edits to one dimension the newest wins; the older ones are rejected, since each is a whole new
  *   text and applying an older one later would undo the newer.
  * Findings past their 7 days are settled before the session starts, so no searching is spent on them; when nothing is
@@ -46,7 +52,9 @@ export class VerifyNotRun extends Error {
  * neither backs nor voids anything, and a finding resting on it waits as 「待确认」 (「原文打不开」) for the next check.
  *
  * @param date - the day the check counts toward (its brief, its budget, and `verifiedOn`); default today.
- * @throws VerifyNotRun when the session was skipped or failed; nothing is judged then, all of it waits for the next check.
+ * @throws VerifyNotRun when the session was skipped, failed, or ended without `outpost_done`: a partial report would
+ *   make every source not reached count as unopened, so nothing is judged then. All of it waits for the next check,
+ *   and what the checker did report stays on the sources, so that check does not open them again.
  * @throws When the product does not exist.
  */
 export async function verifyProduct(deps: JobDeps, productId: Id, scope: VerifyScope, date?: string): Promise<void> {
@@ -70,6 +78,10 @@ export async function verifyProduct(deps: JobDeps, productId: Id, scope: VerifyS
     tools: onDone => researchTools('verify', { repo, runId, trackId: null, productId, now: () => clock.now(), icons, onDone }),
   }))
   if (run.status !== 'done') throw new VerifyNotRun(run)
+  if (run.error !== null) { // done, but without outpost_done: the runner's note that it stopped early
+    repo.updateRun(run.id, { status: 'failed', error: STOPPED_EARLY })
+    throw new VerifyNotRun(repo.getRun(run.id)!)
+  }
   settle(repo, productId, day, clock.now(), true)
 }
 
@@ -102,17 +114,18 @@ function settle(repo: Repo, productId: Id, day: string, now: Date, checked: bool
   for (const edit of edits) {
     if (newest.get(edit.dimension) !== edit) repo.setCardEditStatus(edit.id, 'rejected')
     else if (edit.findingIds.length) mergeDailyEdit(repo, edit, findings, now)
-    else if (checked) mergeBaselineEdit(repo, edit, now)
+    else if (checked) writeIfBacked(repo, edit, now)
   }
 }
 
 function mergeDailyEdit(repo: Repo, edit: CardEdit, findings: Map<Id, Finding>, now: Date): void {
   const statuses = edit.findingIds.map(id => findings.get(id)?.status)
   if (statuses.some(s => s === undefined || s === 'withdrawn' || s === 'unproven')) repo.setCardEditStatus(edit.id, 'rejected')
-  else if (statuses.every(s => s === 'verified')) write(repo, edit, sourceCheck(repo, edit).removed, now)
+  else if (statuses.every(s => s === 'verified')) writeIfBacked(repo, edit, now)
 }
 
-function mergeBaselineEdit(repo: Repo, edit: CardEdit, now: Date): void {
+/** Writes the edit without its void sources if a valid source remains; rejects it otherwise. */
+function writeIfBacked(repo: Repo, edit: CardEdit, now: Date): void {
   const { removed, valid } = sourceCheck(repo, edit)
   if (valid === 0) repo.setCardEditStatus(edit.id, 'rejected')
   else write(repo, edit, removed, now)
