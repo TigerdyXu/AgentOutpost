@@ -156,6 +156,37 @@ describe('judge', () => {
     expect(same.status).toBe('unconfirmed')
   })
 
+  it('does not count an opened source whose page contradicts the claim, even an official one', () => {
+    // The quote is on the official page but the page does not say what the finding claims: that source is void, so it
+    // cannot carry the "official, speaking about itself" rule, and the other source alone is not enough for a self claim.
+    const contradicting = ev({ url: 'https://official.com/blog', isOfficial: true, openedVia: 'http', quoteFound: true, supportsClaim: false })
+    const other = ev({ url: 'https://b.com/y', openedVia: 'http', quoteFound: true })
+    const v = judge({ claimKind: 'self', evidence: [contradicting, other], firstSeen: d0, now: d0 })
+    expect(v).toEqual({ status: 'unconfirmed', note: '只有一个来源', unconfirmedUntil: plusDays(d0, 7).toISOString() })
+    // The same for a third-party claim: the contradicting page is not the second source.
+    expect(judge({ claimKind: 'third-party', evidence: [contradicting, other], firstSeen: d0, now: d0 }).status).toBe('unconfirmed')
+    // Counter-check: once that page does support the claim, it is the official source that makes the self claim verified.
+    expect(judge({ claimKind: 'self', evidence: [{ ...contradicting, supportsClaim: true }, other], firstSeen: d0, now: d0 }).status).toBe('verified')
+  })
+
+  it('does not count a search-snippet match that contradicts the claim as a valid source', () => {
+    // A snippet is never void (it is only a fragment), but a matched quote that does not support the claim is not valid either.
+    const contradicting = ev({ isOfficial: true, openedVia: 'snippet', quoteFound: true, supportsClaim: false })
+    const alone = judge({ claimKind: 'self', evidence: [contradicting], firstSeen: d0, now: d0 })
+    expect(alone.status).toBe('unconfirmed')
+    expect(alone.unconfirmedUntil).toBe(plusDays(d0, 7).toISOString())
+    // Two snippets, one of them contradicting: only one valid source is left for a third-party claim.
+    const pair = judge({
+      claimKind: 'third-party',
+      evidence: [ev({ url: 'https://a.com/x', openedVia: 'snippet', quoteFound: true }), { ...contradicting, url: 'https://b.com/y', isOfficial: false }],
+      firstSeen: d0,
+      now: d0,
+    })
+    expect(pair.status).toBe('unconfirmed')
+    // Counter-check: the same snippet without the contradiction is a confirmed official source.
+    expect(judge({ claimKind: 'self', evidence: [{ ...contradicting, supportsClaim: null }], firstSeen: d0, now: d0 }).status).toBe('verified')
+  })
+
   it('withdraws a finding that has no source at all', () => {
     expect(judge({ claimKind: 'self', evidence: [], firstSeen: d0, now: d0 }).status).toBe('withdrawn')
   })
