@@ -43,6 +43,9 @@ const TOOL_NAMES: Record<RunToolKind, string[]> = {
 }
 
 // ---- argument shapes (the length limits are hard: over them the agent is told to shorten and resubmit) ----
+// Optional fields are `.nullish()`: models often send `null` for "nothing here", which means the same as leaving the field out.
+// The code reading them treats null and undefined alike. Fields whose null means something of its own (quoteFound) are
+// `.nullable()` and stay required.
 
 /** Trimmed text of `min`..`max` characters, with an error that says how far over it is. */
 const str = (max: number, min = 1) => z.string().trim()
@@ -54,7 +57,7 @@ const SourceInput = z.object({
   url,
   title: str(80),
   publisher: str(30),
-  publishedAt: z.string().optional(),
+  publishedAt: z.string().nullish(),
   kind: z.enum(['official', 'media', 'review', 'appstore', 'social']),
   isOfficial: z.boolean(),
   quote: str(200),
@@ -69,7 +72,7 @@ const cardShape = {
   bullets: z.array(str(40)).min(1).max(3),
   body: str(1500),
   sources: z.array(SourceInput).min(1).max(MAX_SOURCES),
-  inferenceQuotes: z.array(str(1500)).max(20).default([]),
+  inferenceQuotes: z.array(str(1500)).max(20).nullish(),
 }
 
 const SubmitCandidate = z.object({
@@ -80,9 +83,9 @@ const SubmitCandidate = z.object({
   oneLiner: str(40),
   tier: z.enum(['strong', 'consider', 'excluded']),
   reason: str(60),
-  officialUrl: url.optional(),
-  iconUrl: url.optional(),
-  articles: z.array(z.object({ url, title: str(80), publishedAt: z.string().optional() })).min(1).max(50),
+  officialUrl: url.nullish(),
+  iconUrl: url.nullish(),
+  articles: z.array(z.object({ url, title: str(80), publishedAt: z.string().nullish() })).min(1).max(50),
 })
 const SubmitCard = z.object(cardShape)
 const SubmitFacts = z.object({ form: str(20, 0), platforms: str(100, 0), price: str(100, 0), firstReleased: str(30, 0), rivals: z.array(str(30)).max(5) })
@@ -102,7 +105,7 @@ const ReportCheck = z.object({
   openedVia: z.enum(['http', 'browser', 'snippet', 'unopened']),
   quoteFound: z.boolean().nullable(),
   supportsClaim: z.boolean().nullable(),
-  syndicationGroup: z.string().trim().max(500).optional(),
+  syndicationGroup: z.string().trim().max(500).nullish(),
 })
 const AddSource = z.object({ itemId: str(80), source: SourceInput })
 const Done = z.object({ summary: str(100) })
@@ -163,7 +166,7 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
   const needTrack = (): Id => scope.trackId ?? reject('这次运行没有关联赛道，不能使用这个工具')
 
   const storeSource = (s: SourceInput): Source => repo.addSource({
-    url: s.url, title: s.title, publisher: s.publisher, publishedAt: normalizeDate(s.publishedAt), kind: s.kind, isOfficial: s.isOfficial, quote: s.quote,
+    url: s.url, title: s.title, publisher: s.publisher, publishedAt: normalizeDate(s.publishedAt ?? undefined), kind: s.kind, isOfficial: s.isOfficial, quote: s.quote,
     syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
   })
   const storeSources = (inputs: SourceInput[]): Source[] => inputs.map(storeSource)
@@ -181,12 +184,13 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       const n = Number(m[1])
       if (n < 1 || n > args.sources.length) reject(`body：引用了 [${n}]，但 sources 只有 ${args.sources.length} 个（[n] 指 sources 里的第 n 个，从 1 数起）`)
     }
-    for (const quote of args.inferenceQuotes)
+    const quotes = args.inferenceQuotes ?? []
+    for (const quote of quotes)
       if (!args.body.includes(quote)) reject(`inferenceQuotes：这一段在 body 里找不到，必须逐字出现在 body 里：「${quote.slice(0, 40)}」`)
     const sources = storeSources(args.sources)
     const edit = repo.addCardEdit({
       productId, dimension: args.dimension, summary: args.summary, bullets: args.bullets, body: args.body, sourceIds: sources.map(s => s.id),
-      inferenceSpans: inferenceSpans(args.body, args.inferenceQuotes), ...extra,
+      inferenceSpans: inferenceSpans(args.body, quotes), ...extra,
     })
     return { cardEditId: edit.id }
   }
@@ -224,7 +228,7 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
         if (repo.listCandidates(trackId, scope.runId).some(c => c.productId === product.id)) reject(`name：「${product.name}」这一轮已经提交过了，不要重复提交`)
         const candidate = repo.addCandidate({
           trackId, batchId: scope.runId, productId: product.id, tier: args.tier, oneLiner: args.oneLiner, reason: args.reason,
-          heat: weeklyHeat(args.articles.map(a => normalizeDate(a.publishedAt)), scope.now()), selected: args.tier === 'strong',
+          heat: weeklyHeat(args.articles.map(a => normalizeDate(a.publishedAt ?? undefined)), scope.now()), selected: args.tier === 'strong',
         })
         const origin = args.officialUrl ? new URL(args.officialUrl).origin : null
         fetchIconLater(product.id, [args.iconUrl, origin && `${origin}/favicon.ico`, origin && `${origin}/apple-touch-icon.png`].filter((u): u is string => !!u))

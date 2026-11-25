@@ -1,0 +1,329 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
+import { DshSessionDriver, toolParameters } from '../../src/host/dsh-sessions.ts'
+import type { SessionSpec, ToolSpec } from '../../src/host/ports.ts'
+import { researchTools } from '../../src/host/tools.ts'
+import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
+
+let dir: string
+let workspaceDir: string
+let host: DshHost
+let driver: DshSessionDriver
+let signal: AbortSignal
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'outpost-dsh-'))
+  workspaceDir = join(dir, 'data', 'workspace') // not there yet: the driver makes it
+  host = dshHost()
+  driver = new DshSessionDriver(host.ctx, workspaceDir)
+  signal = new AbortController().signal
+})
+afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+/** A tool that records what it was called with and answers `answer(args)`. */
+const probe = (name: string, answer: (args: unknown) => unknown = () => ({ ok: true })) => {
+  const calls: unknown[] = []
+  const tool: ToolSpec = { name, description: `${name} 的说明`, schema: z.object({ summary: z.string() }), execute: async args => { calls.push(args); return answer(args) } }
+  return { tool, calls }
+}
+const specOf = (over: Partial<SessionSpec> = {}): SessionSpec =>
+  ({ sessionId: 'outpost-daily-p1', title: '前哨 · Cursor · 日更', prompt: '调用 outpost_done，summary 写 ok', tools: [probe('outpost_done').tool], model: null, ...over })
+const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
+/** Whether `p` has settled by now. */
+const settled = async (p: Promise<unknown>) => { let done = false; void p.then(() => { done = true }, () => { done = true }); await new Promise(r => setTimeout(r, 0)); return done }
+
+describe('DshSessionDriver.run', () => {
+  it('creates a session with the outpost-researcher preset and renames it', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    expect(existsSync(workspaceDir)).toBe(true)
+    expect(host.workspaceRegistry.create).toHaveBeenCalledWith(workspaceDir, '前哨')
+    expect(host.sessionController.create).toHaveBeenCalledWith({ sessionId: 'outpost-daily-p1', workspaceId: `ws-${workspaceDir}`, agentPreset: 'outpost-researcher' })
+    expect(host.sessionController.rename).toHaveBeenCalledWith({ sessionId: 'outpost-daily-p1', title: '前哨 · Cursor · 日更' })
+    // The prompt goes in as a message of Outpost's own, not as one the user typed, and is made durable.
+    const [message] = host.sent('outpost-daily-p1')
+    expect(message).toEqual({ id: expect.stringMatching(/^outpost:[0-9a-f-]{36}$/), role: 'user', content: [{ type: 'text', text: '调用 outpost_done，summary 写 ok' }], source: { kind: 'dsh-outpost', form: 'relay' } })
+    expect(host.sessionPersistence.flush).toHaveBeenCalled()
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toEqual({ reason: 'completed', usage: zero })
+  })
+
+  it('continues a session that already exists instead of creating it again', async () => {
+    host.store('outpost-daily-p1') // on disk from before a restart, no live agent
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    expect(host.sessionController.resolveAgent).toHaveBeenCalledWith('outpost-daily-p1')
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.sessionController.rename).not.toHaveBeenCalled()
+    expect([...host.tools('outpost-daily-p1').keys()]).toEqual(['outpost_done']) // the resumed agent gets the tools too
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toMatchObject({ reason: 'completed' })
+
+    // A second round of the same live session sends a second message into the same agent.
+    const again = driver.run(specOf({ prompt: '再查一遍' }), signal)
+    await host.started('outpost-daily-p1', 2)
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.sent('outpost-daily-p1').map(m => m.content[0]!.text)).toEqual(['调用 outpost_done，summary 写 ok', '再查一遍'])
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await again).toMatchObject({ reason: 'completed' })
+  })
+
+  it('registers the spec tools only on its own session', async () => {
+    const a = probe('outpost_done', args => ({ ok: true, got: args, skipped: undefined }))
+    const b = probe('outpost_read')
+    const pa = driver.run(specOf({ sessionId: 'outpost-a', tools: [a.tool] }), signal)
+    const pb = driver.run(specOf({ sessionId: 'outpost-b', tools: [b.tool] }), signal)
+    await host.started('outpost-a'); await host.started('outpost-b')
+    await host.spawn('outpost-unknown') // an outpost- session this driver has no tools for
+    await host.spawn('chat-1') // a session of the user's own
+    expect([...host.tools('outpost-a').keys()]).toEqual(['outpost_done'])
+    expect([...host.tools('outpost-b').keys()]).toEqual(['outpost_read'])
+    expect(host.tools('outpost-unknown').size).toBe(0)
+    expect(host.tools('chat-1').size).toBe(0)
+
+    // The registered tool hands the model's arguments over as they are and answers with plain JSON.
+    const registered = host.tools('outpost-a').get('outpost_done')!
+    expect(registered.description).toBe('outpost_done 的说明')
+    expect(registered.parameters).toEqual(toolParameters(a.tool.schema))
+    expect(registered.output.schema).toEqual({ type: 'object', additionalProperties: true })
+    const value = await registered.execute({ summary: 'ok', extra: null }, { signal })
+    expect(a.calls).toEqual([{ summary: 'ok', extra: null }])
+    expect(value).toEqual({ ok: true, got: { summary: 'ok', extra: null } }) // no `undefined` left for DSH to refuse as lossy
+    expect(registered.output.render({}, value)).toEqual([{ type: 'text', text: JSON.stringify(value) }])
+    expect(b.calls).toEqual([])
+
+    // An agent made afresh for the same session (after a compaction or a restart) gets the same tools.
+    await host.spawn('outpost-a')
+    expect([...host.tools('outpost-a').keys()]).toEqual(['outpost_done'])
+    host.turnEnd('outpost-a', { kind: 'completed' }, 1); host.turnEnd('outpost-b', { kind: 'completed' })
+    await Promise.all([pa, pb])
+  })
+
+  it('replaces the tools of a session that runs again with other tools', async () => {
+    const first = driver.run(specOf({ tools: [probe('outpost_read').tool, probe('outpost_done').tool] }), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await first
+    const second = driver.run(specOf({ tools: [probe('outpost_done').tool, probe('outpost_submit_facts').tool] }), signal)
+    await host.started('outpost-daily-p1', 2)
+    expect([...host.tools('outpost-daily-p1').keys()].sort()).toEqual(['outpost_done', 'outpost_submit_facts'])
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await second
+  })
+
+  it('reports tools DSH refuses to the caller, without failing the agent DSH is creating', async () => {
+    const twice = [probe('outpost_done').tool, probe('outpost_done').tool] // DSH refuses a second tool of the same name
+    await expect(driver.run(specOf({ tools: twice }), signal)).rejects.toThrow('already registered')
+    // The listener of `agent/created` swallowed it (a throw there fails the creation); the session and its agent exist.
+    expect(host.sessionController.create).toHaveBeenCalledTimes(1)
+    expect(host.agent('outpost-daily-p1').id).toBe('outpost-daily-p1')
+    expect(host.tools('outpost-daily-p1').size).toBe(0) // the first was taken off again
+    expect(host.sent('outpost-daily-p1')).toEqual([])
+  })
+
+  it('refuses a session id without the outpost- prefix', async () => {
+    await expect(driver.run(specOf({ sessionId: 'daily-p1' }), signal)).rejects.toThrow('outpost-')
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+  })
+
+  it('resolves with summed usage when the turn ends', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    // DSH counts input disjointly: inputTokens is the input that missed the cache, cacheReadTokens the input read from it
+    // (@deepseek-ai/dsh-llm TokenUsage; token-meter's `uncachedInputTokens: inputTokens`). Cache writes are billed as misses.
+    host.assistant('outpost-daily-p1', { inputTokens: 100, outputTokens: 20, cacheReadTokens: 40 })
+    host.assistant('outpost-daily-p1', { inputTokens: 30, outputTokens: 5, cacheWriteTokens: 7 })
+    host.assistant('outpost-daily-p1', undefined) // a step whose adapter reported no usage
+    host.assistant('outpost-other', { inputTokens: 999, outputTokens: 999, cacheReadTokens: 999 }, 1) // another session
+    host.assistant('outpost-daily-p1', { inputTokens: 999, outputTokens: 999 }, 0) // an earlier turn of this session
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' }, 0) // the end of an earlier turn is not this round's end
+    expect(await settled(p)).toBe(false)
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toEqual({ reason: 'completed', usage: { inputTokens: 137, outputTokens: 25, cacheReadTokens: 40 } })
+  })
+
+  it('waits for the turn that takes its message, not one that was already running', async () => {
+    const first = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await first
+    host.userTurn('outpost-daily-p1') // turn 2: the user typed something, and it is still running
+    const p = driver.nudge('outpost-daily-p1', '继续', signal)
+    await vi.waitFor(() => { expect(host.sent('outpost-daily-p1')).toHaveLength(2) })
+    host.assistant('outpost-daily-p1', { inputTokens: 500, outputTokens: 500 })
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' }) // the user's turn ends; ours starts next
+    expect(await settled(p)).toBe(false)
+    await host.started('outpost-daily-p1', 3)
+    host.assistant('outpost-daily-p1', { inputTokens: 10, outputTokens: 2 })
+    host.turnEnd('outpost-daily-p1', { kind: 'max-tokens' })
+    expect(await p).toEqual({ reason: 'max-tokens', usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 } })
+  })
+
+  it('keeps concurrent rounds of different sessions apart, ending in either order', async () => {
+    const pa = driver.run(specOf({ sessionId: 'outpost-a' }), signal)
+    const pb = driver.run(specOf({ sessionId: 'outpost-b' }), signal)
+    await host.started('outpost-a'); await host.started('outpost-b')
+    host.assistant('outpost-a', { inputTokens: 1, outputTokens: 1 })
+    host.assistant('outpost-b', { inputTokens: 2, outputTokens: 2, cacheReadTokens: 2 })
+    // b started second and ends first; a keeps waiting for its own end.
+    host.turnEnd('outpost-b', { kind: 'error', error: { message: 'HTTP 503 from provider', code: 'PROVIDER_ERROR' } })
+    expect(await pb).toEqual({ reason: 'error', usage: { inputTokens: 2, outputTokens: 2, cacheReadTokens: 2 }, error: 'HTTP 503 from provider' })
+    expect(await settled(pa)).toBe(false)
+    host.assistant('outpost-a', { inputTokens: 3, outputTokens: 3 })
+    host.turnEnd('outpost-a', { kind: 'completed' })
+    expect(await pa).toEqual({ reason: 'completed', usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 0 } })
+  })
+
+  it('reports how the turn ended', async () => {
+    const reasons: [Record<string, unknown> & { kind: string }, Record<string, unknown>][] = [
+      [{ kind: 'aborted', reason: { kind: 'user' } }, { reason: 'aborted' }],
+      [{ kind: 'blocked' }, { reason: 'blocked' }],
+      [{ kind: 'interrupted' }, { reason: 'interrupted' }],
+      [{ kind: 'forked' }, { reason: 'interrupted' }],
+      [{ kind: 'something-new' }, { reason: 'error', error: expect.stringContaining('something-new') }],
+    ]
+    for (const [i, [reason, expected]] of reasons.entries()) {
+      const p = driver.run(specOf(), signal)
+      await host.started('outpost-daily-p1', i + 1)
+      host.turnEnd('outpost-daily-p1', reason)
+      expect(await p, reason.kind).toEqual({ usage: zero, ...expected })
+    }
+  })
+
+  it('cancels and reports timeout when the signal aborts', async () => {
+    const timer = new AbortController()
+    const p = driver.run(specOf(), timer.signal)
+    await host.started('outpost-daily-p1')
+    host.assistant('outpost-daily-p1', { inputTokens: 50, outputTokens: 10, cacheReadTokens: 5 })
+    expect(host.sessionController.cancel).not.toHaveBeenCalled()
+    timer.abort()
+    expect(await p).toEqual({ reason: 'timeout', usage: { inputTokens: 50, outputTokens: 10, cacheReadTokens: 5 } })
+    expect(host.sessionController.cancel).toHaveBeenCalledWith({ sessionId: 'outpost-daily-p1' })
+    // The turn that the cancel stops ends later; it changes nothing.
+    host.turnEnd('outpost-daily-p1', { kind: 'aborted', reason: { kind: 'user' } })
+    expect(await p).toMatchObject({ reason: 'timeout' })
+  })
+
+  it('reports timeout without sending anything when the signal has already aborted', async () => {
+    const timer = new AbortController()
+    timer.abort()
+    expect(await driver.run(specOf(), timer.signal)).toEqual({ reason: 'timeout', usage: zero })
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.sessionController.cancel).not.toHaveBeenCalled()
+  })
+
+  it('uses the default model when none is configured', async () => {
+    const p = driver.run(specOf({ model: null }), signal)
+    await host.started('outpost-daily-p1')
+    expect(host.agent('outpost-daily-p1').model.select).not.toHaveBeenCalled()
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+
+    const chosen = driver.run(specOf({ sessionId: 'outpost-b', model: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } }), signal)
+    await host.started('outpost-b')
+    expect(host.agent('outpost-b').model.select).toHaveBeenCalledWith({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    host.turnEnd('outpost-b', { kind: 'completed' })
+    await chosen
+  })
+})
+
+describe('DshSessionDriver.nudge', () => {
+  it('says one more thing in the session and waits for that round only', async () => {
+    const first = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.assistant('outpost-daily-p1', { inputTokens: 100, outputTokens: 100 })
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await first
+    const p = driver.nudge('outpost-daily-p1', '你还没调用 outpost_done，请调用它结束', signal)
+    await host.started('outpost-daily-p1', 2)
+    expect(host.sent('outpost-daily-p1').at(-1)).toMatchObject({ content: [{ type: 'text', text: '你还没调用 outpost_done，请调用它结束' }], source: { kind: 'dsh-outpost' } })
+    expect([...host.tools('outpost-daily-p1').keys()]).toEqual(['outpost_done']) // the round's tools are still there
+    host.assistant('outpost-daily-p1', { inputTokens: 7, outputTokens: 3 })
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toEqual({ reason: 'completed', usage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0 } })
+  })
+
+  it('fails for a session that does not exist', async () => {
+    await expect(driver.nudge('outpost-missing', '在吗', signal)).rejects.toThrow('outpost-missing')
+  })
+})
+
+describe('DshSessionDriver.startInteractive', () => {
+  it('opens the follow-up chat with its tools and the first message, without waiting for an answer', async () => {
+    const tools = researchTools('followup', { repo: {} as never, runId: 'r1', trackId: null, productId: 'p1', now: () => new Date(), icons: { fetch: async () => null }, onDone: () => {} })
+    await driver.startInteractive({ sessionId: 'outpost-ask-1', title: '追问 · Cursor', prompt: '它的团队版多少钱？', tools })
+    expect(host.sessionController.create).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'outpost-ask-1', agentPreset: 'outpost-researcher' }))
+    expect(host.sessionController.rename).toHaveBeenCalledWith({ sessionId: 'outpost-ask-1', title: '追问 · Cursor' })
+    expect([...host.tools('outpost-ask-1').keys()]).toEqual(['outpost_read'])
+    expect(host.sent('outpost-ask-1')).toEqual([expect.objectContaining({ content: [{ type: 'text', text: '它的团队版多少钱？' }] })])
+    expect(host.agent('outpost-ask-1').model.select).not.toHaveBeenCalled()
+    expect(host.sessionPersistence.flush).toHaveBeenCalled()
+  })
+})
+
+describe('DshSessionDriver.archive', () => {
+  it('archives the session, stopping what it still does, and lets go of its tools', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    await driver.archive('outpost-daily-p1')
+    expect(host.workspaceRegistry.archiveSession).toHaveBeenCalledWith('outpost-daily-p1', { stopActivity: true })
+    expect(host.tools('outpost-daily-p1').size).toBe(0)
+    await host.spawn('outpost-daily-p1') // opened again later: Outpost no longer serves it
+    expect(host.tools('outpost-daily-p1').size).toBe(0)
+  })
+})
+
+describe('toolParameters', () => {
+  type Schema = { type?: string; required?: string[]; properties?: Record<string, { type?: unknown; anyOf?: { type?: string }[] }> }
+  const params = (name: string) => {
+    const tool = ['recommend', 'baseline', 'daily', 'verify'].flatMap(kind =>
+      researchTools(kind as 'daily', { repo: {} as never, runId: 'r1', trackId: 't1', productId: 'p1', now: () => new Date(), icons: { fetch: async () => null }, onDone: () => {} }))
+      .find(t => t.name === name)!
+    return toolParameters(tool.schema) as Schema
+  }
+  const allowsNull = (node: { type?: unknown; anyOf?: { type?: string }[] } | undefined) =>
+    (Array.isArray(node?.type) && node.type.includes('null')) || !!node?.anyOf?.some(branch => branch.type === 'null')
+
+  it('describes the arguments the model may send, as the tool accepts them', () => {
+    const card = params('outpost_submit_card')
+    expect(card.type).toBe('object')
+    expect(card.required).not.toContain('inferenceQuotes') // may be left out
+    expect(card.required).toEqual(expect.arrayContaining(['dimension', 'summary', 'bullets', 'body', 'sources']))
+    const candidate = params('outpost_submit_candidate')
+    expect(candidate.required).not.toContain('officialUrl')
+    expect(candidate.required).not.toContain('iconUrl')
+    expect(allowsNull(candidate.properties!.officialUrl)).toBe(true)
+    const check = params('outpost_report_check')
+    expect(check.required).toEqual(expect.arrayContaining(['sourceId', 'openedVia', 'quoteFound', 'supportsClaim']))
+    expect(check.required).not.toContain('syndicationGroup')
+    expect(allowsNull(check.properties!.quoteFound)).toBe(true)
+    expect(allowsNull(check.properties!.syndicationGroup)).toBe(true)
+    expect(params('outpost_read_pending')).toMatchObject({ type: 'object', properties: {} })
+  })
+
+  it('is plain JSON that DSH can copy without loss', () => {
+    // DSH's `snapshotJsonValue` (used when it projects tool schemas, e.g. for code-execution mode) refuses an object with a
+    // non-enumerable or symbol key, a prototype other than Object's, or an undefined value; zod adds a hidden `~standard`.
+    const problems = (value: unknown, path: string): string[] => {
+      if (value === undefined) return [`${path} is undefined`]
+      if (value === null || typeof value !== 'object') return []
+      const own = Reflect.ownKeys(value).filter(key => !(Array.isArray(value) && key === 'length'))
+      const hidden = own.filter(key => typeof key !== 'string' || !Object.prototype.propertyIsEnumerable.call(value, key)).map(key => `${path}.${String(key)} is hidden`)
+      const proto = Object.getPrototypeOf(value)
+      const odd = proto === Object.prototype || proto === Array.prototype ? [] : [`${path} has an unusual prototype`]
+      return [...hidden, ...odd, ...Object.entries(value).flatMap(([key, child]) => problems(child, `${path}.${key}`))]
+    }
+    for (const name of ['outpost_submit_candidate', 'outpost_submit_card', 'outpost_submit_finding', 'outpost_report_check', 'outpost_add_source', 'outpost_done', 'outpost_read'])
+      expect(problems(params(name), name)).toEqual([])
+  })
+
+  it('does not require a field that has a default', () => {
+    const schema = z.object({ summary: z.string(), tags: z.array(z.string()).default([]) })
+    expect(toolParameters(schema)).toMatchObject({ type: 'object', required: ['summary'], properties: { tags: { type: 'array', default: [] } } })
+  })
+})

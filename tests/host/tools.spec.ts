@@ -634,6 +634,44 @@ describe('verification tools', () => {
   })
 })
 
+describe('optional fields sent as null', () => {
+  // Models often spell "I have nothing for this field" as an explicit null.
+  it('takes a null publish date of a source as no date', async () => {
+    const r = await toolbox('daily')('outpost_submit_finding', { ...finding, sources: [source({ publishedAt: null })] })
+    expect(r).toMatchObject({ findingId: expect.any(String) })
+    expect(repo.getSources(repo.findingsOfProduct(product.id)[0]!.sourceIds)[0]).toMatchObject({ url: 'https://cursor.com/changelog/1-2', publishedAt: null })
+
+    const { finding: f } = seedFinding({ dedupeKey: 'other' })
+    const added = await toolbox('verify')('outpost_add_source', { itemId: f.id, source: source({ url: 'https://other.example/story', publishedAt: null }) })
+    expect(repo.getSources([idOf(added, 'sourceId')])[0]).toMatchObject({ url: 'https://other.example/story', publishedAt: null })
+  })
+
+  it('takes null inference quotes of a card as none', async () => {
+    const r = await toolbox('baseline')('outpost_submit_card', { ...card, inferenceQuotes: null })
+    expect(repo.pendingCardEdits(product.id).find(e => e.id === idOf(r, 'cardEditId'))!.inferenceSpans).toEqual([])
+  })
+
+  it('takes a null official site, icon and article date of a candidate as unknown', async () => {
+    const call = toolbox('recommend', { productId: null })
+    const r = await call('outpost_submit_candidate', { ...candidate, officialUrl: null, iconUrl: null, articles: [{ url: 'https://news.example/a', title: '报道一', publishedAt: null }] })
+    const [c] = repo.listCandidates(track.id, run.id)
+    expect(c!.id).toBe(idOf(r, 'candidateId'))
+    expect(c!.heat).toMatchObject({ foundCount: 1, datedWeekly: [0, 0, 0, 0, 0] })
+    expect(repo.getProduct(c!.productId)).toMatchObject({ name: 'Windsurf', officialDomains: [] })
+    await Promise.resolve()
+    expect(icons.fetch).not.toHaveBeenCalled()
+  })
+
+  it('takes a null repost group as none, while quoteFound and supportsClaim keep their own null', async () => {
+    const { source: s } = seedFinding()
+    const call = toolbox('verify')
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: null, supportsClaim: true, syndicationGroup: null })).toEqual({ ok: true })
+    expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'http', quoteFound: null, supportsClaim: true, syndicationGroup: null })
+    // quoteFound and supportsClaim may be null, but not left out.
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', supportsClaim: true })).toMatchObject({ error: expect.stringContaining('quoteFound') })
+  })
+})
+
 describe('outpost_done', () => {
   it('reports the summary to the run', async () => {
     const call = toolbox('daily')
