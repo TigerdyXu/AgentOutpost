@@ -35,6 +35,8 @@ export interface TrackView {
   products: TrackProductView[]
   /** Candidates of the track's latest batch that wait to be looked at (not those the user had seen when they started tracking from it; later ones count). */
   candidatesToReview: number
+  /** The track's latest recommendation is queued or running: what the panel reads the state quickly for (a track merely being picked is not). */
+  recommending: boolean
 }
 export interface StateView {
   tracks: TrackView[]
@@ -46,6 +48,8 @@ export interface StateView {
   runTime: string
   /** A browser provider is registered with DSH's browser use, so pages behind verification walls can be opened. */
   browserAvailable: boolean
+  /** The data directory in use (database, icons, working files), for 设置 to show; it cannot be changed while Outpost runs. */
+  dataDir: string
 }
 export interface BriefView {
   brief: Brief | null
@@ -317,12 +321,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           track: t,
           products: repo.productsOfTrack(t.id).map(p => ({ product: p, hasNew: fresh.has(p.id), progress: progressOf(p.id, active) })),
           candidatesToReview: candidatesToReview(t),
+          recommending: recommending(t.id),
         })),
         todayDate: rt.today(),
         todayUnread: brief ? unreadCount(brief, shown) : 0,
         todayCostYuan: repo.spentOn(rt.today()),
         runTime: rt.settings().runTime,
         browserAvailable: rt.browserAvailable(),
+        dataDir: rt.dataDir,
       }
     },
 

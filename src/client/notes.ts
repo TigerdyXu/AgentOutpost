@@ -10,3 +10,5 @@ export const PROMOTED = '已证实'
 export const UNOPENED = '原文打不开'
 /** `VERIFY_BUDGET_NOTE` (host/jobs/daily.ts): the product ran, but the budget did not allow checking what it found. */
 export const VERIFY_BUDGET = '核查因预算未完成'
+/** `STOPPED_ERROR` (host/jobs/runner.ts): the run failed only because Outpost was stopping, so it was cut short, not broken. */
+export const STOPPED = '前哨已停止'

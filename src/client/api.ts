@@ -8,29 +8,56 @@ import type { T } from './locales.ts'
  * A failed request. `message` is the server's sentence when it sent one (`{ error }`), else empty. `starting` says the
  * plugin did not answer at all: the host was unreachable, or the DSH web server answered an empty 404 because the
  * plugin's routes are not mounted yet (starting or restarting), so a 404 then does not mean the record is missing.
+ * `timedOut` says the connection was there but nothing came back within `REQUEST_TIMEOUT_MS`.
  */
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly starting = false) { super(message) }
+  constructor(message: string, readonly status: number, readonly starting = false, readonly timedOut = false) { super(message) }
 }
 
-/** What the panel says about a failure: the server's sentence, 「前哨正在启动…」 while it does not answer, else the status. */
+/** What the panel says about a failure: the server's sentence, 「前哨正在启动…」 while it does not answer, 「请求超时」, else the status. */
 export function describeError(t: T, error: Error): string {
-  if (error instanceof ApiError) return error.starting ? t('error.starting') : error.message || t('error.request', { status: error.status })
+  if (error instanceof ApiError) {
+    return error.timedOut ? t('error.timeout') : error.starting ? t('error.starting') : error.message || t('error.request', { status: error.status })
+  }
   return error.message
 }
 
 /** Methods that change nothing; every other request is sent as JSON, body or not (the server answers 415 otherwise). */
 const READS = new Set(['GET', 'HEAD'])
 
-async function request<V>(method: string, path: string, body: unknown): Promise<V> {
+/**
+ * How long a request may wait for its answer, body included. A request that never comes back would otherwise hold the
+ * poll queue (one request at a time) for good, and its page would keep showing what it last had.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000
+
+/** What `call` takes beside the request itself. */
+export interface CallOptions {
+  /** Cancels the request: it then rejects with the signal's own abort error, not an `ApiError`. */
+  signal?: AbortSignal
+}
+
+async function request<V>(method: string, path: string, body: unknown, caller?: AbortSignal): Promise<V> {
   const headers: Record<string, string> = READS.has(method) ? {} : { 'content-type': 'application/json' }
+  const clock = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  const signal = caller ? AbortSignal.any([clock, caller]) : clock
+  /** Why the request ended without an answer: the clock, the caller, or no plugin on the other end. */
+  const unanswered = (failure: unknown): Error => clock.aborted ? new ApiError('', 0, false, true)
+    : caller?.aborted ? (failure instanceof Error ? failure : new DOMException('The request was aborted.', 'AbortError')) : new ApiError('', 0, true)
   let response: Response
   try {
-    response = await fetch(`/outpost/api/${path}`, { method, headers, ...body === undefined ? {} : { body: JSON.stringify(body) } })
-  } catch {
-    throw new ApiError('', 0, true)
+    response = await fetch(`/outpost/api/${path}`, { method, headers, signal, ...body === undefined ? {} : { body: JSON.stringify(body) } })
+  } catch (failure) {
+    throw unanswered(failure)
   }
-  const text = await response.text().catch(() => '')
+  let text: string
+  try {
+    text = await response.text()
+  } catch (failure) {
+    // A body that breaks off is read as empty (the status still says what happened), unless the clock or the caller cut it.
+    if (clock.aborted || caller?.aborted) throw unanswered(failure)
+    text = ''
+  }
   let value: unknown
   try { value = text ? JSON.parse(text) as unknown : undefined } catch { value = undefined }
   if (!response.ok) {
@@ -41,20 +68,21 @@ async function request<V>(method: string, path: string, body: unknown): Promise<
 }
 
 /** What a caller passes for a route: nothing when the route takes nothing, else its params, `query` and `body`. */
-export type CallArgs<K extends keyof Api> = {} extends ApiRequest<K> ? [request?: ApiRequest<K>] : [request: ApiRequest<K>]
+export type CallArgs<K extends keyof Api> = {} extends ApiRequest<K> ? [request?: ApiRequest<K>, options?: CallOptions] : [request: ApiRequest<K>, options?: CallOptions]
 
 /**
  * Calls one route of the API, e.g. `call('POST findings/:id/read', { id })` or `call('GET brief', { query: { date } })`:
- * `:name` segments come from the request's fields of that name, percent-encoded.
- * @throws ApiError when the request fails.
+ * `:name` segments come from the request's fields of that name, percent-encoded. A request is given up after
+ * `REQUEST_TIMEOUT_MS` (and when `options.signal` aborts).
+ * @throws ApiError when the request fails or times out (`timedOut`); the signal's abort error when `options.signal` cancels it.
  */
-export function call<K extends keyof Api>(route: K, ...[req]: CallArgs<K>): Promise<ApiResponse<K>> {
+export function call<K extends keyof Api>(route: K, ...[req, options]: CallArgs<K>): Promise<ApiResponse<K>> {
   const [method, pattern] = route.split(' ') as [string, string]
   const values = (req ?? {}) as Record<string, unknown> & { query?: Record<string, unknown>; body?: unknown }
   const path = pattern.replace(/:(\w+)/g, (_match, name: string) => encodeURIComponent(String(values[name])))
   const query = Object.entries(values.query ?? {}).filter(([, value]) => value !== undefined && value !== '')
     .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(String(value))}`).join('&')
-  return request(method, query ? `${path}?${query}` : path, values.body)
+  return request(method, query ? `${path}?${query}` : path, values.body, options?.signal)
 }
 
 /** How much slower polling runs while the document is hidden. */

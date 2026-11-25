@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, call, usePoll } from '../../src/client/api.ts'
+import { ApiError, call, describeError, usePoll } from '../../src/client/api.ts'
 import { App } from '../../src/client/shell/App.tsx'
 import { MiddleColumn } from '../../src/client/shell/MiddleColumn.tsx'
 import { parseRoute, useRoute } from '../../src/client/shell/route.ts'
@@ -145,6 +145,54 @@ describe('middle column', () => {
     expect(reads()).toBe(over)
     await advance(10_000)
     expect(reads()).toBe(over + 1)
+  })
+
+  it('reads the state every 5 s while a track is only being picked, and every 2 s while a recommendation runs or a baseline is in progress', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    let recommending = false
+    let progress: { done: number; total: number } | null = null
+    const api = stubApi({
+      'GET state': () => state({ tracks: [
+        { ...track('t1', 'Personal Agent', [], { status: 'picking' }), recommending },
+        track('t2', 'AI 眼镜', [tracked(product('p1', 'Rokid', { status: 'baselining' }), { progress })]),
+      ] }),
+      'GET tracks/:id/candidates': { batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5, candidates: [] },
+    })
+    await mount(<App t={t} />)
+    const reads = () => api.requests.filter(r => r.path === 'state').length
+    const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }); await settle() }
+    // A track that is picking, with nothing running for it: the quiet pace (a track left in 挑选中 for days must not poll every 2 s).
+    const first = reads()
+    await advance(4000)
+    expect(reads()).toBe(first)
+    await advance(1000)
+    expect(reads()).toBe(first + 1)
+    await advance(10_000)
+    expect(reads()).toBe(first + 3)
+
+    // Its recommendation starts: the next read sees it, reads again at once, and then every 2 s.
+    recommending = true
+    await advance(5000)
+    const fast = reads()
+    await advance(6000)
+    expect(reads() - fast).toBe(3)
+
+    // Over: back to the quiet pace (the wait already begun may still be a short one).
+    recommending = false
+    await advance(2000)
+    await advance(2000)
+    const settled = reads()
+    await advance(4000)
+    expect(reads() - settled).toBeLessThanOrEqual(1)
+    await advance(20_000)
+    expect(reads() - settled).toBeLessThanOrEqual(5)
+
+    // A baseline in progress is quick, as before.
+    progress = { done: 1, total: 6 }
+    await advance(5000)
+    const baselining = reads()
+    await advance(6000)
+    expect(reads() - baselining).toBe(3)
   })
 
   it('says 前哨正在启动… until the plugin answers, then shows its tracks', async () => {
@@ -340,5 +388,64 @@ describe('api client', () => {
     expect(await call('GET state').catch((error: unknown) => error)).toMatchObject({ status: 404, starting: true })
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
     expect(await call('GET state').catch((error: unknown) => error)).toMatchObject({ status: 0, starting: true })
+  })
+
+  /** A `fetch` that never answers until its signal aborts, as a hung connection; `timeouts` are the clocks `AbortSignal.timeout` handed out. */
+  function hungFetch() {
+    const timeouts: AbortController[] = []
+    const asked = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => { const controller = new AbortController(); timeouts.push(controller); return controller.signal })
+    const fetch = vi.fn((_input: RequestInfo | URL, init: RequestInit = {}) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => { reject(init.signal!.reason) })
+    }))
+    vi.stubGlobal('fetch', fetch)
+    return { timeouts, asked, fetch }
+  }
+  const timedOut = () => new DOMException('The operation timed out.', 'TimeoutError')
+
+  it('gives up on a request nobody answers after 30 s, and says 请求超时', async () => {
+    const { timeouts, asked } = hungFetch()
+    const pending = call('GET state').catch((error: unknown) => error)
+    await settle()
+    expect(asked).toHaveBeenCalledWith(30_000)
+    expect(timeouts).toHaveLength(1)
+    timeouts[0]!.abort(timedOut())
+    const error = await pending
+    expect(error).toBeInstanceOf(ApiError)
+    // Not 「前哨正在启动…」: the plugin may be there, it did not answer in time.
+    expect(error).toMatchObject({ status: 0, starting: false, timedOut: true })
+    expect(describeError(t, error as ApiError)).toBe('请求超时')
+  })
+
+  it('does not report the caller\'s own abort as a timeout', async () => {
+    hungFetch()
+    const caller = new AbortController()
+    const pending = call('GET state', undefined, { signal: caller.signal }).catch((error: unknown) => error)
+    await settle()
+    caller.abort()
+    const error = await pending
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect((error as Error).name).toBe('AbortError')
+  })
+
+  it('lets a poll go on after a request timed out, instead of stalling the queue behind it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    const { timeouts, fetch } = hungFetch()
+    let seen: ReturnType<typeof usePoll<Awaited<ReturnType<typeof call<'GET state'>>>>> | undefined
+    function Probe() {
+      seen = usePoll(() => call('GET state'), [], 5000)
+      return null
+    }
+    await mount(<Probe />)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    // The first read hangs; nothing else is asked while it does (one request at a time)…
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    // …until its clock runs out: the poll reports it and reads again at its pace.
+    fetch.mockImplementation(async () => Response.json(state({ todayUnread: 3 })))
+    await act(async () => { timeouts[0]!.abort(timedOut()) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(seen!.data?.todayUnread).toBe(3)
+    expect(seen!.error).toBeUndefined()
   })
 })

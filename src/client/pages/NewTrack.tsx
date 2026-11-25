@@ -14,9 +14,9 @@ import { DEFAULT_DIMENSIONS } from '../../core/dimensions.ts'
 import type { Candidate, Heat, Id, Track } from '../../core/types.ts'
 import type { CandidatesView, RunRow } from '../../host/api.ts'
 import { call, describeError, useCandidates } from '../api.ts'
-import type { T } from '../locales.ts'
 import { yuan } from '../shell/MiddleColumn.tsx'
 import { useShell } from '../shell/context.ts'
+import { duration } from '../time.ts'
 import { CheckIcon, ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 
@@ -245,11 +245,6 @@ function useDayCost(): number | null {
     return () => { active = false }
   }, [])
   return cost
-}
-
-/** 「2 分 10 秒」, or 「42 秒」 under a minute. */
-function duration(t: T, total: number): string {
-  return total >= 60 ? t('pick.minutesSeconds', { minutes: Math.floor(total / 60), seconds: total % 60 }) : t('pick.seconds', { seconds: total })
 }
 
 /** The heat evidence of a candidate: a small chart of the last five weeks when there are enough dated articles, and the count. */

@@ -3,12 +3,13 @@ import { act, useSyncExternalStore, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import * as client from '../../src/client/index.tsx'
 import { apply, inject } from '../../src/client/index.tsx'
 import { all, fakeCtx, settle, state, stubApi, t, type Entry } from '../fixtures/client.tsx'
 
-/** A client context with the plugin applied. */
-function fixture() {
-  const fake = fakeCtx()
+/** A client context with the plugin applied; `get` answers the optional services (`configForms`). */
+function fixture(get?: (name: string) => unknown) {
+  const fake = fakeCtx(get)
   apply(fake.ctx as never)
   return fake
 }
@@ -33,6 +34,7 @@ function Live({ entry, wide }: { entry: Entry; wide: boolean }) {
   return <Count useCount={<T,>(select: (value: number) => T) => select(value)} wide={wide} active={false} t={t} />
 }
 afterEach(() => {
+  localStorage.clear()
   for (const dispose of mounted.splice(0)) dispose()
   document.body.innerHTML = ''; document.head.innerHTML = ''
   vi.unstubAllGlobals(); vi.useRealTimers()
@@ -138,4 +140,58 @@ it('injects the stylesheet while applied and removes it on dispose', () => {
   expect(style?.textContent).toContain('.op-visually-hidden')
   dispose()
   expect(document.head.querySelector('style[data-outpost]')).toBeNull()
+})
+
+// ---- the settings form: the panel's 设置 page and the Plugin Manager's row page ----
+
+const SAVED = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 } }
+/** The form of DSH's `ctx.configForms.get(id)` over `SAVED`, and the ids it was asked for. */
+function configForms() {
+  const asked: string[] = []
+  const mutate = vi.fn(async () => true)
+  const snapshot = { status: 'ready', value: SAVED, base: undefined, user: undefined, revision: 3, writable: true }
+  const form = { getSnapshot: () => snapshot, subscribe: () => () => {}, mutate }
+  const get = (name: string) => name === 'configForms' ? { get: (id: string) => { asked.push(id); return form } } : undefined
+  return { asked, mutate, get }
+}
+const runTimeField = (scope: ParentNode) => [...scope.querySelectorAll('label')].find(label => label.textContent === '每天几点跑')?.control as HTMLInputElement | undefined
+
+it('registers no Config of its own: the browser face exports only apply and inject', () => {
+  // A browser face that exports its own `Config` fails to activate when its row carries synced values (dsh 0.2.3, modules README).
+  expect(Object.keys(client).sort()).toEqual(['apply', 'inject'])
+})
+
+it('shows the configuration form of the outpost entry on the panel’s 设置 page', async () => {
+  stubApi({ 'GET state': state({ browserAvailable: false }) })
+  localStorage.setItem('outpost.route', JSON.stringify({ page: 'settings' }))
+  const forms = configForms()
+  const { entry } = fixture(forms.get)
+  const main = await render(entry('main').component, { t })
+  await settle()
+  // DSH names a plugin's form by its profile entry id: the row `outpost` of cordis.patch.yml.
+  expect(forms.asked).toContain('outpost')
+  expect(forms.asked.every(id => id === 'outpost')).toBe(true)
+  expect(runTimeField(main.container)?.value).toBe('08:00')
+  expect(main.container.querySelector('.op-browser')?.textContent).toContain('没开浏览器兜底')
+})
+
+it('shows the same form on the Plugin Manager’s page for the row, and the summary where it asks for one', async () => {
+  stubApi({ 'GET state': state({ dataDir: '/data/outpost' }) })
+  const forms = configForms()
+  const { entry } = fixture(forms.get)
+  const row = entry('plugins.row.config')
+  const form = { state: { status: 'ready', value: SAVED, base: undefined, user: undefined, revision: 3, writable: true }, mutate: forms.mutate }
+  const page = await render(row.component, { t, view: 'page', form })
+  await settle()
+  expect(runTimeField(page.container)?.value).toBe('08:00')
+  // The data directory is not among the fields DSH's form carries: the page asks the host for it.
+  expect(page.container.querySelector('.op-datadir')?.textContent).toBe('/data/outpost')
+  // The row's page is the form alone: the browser fallback notice is the panel's.
+  expect(page.container.querySelector('.op-browser')).toBeNull()
+  const summary = await render(row.component, { t, view: 'summary' })
+  expect(summary.container.textContent).toBe('每天定时调研你跟踪的产品，出一份今日哨报。')
+  // Without a form from the Plugin Manager the values are only shown.
+  const bare = await render(row.component, { t, view: 'page' })
+  expect(runTimeField(bare.container)).toBeUndefined()
+  expect(bare.container.querySelector('.op-settings-note')?.textContent).toBe('在『插件』页修改')
 })

@@ -175,6 +175,32 @@ describe('GET state', () => {
     // The time the daily run is due, for the page that says when the first brief will arrive.
     expect(state.runTime).toBe(rt.settings().runTime)
     expect(state.runTime).toMatch(/^\d\d:\d\d$/)
+    // Where the data lives, for 设置 to show: DSH's configuration form carries only the fields that can change while running.
+    expect(state.dataDir).toBe(host.dataDir)
+  })
+
+  it('says per track whether a recommendation for it is queued or running', async () => {
+    const idle = addTrack({ name: '没跑的', status: 'picking' })
+    const running = addTrack({ name: '在跑的', status: 'picking' })
+    const queued = addTrack({ name: '排队的', status: 'picking' })
+    const finished = addTrack({ name: '跑完的', status: 'picking' })
+    const failed = addTrack({ name: '失败的', status: 'picking' })
+    const retried = addTrack({ name: '重新推荐的', status: 'picking' })
+    addRun('recommend', { status: 'running' }, TODAY, { trackId: running.id })
+    addRun('recommend', { status: 'queued' }, TODAY, { trackId: queued.id })
+    addRun('recommend', { status: 'done' }, TODAY, { trackId: finished.id })
+    addRun('recommend', { status: 'failed', error: '会话出错' }, TODAY, { trackId: failed.id })
+    // Only the track's latest recommendation counts: an earlier one still marked running does not.
+    addRun('recommend', { status: 'running' }, TODAY, { trackId: retried.id })
+    addRun('recommend', { status: 'done' }, TODAY, { trackId: retried.id })
+    // Another kind of run for the track is not a recommendation.
+    addRun('baseline', { status: 'running' }, TODAY, { trackId: idle.id })
+
+    const { tracks } = ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>()
+    expect(tracks.map(t => [t.track.name, t.track.status, t.recommending])).toEqual([
+      ['没跑的', 'picking', false], ['在跑的', 'picking', true], ['排队的', 'picking', true],
+      ['跑完的', 'picking', false], ['失败的', 'picking', false], ['重新推荐的', 'picking', false],
+    ])
   })
 
   it('counts unread like unreadCount, over the findings today\'s brief still shows', async () => {

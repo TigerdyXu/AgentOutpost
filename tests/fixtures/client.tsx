@@ -22,8 +22,11 @@ export const t = ((key: keyof typeof zh, params: Record<string, unknown> = {}) =
 type Options = { name: string; id?: string; key?: string; order?: number; locale?: string; label?: () => string; inject?: () => unknown }
 export type Entry = { options: Options; component: ComponentType<Record<string, unknown>> }
 
-/** A client context that records slot registrations, dictionaries and effect disposers (as in superagent tests/client.spec.tsx). */
-export function fakeCtx() {
+/**
+ * A client context that records slot registrations, dictionaries and effect disposers (as in superagent tests/client.spec.tsx).
+ * `get` answers `ctx.get(name)`, the optional services (`configForms`, say); none by default.
+ */
+export function fakeCtx(get: (name: string) => unknown = () => undefined) {
   const entries: Entry[] = []
   const dictionaries: Record<string, unknown> = {}
   const disposers: (() => void)[] = []
@@ -36,7 +39,7 @@ export function fakeCtx() {
     effect: (effect: () => unknown) => { const dispose = effect(); if (typeof dispose === 'function') disposers.push(dispose as () => void) },
     sessions: {},
     uiWorkspace: { openSession: () => {} },
-    get: () => undefined,
+    get,
   }
   const entry = (name: string) => entries.find(item => item.options.name === name)!
   return { ctx, entries, dictionaries, entry, dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
@@ -122,10 +125,10 @@ export const product = (id: string, name: string, extra: Partial<Product> = {}):
 export const tracked = (p: Product, extra: Partial<TrackProductView> = {}): TrackProductView => ({ product: p, hasNew: false, progress: null, ...extra })
 export const track = (id: string, name: string, products: TrackProductView[], extra: Partial<Track> = {}, candidatesToReview = 0): TrackView => ({
   track: { id, name, brief: '', dimensions: [], status: 'active', createdAt: '2026-11-18T08:00:00.000Z', ...extra },
-  products, candidatesToReview,
+  products, candidatesToReview, recommending: false,
 })
 export const state = (extra: Partial<StateView> = {}): StateView => ({
-  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, runTime: '08:00', browserAvailable: true, ...extra,
+  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, runTime: '08:00', browserAvailable: true, dataDir: '/Users/tiger/Projects/AgentOutpost-data', ...extra,
 })
 
 /** A verified, unread major finding of `productId` that cites nothing, from today's run. */
@@ -159,7 +162,7 @@ export const facts = (productId: string, extra: Partial<Facts> = {}): Facts => (
 export const productView = (p: Product, extra: Partial<ProductView> = {}): ProductView => ({
   product: p, facts: null, cards: [], history: {}, sources: [], dimensions: [], progress: null, ...extra,
 })
-export const run = (id: string, productId: string | null, status: Run['status'], extra: Partial<Run> = {}): Run & { productName: string | null } => ({
+export const run = (id: string, productId: string | null, status: Run['status'], extra: Partial<Run & { productName: string | null }> = {}): Run & { productName: string | null } => ({
   id, kind: 'daily', date: '2026-11-25', trackId: null, productId, sessionId: null, status, startedAt: '2026-11-25T08:00:00.000Z', endedAt: null,
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, productName: null, ...extra,
 })

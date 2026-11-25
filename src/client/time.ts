@@ -1,4 +1,5 @@
 /** Times as the reader's clock has them. */
+import type { T } from './locales.ts'
 
 export const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -18,4 +19,12 @@ export function localDay(value: Date | string): string | null {
 export function shortDay(iso: string, now = new Date()): string | null {
   const day = localDay(iso)
   return day === null ? null : day.startsWith(`${now.getFullYear()}-`) ? day.slice(5) : day
+}
+
+/** A length of time in whole seconds, as a reader says it: 「45 秒」, 「1 分 20 秒」, 「1 小时 5 分」. */
+export function duration(t: T, seconds: number): string {
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return t('pick.seconds', { seconds: total })
+  if (total < 3600) return t('pick.minutesSeconds', { minutes: Math.floor(total / 60), seconds: total % 60 })
+  return t('duration.hoursMinutes', { hours: Math.floor(total / 3600), minutes: Math.floor(total % 3600 / 60) })
 }

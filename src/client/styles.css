@@ -2016,6 +2016,457 @@ textarea.op-input {
   line-height: 20px;
 }
 
+/* ---- 运行记录 (design §5.7): the runs of each day in rows that fill the width ---- */
+
+.op-runs {
+  --op-run-cols: 64px minmax(160px, 1fr) 92px 112px 140px;
+  --op-run-act: 88px;
+  --op-run-pad: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.op-runs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.op-runs-head .op-day-meta {
+  margin: 0;
+}
+
+/* The column names, once, over all the days. */
+.op-runs-cols {
+  display: grid;
+  grid-template-columns: var(--op-run-cols);
+  gap: 0 12px;
+  margin-top: 18px;
+  padding: 0 calc(var(--op-run-act) + 8px) 0 var(--op-run-pad);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.op-run-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.op-run-day-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.op-run-day-cost {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 22px;
+}
+
+.op-run-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.op-run + .op-run {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-run-line {
+  display: flex;
+  align-items: center;
+}
+
+/* The row's cells: a button when it opens a session, else a plain block. */
+.op-run-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--op-run-cols);
+  align-items: center;
+  gap: 0 12px;
+  margin: 0;
+  padding: 11px 8px 11px var(--op-run-pad);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.op-run-open {
+  cursor: pointer;
+}
+
+.op-run-act {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  width: var(--op-run-act);
+  padding-right: 12px;
+}
+
+.op-run-kind {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-card-fill);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.op-run-subject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.op-run-object {
+  min-width: 0;
+  overflow: hidden;
+  font-size: max(15px, var(--dsh-content-font-size));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-run-status {
+  justify-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.op-run-status[data-status="running"] {
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
+}
+
+.op-run-status[data-status="done"] {
+  background: var(--dsw-alias-state-success-tertiary);
+  color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary));
+}
+
+.op-run-status[data-status="failed"] {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 78%, var(--dsw-alias-label-primary));
+}
+
+.op-run-status[data-status="interrupted"] {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: color-mix(in srgb, var(--dsw-alias-state-warn-label) 72%, var(--dsw-alias-label-primary));
+}
+
+.op-run-time,
+.op-run-cost {
+  font-size: max(15px, var(--dsh-content-font-size));
+  font-variant-numeric: tabular-nums;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
+.op-run-retried {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 30px;
+}
+
+/* What the run says of itself, under its row and in line with the subject: grey for a remark or a skip, black for why it failed. */
+.op-run-note {
+  margin: -4px 12px 11px calc(var(--op-run-pad) + 76px);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.op-run[data-status="failed"] .op-run-note,
+.op-run[data-status="interrupted"] .op-run-note {
+  color: var(--dsw-alias-label-primary);
+}
+
+.op-run-problem {
+  margin: 0 12px 11px var(--op-run-pad);
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* The time and the cost are two columns of a wide row; in a narrow one they sit together on the row's second line. */
+.op-run-figures {
+  display: contents;
+}
+
+/* A narrower right column: the cells take two lines, and the column names go. */
+@container (max-width: 899px) {
+  .op-runs-cols {
+    display: none;
+  }
+
+  .op-run-open {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "kind subject status"
+      ". figures figures";
+    gap: 6px 12px;
+  }
+
+  .op-run-kind { grid-area: kind; }
+  .op-run-subject { grid-area: subject; }
+  .op-run-status { grid-area: status; justify-self: end; }
+
+  .op-run-figures {
+    grid-area: figures;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 16px;
+  }
+
+  .op-run-note {
+    margin-left: var(--op-run-pad);
+  }
+}
+
+/* ---- 设置 (design §5.7): the browser fallback, then the sections of the form ---- */
+
+.op-settings,
+.op-settings-body,
+.op-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The form also stands in the Plugin Manager's page, outside `.op-app`: it brings its own box model, font and text color. */
+.op-settings-body {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+}
+
+.op-settings-body *,
+.op-settings-body *::before,
+.op-settings-body *::after {
+  box-sizing: border-box;
+}
+
+.op-settings-intro {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* A line above the sections saying why the values cannot be edited here. */
+.op-settings-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+}
+
+.op-browser {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 13px 16px;
+  border: 0.5px solid var(--dsw-alias-state-warn-secondary);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-state-warn-tertiary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+.op-browser[data-on] {
+  align-items: center;
+  border-color: var(--dsw-alias-state-success-secondary);
+  background: var(--dsw-alias-state-success-tertiary);
+}
+
+.op-browser[data-on] .op-glyph {
+  flex: none;
+  color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 70%, var(--dsw-alias-label-primary));
+}
+
+.op-set-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.op-set-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-set-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.op-set-tag {
+  padding: 1px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.op-set-hint,
+.op-set-error {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-set-hint {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.op-set-error {
+  color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 78%, var(--dsw-alias-label-primary));
+}
+
+/* The four short fields of the daily run sit in one row when the page is wide; fields with a unit or a longer value take more. */
+.op-set-grid,
+.op-settings-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px 20px;
+  margin: 0;
+}
+
+.op-set-grid[data-wide] {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.op-set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.op-set-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.op-set-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-set-control .op-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.op-input[aria-invalid="true"] {
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-error-primary);
+}
+
+.op-unit {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* The values as text, where they cannot be edited. */
+.op-setting {
+  min-width: 0;
+  margin: 0;
+}
+
+.op-setting-label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-setting-value {
+  margin: 2px 0 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.op-datadir {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.op-save-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-save-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-save-status,
+.op-save-problem {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-save-status {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.op-save-problem {
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+}
+
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
@@ -2084,6 +2535,10 @@ textarea.op-input {
   .op-chip-remove:hover {
     background: var(--dsw-alias-interactive-bg-hover);
   }
+
+  .op-run-line:has(> button.op-run-open:hover) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .op-row:focus-visible,
@@ -2101,7 +2556,8 @@ textarea.op-input {
 .op-sources-title a:focus-visible,
 .op-chip-add:focus-visible,
 .op-chip-remove:focus-visible,
-.op-cite > a:focus-visible {
+.op-cite > a:focus-visible,
+button.op-run-open:focus-visible {
   outline: 2px solid var(--dsw-alias-link);
   outline-offset: -2px;
 }

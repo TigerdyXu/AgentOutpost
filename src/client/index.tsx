@@ -7,23 +7,30 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PluginConfigViewProps } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { StateView } from '../host/api.ts'
 import STYLES from './styles.css?raw'
-import { call } from './api.ts'
+import { call, usePoll } from './api.ts'
 import { en, NS, zh, type T } from './locales.ts'
+import { SettingsForm, usePageForm } from './pages/Settings.tsx'
 import type { SessionAccess } from './shell/context.ts'
 import { App } from './shell/App.tsx'
 import { TelescopeIcon } from './ui/icons.tsx'
 
 type ClientContext = Context & { sessions: ISessions }
 const PANEL_ID = 'outpost' as MainPanelId
-/** `<package name>#<row id>` of the plugin's row in cordis.patch.yml. */
-const CONFIG_ROW = 'dsh-outpost#outpost'
+/** The plugin's row in cordis.patch.yml: DSH names a plugin's configuration form by this profile entry id. */
+const ENTRY = 'outpost'
+/** `<package name>#<row id>` of that row, which the Plugin Manager keys the row's configuration page by. */
+const CONFIG_ROW = `dsh-outpost#${ENTRY}`
 /** Largest count the sidebar row spells out; larger counts show as this number followed by `+`. */
 const MAX_SHOWN = 99
 /** How often the sidebar count reads `GET state` on its own. */
 const COUNT_POLL_MS = 60_000
+/** How often the Plugin Manager's page reads `GET state` (for the data directory, which does not change while it is open). */
+const ROW_POLL_MS = 30_000
 
 /** Telescope glyph at the size the sidebar asks for, drawn in the row's text color. */
 function SidebarIcon({ size }: PropsRuntime<'sidebar.panellist'>): ReactNode {
@@ -89,9 +96,21 @@ function unreadCount() {
   return { observable, set, close: () => { closed = true; listeners.clear(); stop() } }
 }
 
-/** The plugin's row page in Plugin Manager; settings arrive with the settings page. */
-function PluginConfig({ t }: PluginConfigViewProps & { t: T }): ReactNode {
-  return t('configSummary')
+/** The settings form on the Plugin Manager's page, with the data directory the host reports (it is outside the form DSH hands over). */
+function RowPage({ t, form }: { t: T; form: PluginConfigViewProps['form'] }): ReactNode {
+  const { data } = usePoll(() => call('GET state'), [], ROW_POLL_MS)
+  return <SettingsForm t={t} form={form} {...data ? { known: { runTime: data.runTime, dataDir: data.dataDir } } : {}} />
+}
+
+/** The plugin's row in Plugin Manager: the summary line where it asks for one, else the settings form (the panel's 设置 page shows the same). */
+function PluginConfig({ t, view, form }: PluginConfigViewProps & { t: T }): ReactNode {
+  return view === 'summary' ? t('configSummary') : <RowPage t={t} form={form} />
+}
+
+/** The panel with DSH's configuration form of the plugin's entry (`ctx.configForms`), which 设置 edits; `configForms` is optional. */
+function Panel({ ctx, t, sessions, onState }: { ctx: ClientContext; t: T; sessions: SessionAccess; onState: (state: StateView) => void }): ReactNode {
+  const form = usePageForm(ctx.get('configForms')?.get<Record<string, unknown>>(ENTRY))
+  return <App t={t} sessions={sessions} onState={onState} configForm={form} />
 }
 
 export const inject = ['slots', 'locale', 'sessions', 'uiWorkspace']
@@ -110,7 +129,7 @@ export function apply(ctx: ClientContext): void {
   // DSH's session catalog and workspace, for opening a session from the panel (追问).
   const sessions: SessionAccess = { catalog: ctx.sessions, open: id => { ctx.uiWorkspace.openSession(id) } }
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS },
-    (props: { t: T }) => <App t={props.t} sessions={sessions} onState={state => { count.set(state.todayUnread) }} />))
+    (props: { t: T }) => <Panel ctx={ctx} t={props.t} sessions={sessions} onState={state => { count.set(state.todayUnread) }} />))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist', id: PANEL_ID, order: 20, label: () => t('panel'), locale: NS,
   }, SidebarIcon))

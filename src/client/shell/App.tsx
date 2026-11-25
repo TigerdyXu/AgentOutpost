@@ -5,6 +5,7 @@
  * menu button (the stylesheet's container query).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { Id } from '../../core/types.ts'
 import type { StateView } from '../../host/api.ts'
 import { call, usePoll } from '../api.ts'
@@ -12,19 +13,19 @@ import type { T } from '../locales.ts'
 import { MenuIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { NewTrack } from '../pages/NewTrack.tsx'
 import { Product } from '../pages/Product.tsx'
+import { Runs } from '../pages/Runs.tsx'
+import { Settings } from '../pages/Settings.tsx'
 import { Today } from '../pages/Today.tsx'
 import { ShellContext, useShell, type SessionAccess, type Shell } from './context.ts'
 import { BUSY_POLL_MS, IDLE_POLL_MS, MiddleColumn } from './MiddleColumn.tsx'
 import { useRoute, type Route } from './route.ts'
 
-/** Whether the column shows something as it moves: a baseline's progress or a track being picked; or the plugin is not answering. */
+/**
+ * Whether the column shows something as it moves: a recommendation running for a track (the host says so; a track merely in
+ * 挑选中 moves only when its reader does, and may stay so for days) or a baseline's progress; or the plugin is not answering.
+ */
 const isBusy = (state: StateView | undefined, error: Error | undefined) => error !== undefined
-  || !!state?.tracks.some(view => view.track.status === 'picking' || view.products.some(item => item.progress !== null))
-
-/** A page still to come (运行记录 and 设置 arrive with their own tasks): its title. */
-function Placeholder({ title }: { title: string }): ReactNode {
-  return <div className="op-page"><h1 className="op-page-title">{title}</h1></div>
-}
+  || !!state?.tracks.some(view => view.recommending || view.products.some(item => item.progress !== null))
 
 /** The right column before the first track: what Outpost does, and the way to start. */
 function Welcome(): ReactNode {
@@ -39,13 +40,13 @@ function Welcome(): ReactNode {
 
 /** The page of the route. */
 function Page(): ReactNode {
-  const { t, route, state } = useShell()
+  const { route, state } = useShell()
   switch (route.page) {
     case 'today': return state && state.tracks.length === 0 ? <Welcome /> : <Today />
     case 'newTrack': return <NewTrack />
     case 'product': return <Product />
-    case 'runs': return <Placeholder title={t('nav.runs')} />
-    case 'settings': return <Placeholder title={t('nav.settings')} />
+    case 'runs': return <Runs />
+    case 'settings': return <Settings />
   }
 }
 
@@ -53,8 +54,13 @@ function Page(): ReactNode {
 const pageOf = (route: Route) => route.page === 'product' ? `product:${route.productId}` : route.page === 'newTrack' ? `newTrack:${route.trackId ?? ''}`
   : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
 
-/** `sessions` is DSH's session catalog and workspace, for the pages that open a session (追问). */
-export function App({ t, onState, sessions }: { t: T; onState?: (state: StateView) => void; sessions?: SessionAccess }): ReactNode {
+/**
+ * `sessions` is DSH's session catalog and workspace, for the pages that open a session (追问, 运行记录); `configForm` is DSH's
+ * configuration form of this plugin's entry, for 设置.
+ */
+export function App({ t, onState, sessions, configForm }: {
+  t: T; onState?: (state: StateView) => void; sessions?: SessionAccess; configForm?: ConfigPageForm | undefined
+}): ReactNode {
   const [route, setRoute] = useRoute()
   const [navOpen, setNavOpen] = useState(false)
   const [picks, setPicksState] = useState<Readonly<Record<Id, number>>>({})
@@ -79,8 +85,8 @@ export function App({ t, onState, sessions }: { t: T; onState?: (state: StateVie
       return count === null ? rest : { ...rest, [trackId]: count }
     })
   }, [])
-  const shell = useMemo<Shell>(() => ({ t, route, navigate, state, stateError, refresh, picks, setPicks, sessions }),
-    [t, route, navigate, state, stateError, refresh, picks, setPicks, sessions])
+  const shell = useMemo<Shell>(() => ({ t, route, navigate, state, stateError, refresh, picks, setPicks, sessions, configForm }),
+    [t, route, navigate, state, stateError, refresh, picks, setPicks, sessions, configForm])
 
   const content = useRef<HTMLDivElement>(null)
   const page = pageOf(route)

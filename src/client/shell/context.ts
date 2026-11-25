@@ -2,6 +2,7 @@
 import { createContext, useContext } from 'react'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { Id } from '../../core/types.ts'
 import type { StateView } from '../../host/api.ts'
 import type { T } from '../locales.ts'
@@ -30,6 +31,8 @@ export interface Shell {
   setPicks: (trackId: Id, count: number | null) => void
   /** DSH's sessions, to open one in the workspace; absent when the panel runs without them (the page then says so). */
   sessions?: SessionAccess
+  /** DSH's configuration form of this plugin's entry (the volatile fields), for 设置; absent when DSH has no form for it (the page then only shows). */
+  configForm?: ConfigPageForm | undefined
 }
 
 export const ShellContext = createContext<Shell | null>(null)
