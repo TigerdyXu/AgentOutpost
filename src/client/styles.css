@@ -1,21 +1,622 @@
-/* 前哨's one stylesheet, injected as a <style> element. Only DSH theme variables; class names start with `op-`. */
+/*
+ * 前哨's one stylesheet, injected as a <style> element. Only DSH theme variables (so dark mode follows DSH); class names
+ * start with `op-`. Neutral borders are 0.5px hairlines; raised surfaces take the theme's elevation shadow with no border;
+ * the selected entry is light blue with blue bold text, with no bar at its side. Hover styles apply only where hovering exists.
+ */
+
+/* ---- the panel: middle column + right column ---- */
 
 .op-app {
+  container-type: inline-size;
+  position: relative;
   box-sizing: border-box;
+  display: flex;
   height: 100%;
-  padding: 24px 28px;
+  min-height: 0;
+  overflow: hidden;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-base);
-  font-size: max(15px, var(--dsh-content-font-size));
+  font-family: var(--dsw-font-family);
+  font-size: max(14px, var(--dsh-content-font-size));
+  line-height: 1.5;
 }
 
-.op-title {
+.op-app *,
+.op-app *::before,
+.op-app *::after {
+  box-sizing: border-box;
+}
+
+/* ---- middle column (mockup 1, option B) ---- */
+
+.op-mid {
+  flex: 0 0 244px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 244px;
+  min-height: 0;
+  padding: 14px 10px 12px;
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.op-mid-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 12px 10px;
+}
+
+.op-mid-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.op-new-track {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.op-mid-note {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-row[aria-current="page"] {
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
   font-weight: 600;
 }
 
-/* Unread count at the end of the sidebar row; a pill when the sidebar is collapsed (as DSH's own review count). */
+.op-row-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+}
+
+.op-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-row-end {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-row-end[data-tone="accent"],
+.op-row[aria-current="page"] .op-row-end {
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+}
+
+/* The blue dot: new findings for this product. */
+.op-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.op-mid-tracks {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -10px;
+  padding: 0 10px 8px;
+  overflow-y: auto;
+}
+
+.op-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.op-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 8px 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-group-head > .op-glyph {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.op-group-head[aria-expanded="false"] > .op-glyph {
+  transform: rotate(-90deg);
+}
+
+.op-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-group-end {
+  flex: none;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.op-group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.op-mid-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.op-mid-foot::before {
+  content: "";
+  height: 0.5px;
+  margin: 0 8px 8px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.op-glyph {
+  flex: none;
+}
+
+/* ---- right column: the page, filling the rest of the width ---- */
+
+.op-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 26px 36px 48px;
+  overflow-y: auto;
+}
+
+.op-page {
+  width: 100%;
+}
+
+.op-page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+/* First run: what Outpost does, and the way to start. */
+.op-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 36px 40px 40px;
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-state-business-tertiary);
+}
+
+.op-welcome-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-link);
+  box-shadow: var(--dsw-elevation-panel);
+}
+
+.op-welcome-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+.op-welcome-body {
+  margin: 0 0 10px;
+  color: var(--dsw-alias-label-primary);
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.7;
+}
+
+/* The narrow layout's bar with the menu button; hidden while the middle column fits. */
+.op-narrow-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin: -10px 0 14px -6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.op-nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.op-scrim {
+  display: none;
+}
+
+@container (max-width: 719px) {
+  .op-mid {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: none;
+    border-right: 0;
+    background: var(--dsw-alias-bg-layer-1);
+    box-shadow: var(--dsw-elevation-prominent);
+  }
+
+  .op-app[data-nav-open] .op-mid {
+    display: flex;
+  }
+
+  .op-app[data-nav-open] .op-scrim {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: block;
+    background: var(--dsw-alias-bg-mask-2);
+  }
+
+  .op-narrow-bar {
+    display: flex;
+  }
+
+  .op-content {
+    padding: 18px 16px 40px;
+  }
+}
+
+/* ---- buttons ---- */
+
+.op-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-elevation-panel);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.op-button[data-variant="primary"] {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  box-shadow: none;
+}
+
+.op-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- product icon: the official one, or one uniform tile ---- */
+
+.op-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--op-icon-size, 20px);
+  height: var(--op-icon-size, 20px);
+  overflow: hidden;
+  border-radius: calc(var(--op-icon-size, 20px) * 0.28);
+  object-fit: contain;
+}
+
+img.op-icon {
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l2);
+}
+
+.op-icon-tile {
+  background-color: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
+  font-size: calc(var(--op-icon-size, 20px) * 0.55);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* On the selected row's light blue, the tile turns to the surface color so it does not dissolve into the row. */
+.op-row[aria-current="page"] .op-icon-tile {
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+/* ---- tags: 官方 推论 AI 归纳 今天改过 待确认 原文打不开 迟到 重要 值得留意 已证实 ---- */
+
+.op-tag {
+  --op-tone: var(--dsw-alias-link);
+  --op-tone-fill: var(--dsw-alias-state-business-tertiary);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--op-tone-fill);
+  color: var(--op-tone);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Trust: the product's own source, or a finding confirmed that day. Mixed toward the text color so it reads on both themes. */
+.op-tag[data-kind="official"],
+.op-tag[data-kind="promoted"] {
+  --op-tone: color-mix(in srgb, var(--dsw-alias-state-success-primary) 60%, var(--dsw-alias-label-primary));
+  --op-tone-fill: var(--dsw-alias-state-success-tertiary);
+}
+
+/* The AI's own reasoning: orange (design §5.4). */
+.op-tag[data-kind="inference"],
+.op-tag[data-kind="ai"] {
+  --op-tone: color-mix(in srgb, var(--dsw-alias-state-warn-label) 72%, var(--dsw-alias-label-primary));
+  --op-tone-fill: var(--dsw-alias-state-warn-tertiary);
+}
+
+/* Not enough sources yet: an open, dashed outline. */
+.op-tag[data-kind="unconfirmed"] {
+  --op-tone: color-mix(in srgb, var(--dsw-alias-state-warn-label) 72%, var(--dsw-alias-label-primary));
+  --op-tone-fill: transparent;
+  padding: 0 6px;
+  border: 1px dashed var(--dsw-alias-state-warn-secondary);
+}
+
+.op-tag[data-kind="unopened"],
+.op-tag[data-kind="late"] {
+  --op-tone: var(--dsw-alias-label-secondary);
+  --op-tone-fill: var(--dsw-alias-card-fill);
+}
+
+.op-tag[data-kind="major"] {
+  --op-tone: color-mix(in srgb, color-mix(in srgb, var(--dsw-alias-state-error-primary) 70%, var(--dsw-alias-state-warn-primary)) 82%, var(--dsw-alias-label-primary));
+  --op-tone-fill: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+}
+
+/* ---- source chip ---- */
+
+.op-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-card-fill);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+.op-source-n {
+  flex: none;
+  color: var(--dsw-alias-link);
+  font-weight: 600;
+}
+
+.op-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-source .op-tag {
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.op-source .op-tag[data-kind="unconfirmed"] {
+  padding: 0 4px;
+}
+
+/* ---- citation [n] and its preview card ---- */
+
+.op-cite {
+  position: relative;
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 0;
+}
+
+.op-cite > a {
+  padding: 0 1px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-link);
+  text-decoration: none;
+}
+
+.op-cite-card {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 10px);
+  left: -8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 320px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.op-cite-card[data-align="end"] {
+  right: -8px;
+  left: auto;
+}
+
+.op-cite-title {
+  font-weight: 600;
+}
+
+.op-cite-meta {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.op-cite-quote {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-card-fill);
+}
+
+/* ---- hover, where hovering exists; keyboard focus everywhere ---- */
+
+@media (hover: hover) {
+  .op-row:hover,
+  .op-nav-toggle:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  .op-row[aria-current="page"]:hover {
+    background: var(--dsw-alias-state-business-tertiary);
+  }
+
+  .op-group-head:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+
+  .op-new-track:hover {
+    background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 82%, var(--dsw-alias-link));
+  }
+
+  .op-button:hover {
+    background: var(--dsw-alias-button-floating-hover);
+  }
+
+  .op-button[data-variant="primary"]:hover {
+    background: var(--dsw-alias-button-primary-hover);
+  }
+
+  .op-source:hover {
+    background: var(--dsw-alias-card-fill-hover);
+  }
+
+  .op-cite > a:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+}
+
+.op-row:focus-visible,
+.op-group-head:focus-visible,
+.op-new-track:focus-visible,
+.op-nav-toggle:focus-visible,
+.op-button:focus-visible,
+.op-source:focus-visible,
+.op-cite > a:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: -2px;
+}
+
+/* ---- sidebar count: a plain number when the sidebar is wide, a round badge when it is collapsed (as DSH's review count) ---- */
+
 .op-nav-count {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -27,7 +628,8 @@
   min-width: 14px;
   padding: 0 3px;
   border-radius: 999px;
-  background: var(--dsw-alias-state-business-primary);
+  corner-shape: round;
+  background-color: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-label-primary-foreground);
   font-size: 10px;
   line-height: 14px;

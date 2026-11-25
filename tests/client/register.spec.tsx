@@ -1,47 +1,42 @@
 // @vitest-environment jsdom
-import { act, type ComponentType } from 'react'
+import { act, useSyncExternalStore, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply, inject } from '../../src/client/index.tsx'
-import { zh } from '../../src/client/locales.ts'
+import { all, fakeCtx, settle, state, stubApi, t, type Entry } from '../fixtures/client.tsx'
 
-declare global { var IS_REACT_ACT_ENVIRONMENT: boolean }
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
-
-type Options = { name: string; id?: string; key?: string; order?: number; locale?: string; label?: () => string; inject?: () => unknown }
-type Entry = { options: Options; component: ComponentType<Record<string, unknown>> }
-/** Chinese dictionary lookup with `{name}` substitution, as the locale service's bound `t` does. */
-const t = (key: keyof typeof zh, params: Record<string, unknown> = {}) => zh[key].replace(/\{(\w+)\}/g, (_, name: string) => String(params[name]))
-
-/** A client context that records slot registrations, dictionaries and effect disposers (as in superagent tests/client.spec.tsx). */
+/** A client context with the plugin applied. */
 function fixture() {
-  const entries: Entry[] = []
-  const dictionaries: Record<string, unknown> = {}
-  const disposers: (() => void)[] = []
-  const ctx = {
-    slots: {
-      inject: (_name: string, register: () => () => void) => { disposers.push(register()) },
-      register: (options: Options, component: Entry['component']) => { entries.push({ options, component }); return () => {} },
-    },
-    locale: { register: (ns: string, value: unknown) => { dictionaries[ns] = value; return () => {} }, bind: () => t },
-    effect: (effect: () => unknown) => { const dispose = effect(); if (typeof dispose === 'function') disposers.push(dispose as () => void) },
-    sessions: {},
-    uiWorkspace: { openSession: () => {} },
-    get: () => undefined,
-  }
-  apply(ctx as never)
-  const entry = (name: string) => entries.find(item => item.options.name === name)!
-  return { entries, dictionaries, dispose: () => { for (const dispose of disposers.splice(0)) dispose() }, entry }
+  const fake = fakeCtx()
+  apply(fake.ctx as never)
+  return fake
 }
-async function render(entry: Entry, props: Record<string, unknown>) {
+const mounted: (() => void)[] = []
+async function render(Component: ComponentType<Record<string, unknown>>, props: Record<string, unknown>) {
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)
-  await act(async () => { root.render(<entry.component {...props} />) })
-  return { container, dispose: () => { act(() => { root.unmount() }); container.remove() } }
+  await act(async () => { root.render(<Component {...props} />) })
+  const dispose = () => { act(() => { root.unmount() }); container.remove() }
+  mounted.push(dispose)
+  return { container, dispose }
 }
-/** The trailing count's props as the renderer hands them: the injected unread count bound as `useUnread`. */
-const countProps = (unread: number) => ({ useUnread: <T,>(select: (value: number) => T) => select(unread), wide: true, active: false, t })
-afterEach(() => { document.body.innerHTML = ''; document.head.innerHTML = '' })
+/** The trailing count's props as the renderer hands them: the injected count bound as `useCount`. */
+const countProps = (count: number, wide = true) => ({ useCount: <T,>(select: (value: number) => T) => select(count), wide, active: false, t })
+/** The count the trailing entry injects, as the renderer reads it. */
+const countOf = (entry: Entry) => (entry.options.inject!() as { hooks: { count: HostObservable<number> } }).hooks.count
+/** The trailing count bound to its live observable, as the renderer binds `hooks.count`. */
+function Live({ entry, wide }: { entry: Entry; wide: boolean }) {
+  const count = countOf(entry)
+  const value = useSyncExternalStore(count.subscribe, count.getSnapshot)
+  const Count = entry.component
+  return <Count useCount={<T,>(select: (value: number) => T) => select(value)} wide={wide} active={false} t={t} />
+}
+afterEach(() => {
+  for (const dispose of mounted.splice(0)) dispose()
+  document.body.innerHTML = ''; document.head.innerHTML = ''
+  vi.unstubAllGlobals(); vi.useRealTimers()
+})
 
 it('registers main, sidebar entry, trailing count and plugin config row', () => {
   const { entries, dictionaries } = fixture()
@@ -55,11 +50,14 @@ it('registers main, sidebar entry, trailing count and plugin config row', () => 
   expect(Object.keys(dictionaries)).toEqual(['outpost'])
 })
 
-it('shows the 前哨 title on the main panel and a telescope in the sidebar', async () => {
+it('shows the two-column panel in main and a telescope in the sidebar', async () => {
+  stubApi({ 'GET state': state() })
   const { entry } = fixture()
-  const main = await render(entry('main'), { t })
-  expect(main.container.querySelector('h1')?.textContent).toBe('前哨')
-  const icon = await render(entry('sidebar.panellist'), { size: 18, active: false })
+  const main = await render(entry('main').component, { t })
+  await settle()
+  expect(main.container.querySelector('.op-app .op-mid .op-mid-title')?.textContent).toBe('前哨')
+  expect(main.container.querySelector('.op-app .op-content')).not.toBeNull()
+  const icon = await render(entry('sidebar.panellist').component, { size: 18, active: false })
   const svg = icon.container.querySelector('svg')!
   expect(svg.getAttribute('width')).toBe('18')
   expect(svg.getAttribute('aria-hidden')).toBe('true')
@@ -67,9 +65,11 @@ it('shows the 前哨 title on the main panel and a telescope in the sidebar', as
   expect(svg.getAttribute('stroke')).toBe('currentColor')
 })
 
-it('trailing count renders nothing at 0 and 99+ above 99', async () => {
-  const { entry } = fixture()
-  const trailing = entry('sidebar.panellist.trailing')
+it('trailing count renders nothing at 0 and 99+ above 99, as a round badge when the sidebar is collapsed', async () => {
+  const { entry, dictionaries } = fixture()
+  const style = document.head.querySelector('style[data-outpost]')!
+  expect(style).not.toBeNull()
+  const trailing = entry('sidebar.panellist.trailing').component
   const none = await render(trailing, countProps(0))
   expect(none.container.innerHTML).toBe('')
   const few = await render(trailing, countProps(7))
@@ -81,6 +81,53 @@ it('trailing count renders nothing at 0 and 99+ above 99', async () => {
   const sentence = many.container.querySelector('.op-visually-hidden')
   expect(sentence?.textContent).toBe(t('unreadAria', { count: 150 }))
   expect(sentence?.textContent).toContain('150')
+  expect(dictionaries).toHaveProperty('outpost')
+
+  // Wide: plain number at the row's end. Collapsed (`wide: false`): a round blue badge on the icon.
+  const wide = few.container.querySelector<HTMLElement>('.op-nav-count')!
+  expect(wide.hasAttribute('data-wide')).toBe(true)
+  expect(getComputedStyle(wide).borderRadius).toBe('')
+  const collapsed = (await render(trailing, countProps(7, false))).container.querySelector<HTMLElement>('.op-nav-count')!
+  expect(collapsed.hasAttribute('data-wide')).toBe(false)
+  expect(collapsed.querySelector('[aria-hidden="true"]')?.textContent).toBe('7')
+  expect(getComputedStyle(collapsed).borderRadius).toBe('999px')
+  expect(getComputedStyle(collapsed).backgroundColor).toBe('var(--dsw-alias-state-business-primary)')
+  expect((await render(trailing, countProps(0, false))).container.innerHTML).toBe('')
+})
+
+it('trailing count reads today’s unread every minute and whenever the panel reads the state', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+  let unread = 2
+  const api = stubApi({ 'GET state': () => state({ todayUnread: unread }) })
+  const { entry, dispose } = fixture()
+  const trailing = entry('sidebar.panellist.trailing')
+  // Nothing is read before the sidebar shows the count.
+  expect(api.requests).toHaveLength(0)
+  await render(Live as never, { entry: trailing, wide: true })
+  await settle()
+  const shown = () => all('.op-nav-count [aria-hidden="true"]')[0]?.textContent
+  expect(shown()).toBe('2')
+  expect(api.requests).toHaveLength(1)
+  unread = 5
+  await act(async () => { await vi.advanceTimersByTimeAsync(59_000) })
+  expect(shown()).toBe('2')
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+  await settle()
+  expect(shown()).toBe('5')
+  expect(api.requests).toHaveLength(2)
+
+  // The panel reading the state (after 全部已读, say) updates the count at once; at 0 it disappears.
+  unread = 0
+  await render(entry('main').component, { t })
+  await settle()
+  expect(shown()).toBeUndefined()
+  expect(api.requests).toHaveLength(3)
+
+  // Once disposed, it stops asking.
+  for (const unmount of mounted.splice(0)) unmount()
+  dispose()
+  await act(async () => { await vi.advanceTimersByTimeAsync(180_000) })
+  expect(api.requests).toHaveLength(3)
 })
 
 it('injects the stylesheet while applied and removes it on dispose', () => {
