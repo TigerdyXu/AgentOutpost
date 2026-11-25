@@ -31,7 +31,13 @@ export interface CardEdit { id: Id; productId: Id; dimension: DimensionKey; summ
 
 export interface Facts { productId: Id; version: number; form: string; platforms: string; price: string; firstReleased: string; rivals: string[]; createdAt: string }
 
-export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]; skipped: { productId: Id; reason: string }[]; costYuan: number; createdAt: string; updatedAt: string }
+export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
+  /**
+   * Tracked products not updated that day, with why. Without `failed` the budget stopped it (shown 「因预算未跑：…」);
+   * with `failed: true` it ran and failed (shown 「未能更新：<产品>（<reason>）」, design §7.9).
+   */
+  skipped: { productId: Id; reason: string; failed?: true }[]
+  costYuan: number; createdAt: string; updatedAt: string }
 
 export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'

@@ -9,18 +9,25 @@ import type { Id, Run } from '../../core/types.ts'
 import type { Repo } from '../../store/repo.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
-import type { JobDeps } from './runner.ts'
+import { STOPPED_ERROR, type JobDeps } from './runner.ts'
 import { VerifyNotRun, verifyProduct } from './verify.ts'
 
 /** How far back the prompt looks for the product's last finished run. */
 const LOOKBACK_DAYS = 30
 
+/** The note on a daily run that did its work but whose check the budget did not allow: its findings wait, unshown, for the next check. */
+export const VERIFY_BUDGET_NOTE = '核查因预算未完成'
+
 /**
  * Runs the daily session for the product, counted toward `date` (`YYYY-MM-DD`: its findings belong to that day's brief,
  * its cost to that day's budget), then the check for the same day. Resolves with the daily run as stored at the end:
  * - `skipped` by the budget: no check either (the budget would refuse it too);
- * - `done`, but the check could not run: the run takes the check's outcome (`skipped` or `failed`) with the error
- *   「核查没有完成：<原因>」, since what it found is still unchecked and shows nowhere yet;
+ * - `failed` because Outpost was stopping (`STOPPED_ERROR`): no check; the product runs again on the next start;
+ * - `done`, but the budget did not allow the check: still `done` (the day's work for it is over), with the note
+ *   `VERIFY_BUDGET_NOTE`; its findings stay pending, unshown, and the next check takes them;
+ * - `done`, but the check was cut short by a stop: `failed` with `STOPPED_ERROR`, so that it counts as interrupted;
+ * - `done`, but the check failed: `failed` with the error 「核查没有完成：<原因>」, since what it found is still
+ *   unchecked and shows nowhere yet;
  * - `failed`: what it handed in before failing is checked all the same, and the run keeps its own error.
  * @throws When the product does not exist (nothing is started), or the store fails.
  */
@@ -43,13 +50,17 @@ export async function runDailyProduct(deps: JobDeps, productId: Id, date: string
     prompt,
     tools: onDone => researchTools('daily', { repo, runId, trackId: null, productId, now: () => clock.now(), icons, onDone }),
   }))
-  if (run.status === 'skipped') return run
+  if (run.status === 'skipped' || (run.status === 'failed' && run.error === STOPPED_ERROR)) return run
 
   try {
     await verifyProduct(deps, productId, 'daily', date)
   } catch (error) {
     if (!(error instanceof VerifyNotRun)) throw error
-    if (run.status === 'done') repo.updateRun(run.id, { status: error.run.status === 'skipped' ? 'skipped' : 'failed', error: `核查没有完成：${error.message}` })
+    if (run.status !== 'done') return repo.getRun(run.id)! // its own failure stands
+    const check = error.run
+    if (check.status === 'skipped') repo.updateRun(run.id, { error: VERIFY_BUDGET_NOTE })
+    else if (check.error === STOPPED_ERROR) repo.updateRun(run.id, { status: 'failed', error: STOPPED_ERROR })
+    else repo.updateRun(run.id, { status: 'failed', error: `核查没有完成：${error.message}` })
   }
   return repo.getRun(run.id)!
 }

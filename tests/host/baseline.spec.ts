@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_DIMENSIONS } from '../../src/core/dimensions.ts'
 import type { Id, Product, Track } from '../../src/core/types.ts'
-import { startBaseline, type BaselineDeps } from '../../src/host/jobs/baseline.ts'
+import { NO_CARDS_ERROR, baselineProducts, startBaseline, type BaselineDeps } from '../../src/host/jobs/baseline.ts'
 import { JobRunner, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
@@ -92,6 +92,7 @@ describe('startBaseline', () => {
     const cline = addProduct('Cline', 'Cline Bot') // its verification fails
     driver.script['outpost-baseline-'] = async r => {
       if (r.spec.title.includes('Cursor')) return failure('模型返回了无法解析的内容')
+      await r.call('outpost_submit_card', card('positioning'))
       await r.done()
       return completed()
     }
@@ -173,5 +174,60 @@ describe('startBaseline', () => {
 
     expect(progress).toEqual([{ done: 0, total: 7 }, { done: 1, total: 7 }, { done: 2, total: 7 }])
     expect(baselineRunOf(cursor.id)!.progress).toEqual({ done: 2, total: 7 })
+  })
+  it('treats a baseline that handed in no card as failed', async () => {
+    const cursor = addProduct('Cursor', 'Anysphere')
+    driver.script['outpost-baseline-'] = async r => { await r.call('outpost_read'); await r.done('什么也没找到'); return completed() }
+
+    startBaseline(deps, [cursor.id])
+    await runner.idle()
+
+    expect(NO_CARDS_ERROR).toBe('没有提交任何档案卡')
+    expect(baselineRunOf(cursor.id)).toMatchObject({ status: 'failed', error: NO_CARDS_ERROR, progress: { done: 0, total: 7 } })
+    expect(verifyProduct).not.toHaveBeenCalled() // an empty dossier is not checked into 'tracking'
+    expect(statusOf(cursor.id)).toBe('baselining') // the next day's run tries it again
+  })
+
+  it('does not start a second baseline for a product whose baseline is still running', async () => {
+    const cursor = addProduct('Cursor', 'Anysphere')
+    const held = gate()
+    driver.script['outpost-baseline-'] = async r => { await held.promise; await r.call('outpost_submit_card', card('positioning')); await r.done(); return completed() }
+
+    startBaseline(deps, [cursor.id])
+    const joined = baselineProducts(deps, [cursor.id]) // e.g. the daily run re-baselining products stuck in 建档中
+    startBaseline(deps, [cursor.id])
+    let over = false
+    void joined.then(() => { over = true })
+    await vi.waitFor(() => expect(driver.runs).toHaveLength(1))
+    expect(over).toBe(false)
+
+    held.open()
+    await joined // resolves once the one baseline is over
+    await runner.idle()
+
+    expect(driver.runs).toHaveLength(1)
+    expect(repo.runsOfDate(TODAY, 'baseline')).toHaveLength(1)
+    expect(statusOf(cursor.id)).toBe('tracking')
+
+    startBaseline(deps, [cursor.id]) // once it is over, a new request starts a new one
+    await runner.idle()
+    expect(driver.runs).toHaveLength(2)
+  })
+
+  it('tops up a tracked product without demoting it, and resolves once it is over', async () => {
+    const cursor = addProduct('Cursor', 'Anysphere')
+    repo.setProductStatus(cursor.id, 'tracking')
+    const seen: string[] = []
+    driver.script['outpost-baseline-'] = async r => {
+      seen.push(statusOf(cursor.id))
+      if (r.spec.prompt.includes('- positioning：')) return failure('模型返回了无法解析的内容')
+      return completed()
+    }
+
+    await baselineProducts(deps, [cursor.id, 'no-such-product'])
+
+    expect(seen).toEqual(['tracking']) // a product already tracked keeps its daily updates while a missing dimension is filled
+    expect(statusOf(cursor.id)).toBe('tracking') // and a failed top-up does not demote it
+    expect(baselineRunOf(cursor.id)).toMatchObject({ status: 'failed', error: '模型返回了无法解析的内容' })
   })
 })

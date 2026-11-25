@@ -180,6 +180,8 @@ export class Repo {
     return finding
   }
 
+  getFinding(id: Id): Finding | null { return this.get(FINDING, id) ?? null }
+
   updateFinding(id: Id, patch: FindingPatch): void { this.patch(FINDING, id, patch, ['status', 'statusNote', 'unconfirmedUntil', 'read', 'late', 'sourceIds', 'verifiedOn']) }
 
   /** The findings of that day's brief (see `addFinding`), oldest first. */

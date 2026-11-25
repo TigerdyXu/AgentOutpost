@@ -2,14 +2,18 @@
  * Baseline (design §7.2): each newly tracked product gets one session 「前哨 · <产品> 建档」 that writes a card for every
  * dimension still without one, and the key facts. Its cards then go through the check (`verifyProduct`, Task 9), and
  * only after that does the product count as tracked. Products run side by side (as many as the runner allows); one that
- * fails stays `baselining` with its run marked failed, and the others go on.
+ * fails stays `baselining` with its run marked failed, and the others go on. A session that handed in no card at all
+ * has failed too (`NO_CARDS_ERROR`): an empty dossier is not a baseline.
+ *
+ * The same job fills in a tracked product's missing dimensions (a dimension added to its track, or one whose card the
+ * check rejected); the product stays `tracking` meanwhile, whatever the outcome.
  */
 import { localDate } from '../../core/calendar.ts'
 import type { Id } from '../../core/types.ts'
 import type { ToolSpec } from '../ports.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
-import type { JobDeps } from './runner.ts'
+import type { JobDeps, JobRunner } from './runner.ts'
 
 /** Checks what a product's sessions handed in (Task 9). It must reject when the check could not be done. */
 export type VerifyProduct = (productId: Id, scope: 'baseline' | 'daily') => Promise<void>
@@ -18,16 +22,46 @@ export interface BaselineDeps extends JobDeps {
   verifyProduct: VerifyProduct
 }
 
+/** The error of a baseline run whose session ended without handing in a single card. */
+export const NO_CARDS_ERROR = '没有提交任何档案卡'
+
 /**
- * Marks each product `baselining` at once and starts its baseline in the background; returns without waiting. Unknown
- * product ids are skipped.
+ * Baselines in flight, per runner (one runner lives as long as Outpost does): a second request for a product whose
+ * baseline is still running joins it instead of starting another session (and another check) beside it.
+ */
+const inFlight = new WeakMap<JobRunner, Map<Id, Promise<void>>>()
+
+/**
+ * Starts each product's baseline in the background and returns without waiting: a product not tracked yet is marked
+ * `baselining` at once; a tracked one keeps its status. A product whose baseline is already running is left to it.
+ * Unknown product ids are skipped.
  */
 export function startBaseline(deps: BaselineDeps, productIds: Id[]): void {
+  void baselineProducts(deps, productIds)
+}
+
+/**
+ * Like `startBaseline`, but resolves once each product's baseline (its own or the one it joined) is over. It never
+ * rejects: how a baseline ended is in its run, and an unexpected failure is logged by the runner.
+ */
+export function baselineProducts(deps: BaselineDeps, productIds: Id[]): Promise<void> {
+  let running = inFlight.get(deps.runner)
+  if (!running) inFlight.set(deps.runner, running = new Map())
+  const waits: Promise<void>[] = []
   for (const productId of new Set(productIds)) {
-    if (!deps.repo.getProduct(productId)) continue
-    deps.repo.setProductStatus(productId, 'baselining')
-    deps.runner.track(baseline(deps, productId), `baseline of product ${productId}`)
+    let work = running.get(productId)
+    if (!work) {
+      const product = deps.repo.getProduct(productId)
+      if (!product) continue
+      if (product.status !== 'tracking') deps.repo.setProductStatus(productId, 'baselining')
+      const map = running
+      work = baseline(deps, productId).finally(() => { map.delete(productId) })
+      running.set(productId, work)
+      deps.runner.track(work, `baseline of product ${productId}`)
+    }
+    waits.push(work.catch(() => {}))
   }
+  return Promise.all(waits).then(() => {})
 }
 
 async function baseline(deps: BaselineDeps, productId: Id): Promise<void> {
@@ -63,6 +97,10 @@ async function baseline(deps: BaselineDeps, productId: Id): Promise<void> {
     repo.updateRun(run.id, { progress: { done: 0, total } })
     const ended = await finished
     if (ended.status !== 'done') return // stays baselining; the run says why
+    if (handedIn.size === 0) {
+      repo.updateRun(run.id, { status: 'failed', error: NO_CARDS_ERROR })
+      return
+    }
   }
 
   try {

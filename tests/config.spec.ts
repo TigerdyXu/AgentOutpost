@@ -27,6 +27,11 @@ it('keeps a chosen model and rejects out-of-range values', () => {
   expect(Config({ dataDir: '/d', model: { provider: 'deepseek', model: 'deepseek-v4-pro' } }).model.get()).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' })
   expect(Config({ dataDir: '/d', runTime: '21:30' }).runTime.get()).toBe('21:30')
   expect(() => Config({ dataDir: '/d', runTime: '8:00' })).toThrow()
+  // Only real times of day: the scheduler's calendar throws on anything else.
+  expect(Config({ dataDir: '/d', runTime: '00:00' }).runTime.get()).toBe('00:00')
+  expect(Config({ dataDir: '/d', runTime: '23:59' }).runTime.get()).toBe('23:59')
+  for (const runTime of ['24:00', '99:99', '23:60', '12:5', ' 08:00'])
+    expect(() => Config({ dataDir: '/d', runTime }), runTime).toThrow()
   expect(() => Config({ dataDir: '/d', maxParallel: 9 })).toThrow()
   expect(() => Config({ dataDir: '/d', maxParallel: 0 })).toThrow()
 })

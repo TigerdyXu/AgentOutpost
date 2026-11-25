@@ -1,0 +1,457 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NO_NEWS_GIST } from '../../src/core/brief.ts'
+import type { Id, Importance, Run, RunStatus } from '../../src/core/types.ts'
+import { STOPPED_ERROR, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
+import { appendLate, synthesizeBrief, type BriefDeps } from '../../src/host/jobs/synthesize.ts'
+import type { ModelClient } from '../../src/host/ports.ts'
+import { LAST_COMPLETED, Scheduler, type SchedulerDeps } from '../../src/host/scheduler.ts'
+import { openDb, type Db } from '../../src/store/db.ts'
+import { Repo } from '../../src/store/repo.ts'
+import { flush, gate, usage } from '../fixtures/fake-driver.ts'
+import { local, manualClock } from '../fixtures/manual-clock.ts'
+
+const DAY = '2026-11-25'
+const trackedCount = 3
+
+/** How one daily run of a product ends, and what it hands in (already checked: verified). */
+interface Outcome { status?: RunStatus; error?: string; findings?: { headline: string; importance?: Importance }[] }
+
+let dir: string
+let db: Db
+let repo: Repo
+/** The test's clock: `clock.set` moves it, `clock.clock` is what the code under test reads. */
+let clock: ReturnType<typeof manualClock>
+let settings: RuntimeSettings & { runTime: string }
+let complete: ReturnType<typeof vi.fn<ModelClient['complete']>>
+let log: ReturnType<typeof vi.fn<(message: string) => void>>
+let deps: SchedulerDeps
+let scheduler: Scheduler
+let plays: Record<Id, Outcome[]>
+let holds: Record<Id, ReturnType<typeof gate>>
+let events: string[]
+let calls: { runDailyProduct: { productId: Id; date: string }[]; archiveOld: Date[]; rebaseline: Id[][] }
+let trackId: Id
+
+const addProduct = (id: Id, name: string, status: 'tracking' | 'baselining' | 'paused' = 'tracking', withCard = true) => {
+  repo.upsertProduct({ id, name, company: `${name} Inc`, region: 'overseas', form: 'IDE', iconPath: null, officialDomains: [], status, dailyBudgetYuan: null })
+  repo.linkProduct(trackId, id)
+  if (withCard) repo.addCardVersion({ productId: id, dimension: 'positioning', version: 1, summary: '编辑器', bullets: ['基于 VS Code'], body: '编辑器[1]', sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-20T00:00:00.000Z' })
+}
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'outpost-scheduler-'))
+  db = openDb(join(dir, 'outpost.sqlite'))
+  clock = manualClock('2026-11-25T07:00')
+  repo = new Repo(db, () => clock.clock.now())
+  settings = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }, model: null }
+  complete = vi.fn<ModelClient['complete']>(async () => ({ text: '今天 Cursor 有一条重要更新。', usage: usage({ inputTokens: 1000 }) }))
+  log = vi.fn<(message: string) => void>()
+  plays = {}
+  holds = {}
+  events = []
+  calls = { runDailyProduct: [], archiveOld: [], rebaseline: [] }
+  trackId = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }], status: 'active' }).id
+  addProduct('p1', 'Cursor')
+  addProduct('p2', 'Windsurf')
+  addProduct('p3', 'Cline')
+
+  const briefDeps: BriefDeps = { repo, model: { complete }, clock: clock.clock, settings: () => settings }
+  deps = {
+    clock: clock.clock,
+    repo,
+    settings: () => settings,
+    runDailyProduct: async (productId, date) => {
+      calls.runDailyProduct.push({ productId, date })
+      events.push(`daily ${productId}`)
+      const run = repo.createRun({ kind: 'daily', date, trackId: null, productId })
+      repo.updateRun(run.id, { status: 'running' })
+      await holds[productId]?.promise
+      const outcome = plays[productId]?.shift() ?? {}
+      for (const f of outcome.findings ?? []) {
+        repo.addFinding({
+          productId, runId: run.id, headline: f.headline, why: '值得看', importance: f.importance ?? 'major', claimKind: 'self', sourceIds: [], status: 'verified',
+          statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: f.headline, verifiedOn: date,
+        })
+      }
+      repo.updateRun(run.id, { status: outcome.status ?? 'done', error: outcome.error ?? null, endedAt: clock.clock.now().toISOString() })
+      events.push(`daily ${productId} ${outcome.status ?? 'done'}`)
+      return repo.getRun(run.id)!
+    },
+    synthesize: date => synthesizeBrief(briefDeps, date),
+    appendLate: (date, productId) => appendLate(briefDeps, date, productId),
+    archiveOld: async now => { calls.archiveOld.push(now) },
+    rebaseline: async ids => { calls.rebaseline.push(ids); events.push(`rebaseline ${ids.join(',')}`) },
+    log,
+  }
+  scheduler = new Scheduler(deps)
+})
+afterEach(() => {
+  scheduler.stop()
+  db.close()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+const dailyIds = () => calls.runDailyProduct.map(c => c.productId)
+const seedRun = (productId: Id, status: RunStatus, error: string | null = null, date = DAY): Run => {
+  const run = repo.createRun({ kind: 'daily', date, trackId: null, productId })
+  repo.updateRun(run.id, { status, error })
+  return repo.getRun(run.id)!
+}
+
+describe('Scheduler: when to run', () => {
+  it('catches up once after a missed run', async () => {
+    clock.set('2026-11-25T14:00'); repo.setSetting('lastCompletedDailyDate', '2026-11-24'); scheduler.start()
+    await flush(); expect(calls.runDailyProduct).toHaveLength(trackedCount); expect(repo.getBrief('2026-11-25')).not.toBeNull()
+    scheduler.start(); await flush(); expect(calls.runDailyProduct).toHaveLength(trackedCount)
+
+    expect(calls.runDailyProduct.every(c => c.date === DAY)).toBe(true)
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(clock.pending()).toEqual([local('2026-11-26T08:00')]) // one timer, for tomorrow
+  })
+
+  it('resumes only unfinished products', async () => {
+    const lastRunId = repo.createRun({ kind: 'daily', date: '2026-11-25', productId: 'p1', trackId: null }).id; repo.updateRun(lastRunId, { status: 'done' })
+    seedRun('p2', 'running') // left behind when the desktop app was quit mid-run
+    clock.set('2026-11-25T14:00'); scheduler.start(); await flush()
+    expect(calls.runDailyProduct.map(c => c.productId)).toEqual(['p2', 'p3'])
+
+    expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p1', 'p2', 'p3']) // the brief covers the products done before the restart too
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
+  it('waits for the run time when started before it', async () => {
+    repo.setSetting(LAST_COMPLETED, '2026-11-24')
+    scheduler.start()
+    await flush()
+
+    expect(calls.runDailyProduct).toEqual([])
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
+
+    clock.set('2026-11-25T08:00')
+    await flush()
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+    expect(clock.pending()).toEqual([local('2026-11-26T08:00')])
+  })
+
+  it('runs once, and arms for tomorrow, when started exactly at the run time', async () => {
+    clock.set('2026-11-25T08:00')
+    scheduler.start()
+    await flush()
+    expect(calls.runDailyProduct).toHaveLength(trackedCount)
+    expect(clock.pending()).toEqual([local('2026-11-26T08:00')])
+
+    clock.set('2026-11-25T08:00:01')
+    scheduler.start()
+    await flush()
+    expect(calls.runDailyProduct).toHaveLength(trackedCount)
+  })
+
+  it('runs today once and re-arms for tomorrow when the timer fires a moment early', async () => {
+    scheduler.start()
+    clock.early(1) // the timer for 08:00 fires at 07:59:59.999
+    clock.set('2026-11-25T08:00:00.500')
+    await flush()
+
+    expect(calls.runDailyProduct).toEqual([{ productId: 'p1', date: DAY }, { productId: 'p2', date: DAY }, { productId: 'p3', date: DAY }])
+    expect(clock.pending()).toEqual([local('2026-11-26T08:00')])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+
+    clock.set('2026-11-26T08:00')
+    await flush()
+    expect(calls.runDailyProduct.slice(3).map(c => c.date)).toEqual(['2026-11-26', '2026-11-26', '2026-11-26'])
+    expect(clock.pending()).toEqual([local('2026-11-27T08:00')])
+  })
+
+  it('runs the right day when a midnight timer fires a moment early', async () => {
+    settings.runTime = '00:00'
+    repo.setSetting(LAST_COMPLETED, DAY)
+    clock.set('2026-11-25T23:00')
+    scheduler.start()
+    expect(clock.pending()).toEqual([local('2026-11-26T00:00')])
+
+    clock.early(1) // fires at 23:59:59.999 on the 25th, which is already done
+    clock.set('2026-11-26T00:00:00.500')
+    await flush()
+
+    expect(calls.runDailyProduct.map(c => c.date)).toEqual(['2026-11-26', '2026-11-26', '2026-11-26'])
+    expect(clock.pending()).toEqual([local('2026-11-27T00:00')])
+  })
+
+  it('reads the run time when it arms the timer, and falls back to 08:00 on one it cannot read', async () => {
+    settings.runTime = '21:30'
+    scheduler.start()
+    expect(clock.pending()).toEqual([local('2026-11-25T21:30')])
+
+    settings.runTime = '24:00'
+    scheduler.start()
+    expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('24:00'))
+  })
+
+  it('stops: no timer left, and a timer that still fires runs nothing', async () => {
+    scheduler.start()
+    scheduler.stop()
+    expect(clock.pending()).toEqual([])
+    clock.set('2026-11-26T09:00')
+    await flush()
+    expect(calls.runDailyProduct).toEqual([])
+  })
+})
+
+describe('Scheduler: the day', () => {
+  it('synthesizes as soon as every product is done, and only then marks the day complete and archives', async () => {
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }]
+
+    await scheduler.runDay(DAY)
+
+    const brief = repo.getBrief(DAY)!
+    expect(brief.gist).toBe('今天 Cursor 有一条重要更新。')
+    expect(brief.quietProductIds).toEqual(['p2', 'p3'])
+    expect(repo.runsOfDate(DAY, 'synthesize')).toMatchObject([{ status: 'done', date: DAY }])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(calls.archiveOld).toEqual([local('2026-11-25T07:00')])
+    expect(clock.pending()).toEqual([]) // the cutoff timer was cancelled
+  })
+
+  it('synthesizes at the 2-hour cutoff and appends late products marked 迟到', async () => {
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }]
+    plays.p2 = [{ findings: [{ headline: 'Windsurf 发布 Wave 9', importance: 'notable' }] }]
+    holds.p2 = gate()
+    holds.p3 = gate()
+    clock.set('2026-11-25T08:00')
+
+    const day = scheduler.runDay(DAY)
+    await flush()
+    expect(repo.getBrief(DAY)).toBeNull() // Windsurf and Cline are still running
+    expect(clock.pending()).toEqual([local('2026-11-25T10:00')])
+
+    clock.set('2026-11-25T10:00')
+    await flush()
+    const atCutoff = repo.getBrief(DAY)!
+    const [cursorNews] = repo.findingsOfDate(DAY)
+    expect(atCutoff.findingIds).toEqual([cursorNews!.id])
+    expect(atCutoff.quietProductIds).toEqual([]) // the two still running are not called quiet
+    expect(complete).toHaveBeenCalledOnce()
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined() // not over yet
+    expect(calls.archiveOld).toEqual([])
+
+    clock.set('2026-11-25T10:40')
+    holds.p2!.open()
+    await flush()
+    const withWindsurf = repo.getBrief(DAY)!
+    const windsurfNews = repo.findingsOfDate(DAY).find(f => f.productId === 'p2')!
+    expect(windsurfNews.late).toBe(true) // 迟到
+    expect(repo.getFinding(cursorNews!.id)!.late).toBe(false)
+    expect(withWindsurf.findingIds).toEqual([cursorNews!.id, windsurfNews.id])
+    expect(withWindsurf.gist).toBe(atCutoff.gist)
+    expect(withWindsurf.createdAt).toBe(atCutoff.createdAt)
+    expect(complete).toHaveBeenCalledOnce()
+
+    holds.p3!.open()
+    await day
+    expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p3'])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(calls.archiveOld).toHaveLength(1)
+  })
+
+  it('regenerates the no-news gist when a late product brings news', async () => {
+    plays.p3 = [{ findings: [{ headline: 'Cline 发布 4.0' }] }]
+    holds.p3 = gate()
+    clock.set('2026-11-25T08:00')
+    const day = scheduler.runDay(DAY)
+    await flush()
+    clock.set('2026-11-25T10:00')
+    await flush()
+    expect(repo.getBrief(DAY)!.gist).toBe(NO_NEWS_GIST)
+    expect(complete).not.toHaveBeenCalled()
+
+    holds.p3!.open()
+    await day
+
+    expect(complete).toHaveBeenCalledOnce()
+    expect(repo.getBrief(DAY)!.gist).toBe('今天 Cursor 有一条重要更新。')
+    expect(repo.findingsOfDate(DAY)).toMatchObject([{ headline: 'Cline 发布 4.0', late: true }])
+  })
+
+  it('retries a failed product once, then names it 未能更新', async () => {
+    plays.p2 = [{ status: 'failed', error: '会话出错' }, { status: 'failed', error: '模型返回了无法解析的内容' }]
+    plays.p3 = [{ status: 'failed', error: '会话出错' }, {}]
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds().filter(id => id === 'p1')).toHaveLength(1)
+    expect(dailyIds().filter(id => id === 'p2')).toHaveLength(2)
+    expect(dailyIds().filter(id => id === 'p3')).toHaveLength(2)
+    const brief = repo.getBrief(DAY)!
+    expect(brief.skipped).toEqual([{ productId: 'p2', reason: '模型返回了无法解析的内容', failed: true }])
+    expect(brief.quietProductIds).toEqual(['p1', 'p3'])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY) // the day is over: two failures is as far as it goes
+
+    await scheduler.runDay(DAY) // run again (a restart): nothing is tried a third time
+    expect(calls.runDailyProduct).toHaveLength(5)
+  })
+
+  it('gives a product that failed before a restart one more try, not two', async () => {
+    seedRun('p1', 'failed', '会话出错')
+    seedRun('p2', 'done')
+    seedRun('p3', 'skipped', '今日总预算已用完')
+    plays.p1 = [{ status: 'failed', error: '会话出错' }]
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds()).toEqual(['p1'])
+  })
+
+  it('treats a stop as an interruption: no brief, the day not complete, and the product runs again on the next start', async () => {
+    settings.maxParallel = 1
+    seedRun('p2', 'failed', '会话出错') // one real failure earlier today: one more try left
+    plays.p2 = [{ status: 'failed', error: STOPPED_ERROR }]
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds()).toEqual(['p1', 'p2']) // nothing started after the stop
+    expect(repo.getBrief(DAY)).toBeNull()
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined()
+    expect(calls.archiveOld).toEqual([])
+
+    clock.set('2026-11-25T09:00')
+    const next = new Scheduler(deps) // the next start
+    next.start()
+    await flush()
+    next.stop()
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p2', 'p3']) // an interruption is not counted as a failure
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
+  it('starts nothing more once the scheduler is stopped', async () => {
+    settings.maxParallel = 1
+    holds.p1 = gate()
+    const day = scheduler.runDay(DAY)
+    await flush()
+    scheduler.stop()
+    holds.p1!.open()
+    await day
+
+    expect(dailyIds()).toEqual(['p1'])
+    expect(repo.getBrief(DAY)).toBeNull()
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined()
+  })
+
+  it('skips a product whose own budget is spent without starting it, and names it', async () => {
+    repo.upsertProduct({ id: 'p2', name: 'Windsurf', company: 'Windsurf Inc', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: 0 })
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds()).toEqual(['p1', 'p3'])
+    expect(repo.runsOfDate(DAY, 'daily').find(r => r.productId === 'p2')).toMatchObject({ status: 'skipped', error: '该产品今日预算已用完' })
+    expect(repo.getBrief(DAY)!.skipped).toEqual([{ productId: 'p2', reason: '该产品今日预算已用完' }])
+  })
+
+  it('re-baselines stuck products, and fills in missing dimensions before a product\'s daily run', async () => {
+    addProduct('p4', 'Zed', 'baselining') // its baseline failed some earlier day
+    addProduct('p5', 'Trae', 'paused', false) // not tracked: left alone
+    const filled = gate()
+    // Windsurf has no card for 定位 (its baseline card was rejected by the check).
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run()
+    deps.rebaseline = async ids => {
+      calls.rebaseline.push(ids)
+      events.push(`rebaseline ${ids.join(',')}`)
+      if (ids.includes('p2')) await filled.promise
+    }
+    scheduler = new Scheduler(deps)
+
+    const day = scheduler.runDay(DAY)
+    await flush()
+    expect(calls.rebaseline).toEqual([['p4'], ['p2']])
+    expect(dailyIds()).toEqual(['p1', 'p3']) // Windsurf waits for its missing card
+
+    filled.open()
+    await day
+    expect(dailyIds()).toEqual(['p1', 'p3', 'p2'])
+    expect(events.indexOf('rebaseline p2')).toBeLessThan(events.indexOf('daily p2'))
+    expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p1', 'p2', 'p3']) // Zed is not tracked yet: not in the brief
+  })
+
+  it('does not mark the day complete when the brief could not be written', async () => {
+    deps.synthesize = async () => { throw new Error('磁盘已满') }
+    scheduler = new Scheduler(deps)
+
+    await scheduler.runDay(DAY)
+
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined()
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('磁盘已满'))
+    expect(calls.archiveOld).toHaveLength(1) // old sessions are archived all the same
+  })
+
+  it('never moves the completed day back', async () => {
+    repo.setSetting(LAST_COMPLETED, DAY)
+    await scheduler.runDay('2026-11-24')
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
+  it('logs a product whose run threw, and goes on with the others', async () => {
+    deps.runDailyProduct = async (productId, date) => {
+      if (productId === 'p2') throw new Error('Unknown product p2')
+      calls.runDailyProduct.push({ productId, date })
+      const run = seedRun(productId, 'done', null, date)
+      return run
+    }
+    scheduler = new Scheduler(deps)
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds()).toEqual(['p1', 'p3'])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Unknown product p2'))
+    expect(repo.getBrief(DAY)).not.toBeNull()
+  })
+})
+
+describe('Scheduler: 立即更新', () => {
+  it('runs the product and writes today\'s brief when there is none yet', async () => {
+    plays.p2 = [{ findings: [{ headline: 'Windsurf 发布 Wave 9' }] }]
+
+    const run = await scheduler.runProductNow('p2')
+
+    expect(run).toMatchObject({ productId: 'p2', date: DAY, status: 'done' })
+    expect(dailyIds()).toEqual(['p2'])
+    const brief = repo.getBrief(DAY)!
+    expect(brief.findingIds).toHaveLength(1)
+    expect(repo.findingsOfDate(DAY)[0]!.late).toBe(false)
+  })
+
+  it('adds the product to today\'s brief when there is one', async () => {
+    await scheduler.runDay(DAY)
+    plays.p2 = [{ findings: [{ headline: 'Windsurf 发布 Wave 9' }] }]
+
+    await scheduler.runProductNow('p2')
+
+    const news = repo.findingsOfDate(DAY).find(f => f.productId === 'p2')!
+    expect(repo.getBrief(DAY)!.findingIds).toEqual([news.id])
+    expect(news.late).toBe(true)
+  })
+
+  it('re-baselines a product stuck in 建档中 instead of updating it', async () => {
+    addProduct('p4', 'Zed', 'baselining', false)
+
+    expect(await scheduler.runProductNow('p4')).toBeNull()
+
+    expect(calls.rebaseline).toEqual([['p4']])
+    expect(calls.runDailyProduct).toEqual([])
+  })
+
+  it('waits for the product\'s run in flight rather than starting a second one beside it', async () => {
+    holds.p1 = gate()
+    const day = scheduler.runDay(DAY)
+    await flush()
+
+    const now = scheduler.runProductNow('p1')
+    holds.p1!.open()
+    const [run] = await Promise.all([now, day])
+
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+    expect(run).toMatchObject({ productId: 'p1', status: 'done' })
+  })
+})

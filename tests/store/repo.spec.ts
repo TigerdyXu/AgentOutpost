@@ -439,6 +439,14 @@ describe('Repo: sources and findings', () => {
     expect(repo.findingsOfDate('2026-11-25').map(f => f.id)).toEqual([sameDay.id, promoted.id, waiting.id]) // still in the brief of its own day
   })
 
+  it('getFinding returns one finding by id, or null', () => {
+    const repo = newRepo()
+    const f = repo.addFinding(findingSpec())
+    repo.updateFinding(f.id, { status: 'verified', verifiedOn: '2026-11-25' })
+    expect(repo.getFinding(f.id)).toEqual({ ...f, status: 'verified', verifiedOn: '2026-11-25' })
+    expect(repo.getFinding('nope')).toBeNull()
+  })
+
   it('findingsOfDate falls back to the local day of creation when the run is unknown', () => {
     const repo = newRepo()
     const f = repo.addFinding(findingSpec({ runId: 'no-such-run' }))

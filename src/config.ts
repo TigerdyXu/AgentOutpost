@@ -16,8 +16,8 @@ const price = (value: number, description: string) => s.number().min(0).default(
 export const Config = s.object({
   dataDir: s.string().pattern(/^\//).required()
     .description('Directory for the database (outpost.sqlite), product icons (icons/) and research working files (workspace/). Absolute path.'),
-  runTime: s.string().pattern(/^\d{2}:\d{2}$/).default('08:00')
-    .description('Local time of the daily update, HH:MM.').volatile(),
+  runTime: s.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).default('08:00')
+    .description('Local time of the daily update, HH:MM (00:00 to 23:59).').volatile(),
   maxParallel: s.number().min(1).max(8).step(1).default(3)
     .description('Products researched at the same time.').volatile(),
   dailyBudgetYuan: s.number().min(0).default(20)

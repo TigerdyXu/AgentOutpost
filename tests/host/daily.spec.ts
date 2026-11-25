@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_DIMENSIONS } from '../../src/core/dimensions.ts'
-import { runDailyProduct } from '../../src/host/jobs/daily.ts'
-import { JobRunner, type JobDeps, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
+import { VERIFY_BUDGET_NOTE, runDailyProduct } from '../../src/host/jobs/daily.ts'
+import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
-import { FakeDriver, completed, failure, instantClock, type Play, type Round } from '../fixtures/fake-driver.ts'
+import { FakeDriver, completed, failure, gate, instantClock, usage, type Play, type Round } from '../fixtures/fake-driver.ts'
 
 const DAY = '2026-11-24' // the day being processed; the clock already says the 25th (a catch-up after midnight)
 const DAILY = 'outpost-daily-'
@@ -61,6 +61,8 @@ const allSeen: Play = async r => {
   return completed()
 }
 const runsOf = (kind: 'daily' | 'verify') => repo.runsOfDate(DAY, kind)
+/** Resolves once the round is cancelled (Outpost stopping). */
+const aborted = (r: Round) => new Promise<void>(resolve => r.signal.addEventListener('abort', () => resolve(), { once: true }))
 
 describe('runDailyProduct', () => {
   it('runs verify after the daily session', async () => {
@@ -122,14 +124,51 @@ describe('runDailyProduct', () => {
     expect(runsOf('verify')).toEqual([])
   })
 
-  it('marks the product unfinished when the budget runs out before the check', async () => {
+  it('keeps the run done with a note when the budget runs out before the check', async () => {
     driver.script[DAILY] = async r => { await oneFinding(r); return completed({ inputTokens: 10_000_000 }) } // ¥20: the whole budget
 
     const run = await runDailyProduct(deps, 'p1', DAY)
 
-    expect(run).toMatchObject({ status: 'skipped', error: '核查没有完成：今日总预算已用完', costYuan: 20 })
+    // The session did its work: the day is finished for this product, its findings wait for the next check.
+    expect(run).toMatchObject({ status: 'done', error: VERIFY_BUDGET_NOTE, costYuan: 20 })
+    expect(VERIFY_BUDGET_NOTE).toBe('核查因预算未完成')
     expect(runsOf('verify')).toMatchObject([{ status: 'skipped', error: '今日总预算已用完' }])
     expect(repo.findingsOfDate(DAY)).toMatchObject([{ status: 'pending' }]) // not shown, and checked next time
+  })
+
+  it('does not start a check when Outpost stopped during the daily session', async () => {
+    const started = gate()
+    driver.script[DAILY] = async r => {
+      await r.call('outpost_submit_finding', finding)
+      started.open()
+      await aborted(r)
+      return { reason: 'aborted', usage: usage() }
+    }
+
+    const running = runDailyProduct(deps, 'p1', DAY)
+    await started.promise
+    await deps.runner.stop()
+    const run = await running
+
+    expect(run).toMatchObject({ status: 'failed', error: STOPPED_ERROR })
+    expect(runsOf('verify')).toEqual([])
+    expect(repo.findingsOfDate(DAY)).toMatchObject([{ status: 'pending' }]) // checked when the product runs again
+  })
+
+  it('marks the run interrupted, not failed, when Outpost stopped during the check', async () => {
+    const checking = gate()
+    driver.script[DAILY] = oneFinding
+    driver.script[VERIFY] = async r => { checking.open(); await aborted(r); return { reason: 'aborted', usage: usage() } }
+
+    const running = runDailyProduct(deps, 'p1', DAY)
+    await checking.promise
+    await deps.runner.stop()
+    const run = await running
+
+    // The scheduler runs an interrupted product again on the next start; a failure would count toward giving up on it.
+    expect(run).toMatchObject({ status: 'failed', error: STOPPED_ERROR })
+    expect(runsOf('verify')).toMatchObject([{ status: 'failed', error: STOPPED_ERROR }])
+    expect(repo.findingsOfDate(DAY)).toMatchObject([{ status: 'pending' }])
   })
 
   it('marks the product failed when the check fails', async () => {

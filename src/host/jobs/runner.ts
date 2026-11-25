@@ -57,7 +57,8 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /** Settings key: runs that ended before this moment (ISO) have had their sessions archived. */
 const ARCHIVED_THROUGH = 'archivedSessionsThrough'
 const DEFAULT_TIMEOUT_MIN = 30
-const STOPPED = '前哨已停止'
+/** The `error` of a run that failed only because Outpost was stopping: it was interrupted, not broken, and is run again. */
+export const STOPPED_ERROR = '前哨已停止'
 const INVALID_BUDGET = '每日预算设置无效'
 const NOT_DONE = '提醒后仍没有调用 outpost_done，按已提交的内容收尾'
 /**
@@ -75,6 +76,22 @@ const PASSING = new RegExp(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAI
 /** Whether the round failed in a way that passes by itself (network, rate limit, an HTTP 408, 429 or 5xx), so trying again may help. */
 export function isTransient(outcome: SessionOutcome): boolean {
   return outcome.reason === 'error' && PASSING.test(outcome.error ?? '')
+}
+
+/**
+ * Why work counted toward `date` (and toward `productId`'s own budget, if it has one) may not start now, or null when it
+ * may: the day's spending has reached `dailyBudgetYuan`, or the product's has reached its `dailyBudgetYuan`.
+ */
+export function budgetRefusal(repo: Repo, dailyBudgetYuan: number, date: string, productId: Id | null): string | null {
+  if (!(typeof dailyBudgetYuan === 'number' && dailyBudgetYuan >= 0)) return INVALID_BUDGET
+  const own = productId ? repo.getProduct(productId)?.dailyBudgetYuan : null
+  const verdict = canSpend({
+    spentToday: repo.spentOn(date),
+    dailyBudget: dailyBudgetYuan,
+    productSpentToday: productId ? repo.spentOn(date, productId) : 0,
+    productBudget: typeof own === 'number' && own >= 0 ? own : null, // a budget that is not a number is no budget
+  })
+  return verdict.ok ? null : verdict.reason
 }
 
 const noUsage = (): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 })
@@ -166,7 +183,7 @@ export class JobRunner {
     const refused = this.refusal(run)
     if (refused) return finish('skipped', refused)
     const release = UNPOOLED.has(run.kind) ? (this.stopped ? null : () => {}) : await this.slot()
-    if (!release) return finish('failed', STOPPED)
+    if (!release) return finish('failed', STOPPED_ERROR)
     try {
       // Spending may have reached the budget while this run waited for its place.
       const late = this.refusal(run)
@@ -182,7 +199,7 @@ export class JobRunner {
       if (!done && CONTINUABLE.has(outcome.reason) && !this.stopped)
         outcome = await this.round(id, used, signal => this.driver.nudge(sessionId, NUDGE_TEXT, signal))
       if (done) return finish('done', null)
-      if (this.stopped) return finish('failed', STOPPED)
+      if (this.stopped) return finish('failed', STOPPED_ERROR)
       if (CONTINUABLE.has(outcome.reason)) return finish('done', NOT_DONE) // what it handed in stands; it goes to the check like any other
       return finish('failed', this.describe(outcome))
     } catch (error) {
@@ -231,16 +248,7 @@ export class JobRunner {
 
   /** Why the run may not start now, or null when it may. */
   private refusal(run: Run): string | null {
-    const { dailyBudgetYuan } = this.settings()
-    if (!(typeof dailyBudgetYuan === 'number' && dailyBudgetYuan >= 0)) return INVALID_BUDGET
-    const own = run.productId ? this.repo.getProduct(run.productId)?.dailyBudgetYuan : null
-    const verdict = canSpend({
-      spentToday: this.repo.spentOn(run.date),
-      dailyBudget: dailyBudgetYuan,
-      productSpentToday: run.productId ? this.repo.spentOn(run.date, run.productId) : 0,
-      productBudget: typeof own === 'number' && own >= 0 ? own : null, // a budget that is not a number is no budget
-    })
-    return verdict.ok ? null : verdict.reason
+    return budgetRefusal(this.repo, this.settings().dailyBudgetYuan, run.date, run.productId)
   }
 
   /** Waits for a place among the sessions running; resolves with its release, or null once the runner stopped. */
