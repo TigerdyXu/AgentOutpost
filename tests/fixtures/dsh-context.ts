@@ -2,12 +2,12 @@
  * An in-memory stand-in for the parts of DSH the adapters use (as superagent's `tests/fixtures/host.ts` builds one): a Cordis
  * `Context` providing `sessionController`, `workspaceRegistry`, `sessionPersistence`, `llm` and `agentDefaultModel`, and fake
  * agents with their own `agent.ctx.tools`. Like DSH, creating or resuming a session emits `agent/created` before it resolves;
- * a message sent to an idle agent starts a turn at once (`turn/start`, then the message as `user/message`), and one sent
- * while a turn runs waits for that turn to end. The test plays the model: `assistant(...)` and `turnEnd(...)` emit what
+ * a message sent to an idle agent starts a turn at once (`turn/start`; the step takes the message out of the inbox,
+ * `agent/inbox/claimed`; then records it, `user/message`), and one sent while a turn runs waits for that turn to end. The test plays the model: `assistant(...)` and `turnEnd(...)` emit what
  * DSH would.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { vi } from 'vitest'
+import { vi, type Mock } from 'vitest'
 
 /** A tool as `agent.ctx.tools.register` receives it. */
 export interface RegisteredTool {
@@ -24,8 +24,8 @@ export interface FakeAgent {
   id: string
   ctx: Context
   session: { id: string }
-  model: { select: ReturnType<typeof vi.fn> }
-  followup: ReturnType<typeof vi.fn>
+  model: { select: Mock<(selection: { provider: string; model: string }) => void> }
+  followup: Mock<(message: SentMessage) => void>
   /** Number of the latest turn, 0 before the first. */
   turn: number
   /** Whether the latest turn has not ended yet. */
@@ -44,19 +44,27 @@ export function dshHost() {
   const stored = new Set<string>()
   const tools = new Map<string, Map<string, RegisteredTool>>()
   const sent = new Map<string, SentMessage[]>()
+  /** Sessions whose next turns take their message and then fail before recording it (no `user/message`). */
+  const unrecorded = new Set<string>()
+  /** Whether claims are announced with `agent/inbox/claimed`. */
+  let claimEvents = true
 
   const emit = (sessionId: string, type: string, data: unknown) => {
     const agent = agents.get(sessionId)
     ctx.emit('session/event', (agent?.session ?? { id: sessionId }) as never, { type, seq: 0, time: Date.now(), data } as never)
   }
-  /** The next turn starts, and its first step takes the oldest waiting message into the history. */
+  /**
+   * The next turn starts, and its first step claims the oldest waiting message and (unless the step fails before, as a
+   * wrong model or a rejecting pre-step hook makes it in DSH) records it in the history.
+   */
   const next = (agent: FakeAgent) => {
     const message = agent.queued.shift()
     if (!message) { agent.running = false; return }
     agent.turn++
     agent.running = true
     emit(agent.id, 'turn/start', { turn: agent.turn })
-    emit(agent.id, 'user/message', message)
+    if (claimEvents) ctx.emit('agent/inbox/claimed', { agent, message, turn: agent.turn } as never)
+    if (!unrecorded.has(agent.id)) emit(agent.id, 'user/message', message)
   }
 
   /** A new agent instance for `sessionId` (a fresh one on every create or resume, as DSH does), announced with `agent/created`. */
@@ -160,9 +168,15 @@ export function dshHost() {
       const agent = agentOf(sessionId)
       agent.turn++
       agent.running = true
+      const typed = { id: `typed-${agent.turn}`, role: 'user', content: [{ type: 'text', text: '顺便看看定价' }], source: { kind: 'user' } }
       emit(sessionId, 'turn/start', { turn: agent.turn })
-      emit(sessionId, 'user/message', { id: `typed-${agent.turn}`, role: 'user', content: [{ type: 'text', text: '顺便看看定价' }], source: { kind: 'user' } })
+      if (claimEvents) ctx.emit('agent/inbox/claimed', { agent, message: typed, turn: agent.turn } as never)
+      emit(sessionId, 'user/message', typed)
     },
+    /** From now on the session's turns claim their message and then stop before recording it; end them with `turnEnd`. */
+    failBeforeRecording: (sessionId: string) => { unrecorded.add(sessionId) },
+    /** From now on claims are not announced, as from a DSH without `agent/inbox/claimed`. */
+    withoutClaimEvents: () => { claimEvents = false },
     /** Any other session event. */
     event: emit,
     /** Sets what the next model call streams. */

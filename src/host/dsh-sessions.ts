@@ -202,6 +202,11 @@ export class DshSessionDriver implements SessionDriver {
    * Sends `text` and waits for the end of the turn that takes it, summing the usage of that turn. Turns that end before it
    * (one the user started, say) and events of other sessions do not count. When `signal` aborts first, the turn is
    * cancelled and the round reports `timeout` with the usage so far.
+   *
+   * The turn is known when DSH claims the message (`agent/inbox/claimed`). It records the message (`user/message`) only
+   * after checking the model, tools, system prompt, pre-step hooks and request, and a turn that fails or is blocked there
+   * ends with no `user/message` (agent-loop `preStep`); matching on the record alone would wait for the time limit and
+   * lose the error. The record still marks the turn should a claim go unannounced.
    */
   private async round(agent: Agent, text: string, signal: AbortSignal): Promise<SessionOutcome> {
     const usage = noUsage()
@@ -212,14 +217,18 @@ export class DshSessionDriver implements SessionDriver {
     /** The latest turn to start; the one that took the message, once it has (DSH opens a turn before it takes messages). */
     let latest: number | undefined
     let mine: number | undefined
-    const stop = this.ctx.on('session/event', (session, event) => {
+    const unclaimed = this.ctx.on('agent/inbox/claimed', ({ agent: owner, message: claimed, turn }) => {
+      if (owner.id === sessionId && claimed.id === message.id) mine ??= turn
+    })
+    const unevented = this.ctx.on('session/event', (session, event) => {
       if (session.id !== sessionId) return
       if (event.type === 'turn/start') latest = event.data.turn
-      else if (event.type === 'user/message') { if (event.data.id === message.id) mine = latest }
+      else if (event.type === 'user/message') { if (event.data.id === message.id) mine ??= latest }
       else if (mine === undefined) return
       else if (event.type === 'assistant/message') { if (event.data.turn === mine) addUsage(usage, event.data.usage) }
       else if (event.type === 'turn/end' && event.data.turn === mine) settle(outcomeOf(event.data.reason, { ...usage }))
     })
+    const stop = () => { unclaimed(); unevented() }
     const onAbort = () => {
       try { this.ctx.sessionController.cancel({ sessionId }) } catch { /* no live agent: nothing runs to stop */ }
       settle({ reason: 'timeout', usage: { ...usage } })

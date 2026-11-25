@@ -151,12 +151,17 @@ describe('DshSessionDriver.run', () => {
     host.turnEnd('outpost-daily-p1', { kind: 'completed' })
     await first
     host.userTurn('outpost-daily-p1') // turn 2: the user typed something, and it is still running
+    // The user typed one more thing, which waits for the next turn ahead of ours.
+    host.agent('outpost-daily-p1').followup({ id: 'typed-later', role: 'user', content: [{ type: 'text', text: '还有竞品' }], source: { kind: 'user' } })
     const p = driver.nudge('outpost-daily-p1', '继续', signal)
-    await vi.waitFor(() => { expect(host.sent('outpost-daily-p1')).toHaveLength(2) })
+    await vi.waitFor(() => { expect(host.sent('outpost-daily-p1')).toHaveLength(3) })
     host.assistant('outpost-daily-p1', { inputTokens: 500, outputTokens: 500 })
-    host.turnEnd('outpost-daily-p1', { kind: 'completed' }) // the user's turn ends; ours starts next
-    expect(await settled(p)).toBe(false)
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' }) // the user's turn ends; turn 3 takes their second message
     await host.started('outpost-daily-p1', 3)
+    host.assistant('outpost-daily-p1', { inputTokens: 300, outputTokens: 300 })
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' }) // and ends; ours starts next
+    expect(await settled(p)).toBe(false)
+    await host.started('outpost-daily-p1', 4)
     host.assistant('outpost-daily-p1', { inputTokens: 10, outputTokens: 2 })
     host.turnEnd('outpost-daily-p1', { kind: 'max-tokens' })
     expect(await p).toEqual({ reason: 'max-tokens', usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 } })
@@ -175,6 +180,36 @@ describe('DshSessionDriver.run', () => {
     host.assistant('outpost-a', { inputTokens: 3, outputTokens: 3 })
     host.turnEnd('outpost-a', { kind: 'completed' })
     expect(await pa).toEqual({ reason: 'completed', usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 0 } })
+  })
+
+  it('reports the error of a turn that fails after taking its message but before recording it', async () => {
+    // DSH claims the message first, then checks the model, tools, system prompt, pre-step hook and request; a failure there
+    // ends the turn with no `user/message` (a wrong model id in Outpost's settings fails in `prepareCall`, say).
+    host.failBeforeRecording('outpost-daily-p1')
+    const timer = new AbortController()
+    const p = driver.run(specOf({ model: { provider: 'deepseek-official', model: 'deepseek-v9' } }), timer.signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'error', error: { message: 'model "deepseek-v9" is not available from provider "deepseek-official"', code: 'MODEL_NOT_FOUND' } })
+    expect(await p).toEqual({ reason: 'error', usage: zero, error: 'model "deepseek-v9" is not available from provider "deepseek-official"' })
+    expect(timer.signal.aborted).toBe(false) // it did not wait for the time limit
+    expect(host.sessionController.cancel).not.toHaveBeenCalled()
+  })
+
+  it('reports a turn that a pre-step hook blocks before its message is recorded', async () => {
+    host.failBeforeRecording('outpost-daily-p1')
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'blocked' })
+    expect(await p).toEqual({ reason: 'blocked', usage: zero })
+  })
+
+  it('still knows its turn by the recorded message when DSH does not announce the claim', async () => {
+    host.withoutClaimEvents()
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.assistant('outpost-daily-p1', { inputTokens: 9, outputTokens: 1 })
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toEqual({ reason: 'completed', usage: { inputTokens: 9, outputTokens: 1, cacheReadTokens: 0 } })
   })
 
   it('reports how the turn ended', async () => {
