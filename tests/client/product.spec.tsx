@@ -812,6 +812,22 @@ describe('the feed tab', () => {
     expect(opened).toHaveBeenCalledWith('s-1')
   })
 
+  it('names every track the product is in on its cards, in the track list’s order', async () => {
+    // 小豆 is in two tracks (the second listed first); Muse's track is not one of them.
+    const twoTracks = state({ tracks: [
+      track('t2', '手机 AI 助理', [tracked(doubao)], { dimensions: DIMENSIONS }),
+      track('t3', 'AI 硬件', [tracked(muse)], { dimensions: DIMENSIONS }),
+      track('t1', 'Personal Agent', [tracked(muse), tracked(doubao)], { dimensions: DIMENSIONS }),
+    ] })
+    await feed({}, { state: twoTracks })
+    for (const headline of ['安卓全量开放', '传闻接入电商', '老消息'])
+      expect(feedCard(headline).querySelector('.op-card-track')?.textContent, headline).toBe('· 手机 AI 助理、Personal Agent')
+    // In one track only: that one.
+    unmount()
+    await feed()
+    expect(feedCard('安卓全量开放').querySelector('.op-card-track')?.textContent).toBe('· Personal Agent')
+  })
+
   it('names the dimensions a finding changed by the labels of the product’s dimensions', async () => {
     await feed()
     expect(feedCard('传闻接入电商').querySelector('.op-card-changed')).toBeNull()

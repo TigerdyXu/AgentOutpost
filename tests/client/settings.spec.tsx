@@ -364,6 +364,20 @@ describe('the models', () => {
     expect(saveButton().disabled).toBe(true)
   })
 
+  it('leaves out a provider that lists no models and no error, unless it holds the saved model', async () => {
+    // DSH lists 「DeepSeek Account」 with nothing under it (not signed in), and says nothing is wrong.
+    const empty = { provider: 'deepseek-account', name: 'DeepSeek Account', billing: 'metered' as const, error: null, models: [] }
+    stubApi({ 'GET models': { ...MODELS, groups: [MODELS.groups[0]!, empty, MODELS.groups[1]!] } })
+    const { form } = formOf({ ...SAVED, briefModel: { provider: 'deepseek-account', model: 'deepseek-chat' } })
+    await mount(<Settings />, { state: state(), configForm: form })
+    const groupsOf = (select: HTMLSelectElement) => [...select.querySelectorAll('optgroup')].map(group => group.label)
+    for (const label of [RESEARCH, VERIFY, FOLLOWUP]) expect(groupsOf(picker(label)), label).toEqual(['DeepSeek', 'Ollama (local)'])
+    // Where a saved model sits in it, the group stays, with that model marked as it cannot be listed now.
+    expect(groupsOf(picker(BRIEF))).toEqual(['DeepSeek', 'DeepSeek Account', 'Ollama (local)'])
+    expect(offered(picker(BRIEF))).toContain('DeepSeek Account › DeepSeek Account · deepseek-chat（当前不可用）')
+    expect(picker(BRIEF).value).toBe(ref('deepseek-account', 'deepseek-chat'))
+  })
+
   it('shows a provider that failed to list as such, and the others as usual', async () => {
     stubApi({ 'GET models': { ...MODELS, groups: [MODELS.groups[0]!, { ...MODELS.groups[1]!, models: [], error: '读取失败' }] } })
     const { form } = formOf({ ...SAVED, followupModel: { provider: 'ollama', model: 'qwen3:8b' } })

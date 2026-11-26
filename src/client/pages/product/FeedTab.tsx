@@ -19,7 +19,8 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {} }
 }): ReactNode {
   const { t, state } = useShell()
   const [open, setOpen] = useState(false)
-  const trackName = state?.tracks.find(view => view.products.some(item => item.product.id === product.id))?.track.name
+  // Every track the product is in, in the track list's order, as the unfiltered brief names them.
+  const trackName = state?.tracks.filter(view => view.products.some(item => item.product.id === product.id)).map(view => view.track.name).join('、') || undefined
   const labels = new Map(dimensions.map(dimension => [dimension.key, dimension.label] as const))
   const known = new Map(sources.map(source => [source.id, source] as const))
 

@@ -197,7 +197,8 @@ function firstChoice(t: T, view: ModelsView | undefined, key: ModelKey, first: O
  * `kept` (the one saved, and the one showing) that is not in the list stays, in its provider's group, or in a group of its
  * own (named by the provider's id) when the provider is gone, marked 「当前不可用」 (not marked while there is no list at all:
  * nothing is known then); so a saved model that cannot be listed is neither dropped nor lost to a change of mind. A provider
- * that failed to list says so, in a note that cannot be chosen.
+ * that failed to list says so, in a note that cannot be chosen. One that lists nothing and reports nothing wrong (DSH's
+ * 「DeepSeek Account」 when not signed in, say) is left out, unless such a kept model is in it.
  */
 function choicesOf(t: T, view: ModelsView | undefined, kept: readonly string[]): ChoiceGroup[] {
   const groups: ChoiceGroup[] = (view?.groups ?? []).map(group => ({
@@ -213,7 +214,7 @@ function choicesOf(t: T, view: ModelsView | undefined, kept: readonly string[]):
     if (own) own.choices.push(choice)
     else groups.push({ key: ref.provider, label: ref.provider, choices: [choice], error: null })
   }
-  return groups
+  return groups.filter(group => group.choices.length > 0 || group.error !== null)
 }
 
 /** One use of a model: its name, and a drop-down of what it can run on (`first` is the choice of leaving it empty). */
