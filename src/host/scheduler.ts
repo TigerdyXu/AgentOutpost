@@ -6,8 +6,8 @@
  * day; the same day is never run twice. The run time is volatile: once a minute (the clock's `tick`) the configured one is
  * compared with the one the timer was set with, and a change sets the timer again (`checkRunTime`). A day picks up where
  * it stopped: only the tracked products without a finished daily run that day are run (a run interrupted by quitting does
- * not count as finished, nor as failed). A product whose run failed is tried once more that day; after two failures it is
- * left and named in the brief.
+ * not count as finished, nor as failed). A product whose run failed is tried once more that day (unless it was paused
+ * meanwhile); after two failures it is left and named in the brief.
  *
  * A tracked product missing a dimension's card gets it first, at most once in `TOP_UP_EVERY_DAYS` days; products stuck in
  * 建档中 are baselined again once every run day. A product is worked on by one thing at a time: its top-up (or a baseline
@@ -339,6 +339,8 @@ export class Scheduler {
       if (this.stopped) return 'stopped'
       // 「立即更新」 (or a check retried on its own) may have finished it while it waited in line, or just now.
       if (this.standing(date, productId).finished) return 'done'
+      // Paused (or no longer tracked) since the day began: what ran stands, nothing more is started for it.
+      if (repo.getProduct(productId)?.status !== 'tracking') return failures > 0 ? 'failed' : 'skipped'
       const other = this.inFlight(productId)
       if (other) { // 「立即更新」 or 重试 is working on it: see where the day stands once that is over
         await other.catch(() => {})

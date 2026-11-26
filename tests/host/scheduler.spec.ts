@@ -515,6 +515,19 @@ describe('Scheduler: the day', () => {
     expect(calls.runDailyProduct).toHaveLength(5)
   })
 
+  it('does not try again a product the user paused while its failed run was going', async () => {
+    holds.p2 = gate()
+    plays.p2 = [{ status: 'failed', error: '会话出错' }, {}]
+    const day = scheduler.runDay(DAY)
+    await vi.waitFor(() => { expect(dailyIds()).toContain('p2') })
+    repo.setProductStatus('p2', 'paused') // 暂停 while it runs: its run ends as it will, and that is the last of it today
+    holds.p2!.open()
+    await day
+
+    expect(dailyIds().filter(id => id === 'p2')).toHaveLength(1)
+    expect(repo.getBrief(DAY)!.skipped).toEqual([{ productId: 'p2', reason: '会话出错', failed: true }])
+  })
+
   it('gives a product that failed before a restart one more try, not two', async () => {
     seedRun('p1', 'failed', '会话出错')
     seedRun('p2', 'done')
