@@ -11,6 +11,7 @@ import type { StateView } from '../../host/api.ts'
 import { call, usePoll } from '../api.ts'
 import type { T } from '../locales.ts'
 import { MenuIcon, TelescopeIcon } from '../ui/icons.tsx'
+import { AddProduct } from '../pages/AddProduct.tsx'
 import { NewTrack } from '../pages/NewTrack.tsx'
 import { Product } from '../pages/Product.tsx'
 import { Runs } from '../pages/Runs.tsx'
@@ -44,6 +45,7 @@ function Page(): ReactNode {
   switch (route.page) {
     case 'today': return state && state.tracks.length === 0 ? <Welcome /> : <Today />
     case 'newTrack': return <NewTrack />
+    case 'addProduct': return <AddProduct />
     case 'product': return <Product />
     case 'runs': return <Runs />
     case 'settings': return <Settings />
@@ -52,7 +54,7 @@ function Page(): ReactNode {
 
 /** Identifies the page of a route, tabs and cards aside (a day of the brief is a page): moving to another one starts the right column at its top. */
 const pageOf = (route: Route) => route.page === 'product' ? `product:${route.productId}` : route.page === 'newTrack' ? `newTrack:${route.trackId ?? ''}`
-  : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
+  : route.page === 'addProduct' ? `addProduct:${route.trackId}` : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
 
 /**
  * `sessions` is DSH's session catalog and workspace, for the pages that open a session (追问, 运行记录); `configForm` is DSH's

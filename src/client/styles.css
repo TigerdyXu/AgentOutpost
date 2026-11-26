@@ -103,6 +103,11 @@
   font-weight: 600;
 }
 
+/* A way to do something rather than a place to look at (「＋ 添加产品」): quieter than the products around it, until chosen. */
+.op-row[data-quiet]:not([aria-current="page"]) {
+  color: var(--dsw-alias-label-secondary);
+}
+
 .op-row-icon {
   flex: none;
   display: inline-flex;
@@ -1464,6 +1469,135 @@ textarea.op-input {
   }
 }
 
+/* ---- 「＋ 添加产品」: the form of 新建赛道 twice, one section above the other, then what each one sent ---- */
+
+.op-add-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-add-section:first-of-type {
+  margin-top: 18px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.op-add-heading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.op-add-hint {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-add-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 16px 28px;
+  margin-top: 16px;
+}
+
+.op-add-again {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* As the form of 新建赛道 does, the two fields stack when the panel is not wide. */
+@container (max-width: 1099px) {
+  .op-add-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.op-add-cost {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-add-suggestions {
+  margin-left: 6px;
+  font-size: 14px;
+}
+
+/* What each name sent says: a pulse while it is confirmed, then the product's icon (or a mark when it did not join) and the line. */
+.op-add-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.op-add-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-card-fill);
+}
+
+.op-add-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+}
+
+.op-add-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  corner-shape: round;
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.op-add-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.op-add-name,
+.op-add-name.op-link {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 26px;
+  text-align: left;
+}
+
+.op-add-line {
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+}
+
+.op-add-sub {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 /* ---- 产品档案 (mockup 4, option A): header, tabs, key facts, the cards, the open card, the feed, the sources ---- */
 
 .op-product {
@@ -2555,6 +2689,10 @@ button.op-run-open {
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
+  .op-row[data-quiet]:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+
   .op-row:hover,
   .op-nav-toggle:hover {
     background: var(--dsw-alias-interactive-bg-hover);

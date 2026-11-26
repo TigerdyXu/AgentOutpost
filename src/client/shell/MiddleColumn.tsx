@@ -1,7 +1,7 @@
 /**
  * The middle column (design §5.1, mockup 1 option B): 前哨 with 「＋ 新赛道」; 今日哨报 with its count of new findings;
- * one foldable group per track with its products (blue dot for new findings, 建档中 while baselined), 挑产品 while the
- * track is being picked and 候选推荐 while candidates wait; 运行记录 (today's spend) and 设置 pinned at the bottom.
+ * one foldable group per track with its products (blue dot for new findings, 建档中 while baselined) and 「＋ 添加产品」,
+ * 挑产品 while the track is being picked and 候选推荐 while candidates wait; 运行记录 (today's spend) and 设置 pinned at the bottom.
  * M1 has no 「赛道概览 · 对比矩阵」 row (that is M2's track page).
  */
 import { useState, type ReactNode } from 'react'
@@ -25,12 +25,12 @@ export const yuan = (amount: number) => String(Number(amount.toFixed(amount < 1 
  * One entry of the column: a button that shows `to`, selected (light blue, blue, bold) while that page is shown. Choosing
  * the product shown keeps its tab; choosing 今日哨报 always comes back to today's.
  */
-function Row({ to, icon, label, end, endTone, dot, onChoose }: {
-  to: Route; icon: ReactNode; label: string; end?: ReactNode; endTone?: 'accent'; dot?: string; onChoose?: () => void
+function Row({ to, icon, label, end, endTone, dot, quiet, onChoose }: {
+  to: Route; icon: ReactNode; label: string; end?: ReactNode; endTone?: 'accent'; dot?: string; quiet?: boolean; onChoose?: () => void
 }): ReactNode {
   const { route, navigate } = useShell()
   const current = samePage(route, to)
-  return <button type="button" className="op-row" aria-current={current ? 'page' : undefined}
+  return <button type="button" className="op-row" data-quiet={quiet ? '' : undefined} aria-current={current ? 'page' : undefined}
     onClick={() => { if (!current || to.page === 'today') navigate(to); onChoose?.() }}>
     <span className="op-row-icon">{icon}</span>
     <span className="op-row-label">{label}</span>
@@ -95,6 +95,8 @@ function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folde
         return <Row key={product.id} to={{ page: 'product', productId: product.id, tab: 'dossier' }} icon={<ProductIcon product={product} size={20} />}
           label={product.name} end={end} dot={hasNew ? t('nav.new') : undefined} onChoose={onChoose} />
       })}
+      {/* A track still being picked has no products to add to yet: its 挑产品 page is where they come from. */}
+      {!picking && <Row to={{ page: 'addProduct', trackId: track.id }} icon={null} label={t('add.row')} quiet onChoose={onChoose} />}
       {!picking && candidatesToReview > 0 && <Row to={{ page: 'newTrack', trackId: track.id }} icon={<SparkleIcon />} label={t('nav.candidates')}
         end={t('nav.candidatesWaiting', { count: candidatesToReview })} onChoose={onChoose} />}
     </div>}
