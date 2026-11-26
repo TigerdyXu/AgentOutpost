@@ -28,6 +28,8 @@ pnpm check    # typecheck → build → test
 
 用单独的 `DSH_HOME`，不碰桌面版的 `~/.dsh`。`--patch` 不会应用本包自带的 `cordis.patch.yml`，所以 `dev/overlay.cordis.yml` 用绝对路径重复了那几行，并给了开发用的数据目录 `/Users/tiger/Projects/AgentOutpost-data/dev`。
 
+**会花钱，先看这一句**：这个 overlay 带着 `outpost` 行，开发 profile（`~/.dsh-outpost`）里又存着 DeepSeek 凭据，所以一启动前哨就会把开发数据里卡在「建档中」的产品立刻重新建档，这是真花钱的（2026-11-26 开发环境里这样白花了约 ¥0.21）。只想试浏览器之类、不需要前哨跑起来时，另抄一份去掉 `outpost` 行的 overlay 来用。
+
 ```sh
 pnpm build
 cd /Users/tiger/workspace/DeepSeek/Harness/deepseek-harness
@@ -103,13 +105,14 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
      "$DSH" plugin --profile desktop add @deepseek-ai/dsh-browser-use@0.2.3-alpha.2 @deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.3-alpha.2
      ```
 
-   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（DSH 报 `serverName "playwright-mcp" is already in use`；前哨会在建会话之前就认出这种情况，运行直接失败，设置页同样显示「调研跑不了：…」）。M1 时包里那两行 `outpost-browser-use`、`outpost-browser-use-playwright` 已经去掉；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
+   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（DSH 报 `serverName "playwright-mcp" is already in use`；前哨会在建会话之前就认出这种情况，运行直接失败，设置页同样显示「调研跑不了：…」）。M1.1 起包里已经没有 `outpost-browser-use`、`outpost-browser-use-playwright` 这两行；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
 
      ```sh
      grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml
      ```
 
-   - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着；调研会话结束后会从 dsh 侧栏「前哨」工作区里暂时消失（会话列表刷新后回来，会话记录一直在）；从前哨「运行记录」点那一行（「在 DSH 里打开这次运行的会话」）照样能打开。之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，调用不经确认，而调研会话读的是不可信网页。
+   - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着。之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，调用不经确认，而调研会话读的是不可信网页。
+   - **侧栏**（这一条是读 dsh 代码得出的，还没在桌面版里亲眼看到）：调研会话结束后会从 dsh 侧栏「前哨」工作区里暂时消失，会话列表刷新后（重开桌面版或断线重连）才回来，会话记录一直在；从前哨「运行记录」点那一行（「在 DSH 里打开这次运行的会话」）照样能打开。
    - **关掉或换浏览器**：在 profile 补丁里覆盖 `outpost-researcher-preset` 这一行。覆盖会整段替换 `config`，所以要把包里 `cordis.patch.yml` 的这一行整段抄过来，去掉 `browser` 那一组（关掉），或改 `executablePath`（换成别的 Chromium 内核浏览器；删掉这一行则让 Playwright 自己找）。关掉后打不开的原文按「待确认」处理。
 
 7. **（按需）指定模型。** 前哨有四处用到模型（M1.1，设计见 `docs/m1.1-设计.md`），在 `outpost` 行里各是一个字段：
