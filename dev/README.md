@@ -91,7 +91,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    mv dsh-outpost-<version>.tgz ~/Projects/AgentOutpost-data/packages/dsh-outpost-<version>-$(git rev-parse --short HEAD).tgz
    ```
 
-   **以后一律从这个目录装。** profile 的 `package.json` 会记下装的是哪个文件；放在仓库里或临时目录里，文件过后会被删掉（临时目录重启就清空）。放在这里，旧版本的包也一直留着，退回时直接装回去。M1.1 起装过的包：`dsh-outpost-0.1.0-29ac71a.tgz`（M1.1）、`dsh-outpost-0.1.0-dd4d6bc.tgz`（M1.2）。
+   **以后一律从这个目录装。** profile 的 `package.json` 会记下装的是哪个文件；放在仓库里或临时目录里，文件过后会被删掉（临时目录重启就清空）。放在这里，旧版本的包也一直留着，退回时直接装回去。装过哪些包，看 `packages/` 目录。
 
 4. **装进桌面版 profile**，确认列表里有 `dsh-outpost`：
 
