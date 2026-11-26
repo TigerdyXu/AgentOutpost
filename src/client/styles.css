@@ -2322,6 +2322,11 @@ button.op-run-open {
   background: var(--dsw-alias-state-success-tertiary);
 }
 
+.op-browser[data-broken] {
+  border-color: var(--dsw-alias-state-error-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+}
+
 .op-browser[data-on] .op-glyph {
   flex: none;
   color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 70%, var(--dsw-alias-label-primary));

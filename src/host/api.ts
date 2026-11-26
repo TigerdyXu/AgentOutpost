@@ -52,6 +52,8 @@ export interface StateView {
   runTime: string
   /** A browser provider is registered with DSH's browser use, so pages behind verification walls can be opened. */
   browserAvailable: boolean
+  /** The research preset cannot compose a session (`Runtime.researchProblem`): no research runs at all until it is fixed. */
+  researchBroken: boolean
   /** The data directory in use (database, icons, working files), for 设置 to show; it cannot be changed while Outpost runs. */
   dataDir: string
 }
@@ -402,7 +404,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   const table: { [K in keyof Api]: Handler<K> } = {
     'GET health': () => ({ ok: true }),
 
-    'GET state': () => {
+    'GET state': async () => {
+      const researchBroken = (await rt.researchProblem()) !== null
       const active = repo.activeRuns()
       const { brief, shown } = today()
       const fresh = new Set([...shown.values()].filter(f => !f.read).map(f => f.productId))
@@ -418,6 +421,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         todayCostYuan: repo.spentOn(rt.today()),
         runTime: rt.settings().runTime,
         browserAvailable: rt.browserAvailable(),
+        researchBroken,
         dataDir: rt.dataDir,
       }
     },

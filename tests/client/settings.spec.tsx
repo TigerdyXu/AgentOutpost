@@ -64,17 +64,30 @@ describe('the browser fallback', () => {
   it('explains how to enable the browser fallback when it is off', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: false }) })
     expect(text()).toContain('没开浏览器兜底')
-    // The browser comes with the research preset (cordis.patch.yml), on; what can be missing is its two packages.
+    // The browser comes with the research preset (cordis.patch.yml), on: it is off only where the profile overrides the
+    // preset without it (missing packages break the preset: that is the message below).
     expect(document.querySelector('.op-browser')?.textContent).toBe(
-      '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。浏览器装在前哨的调研预设里：在 DeepSeek Harness 里装上 dsh-browser-use 和 Playwright 浏览器两个包，然后重启。')
+      '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。浏览器在前哨的调研预设里，默认是开的；profile 里覆盖了这个预设、去掉了浏览器时就会这样，删掉那条覆盖后重启即可打开。')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBeNull()
+    expect(text()).not.toContain('浏览器兜底已开启')
+  })
+
+  it('says research cannot run when the research preset does not load, instead of the browser notice', async () => {
+    await mount(<Settings />, { state: state({ browserAvailable: false, researchBroken: true }) })
+    const notice = document.querySelector('.op-browser')
+    expect(notice?.textContent).toBe(
+      '调研跑不了：前哨的调研预设加载不了，推荐、建档、核查和日更都会失败。多半是浏览器兜底的两个包没装，或 profile 里另开了一个 Playwright 浏览器；装上包或删掉 profile 里那一行后重启。')
+    expect(notice?.getAttribute('role')).toBe('alert')
+    expect(notice?.getAttribute('data-broken')).toBe('')
+    expect(notice?.getAttribute('data-on')).toBeNull()
+    expect(text()).not.toContain('没开浏览器兜底')
     expect(text()).not.toContain('浏览器兜底已开启')
   })
 
   it('shows no browser notice when it is on', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: true }) })
     expect(text()).not.toContain('没开浏览器兜底')
-    expect(text()).not.toContain('装上 dsh-browser-use')
+    expect(text()).not.toContain('删掉那条覆盖')
     expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBe('')
   })

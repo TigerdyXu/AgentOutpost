@@ -32,8 +32,16 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   const routes: CapturedRoute[] = []
   const line = () => vi.fn<(format: unknown, ...params: unknown[]) => void>()
   const logger = { info: line(), warn: line(), error: line(), debug: line() }
-  /** Other DSH services `ctx.get` finds (`browserUse`, say). */
-  const services: Record<string, unknown> = {}
+  /**
+   * Other DSH services `ctx.get` finds: `agentPresets`, whose research preset composes (without a browser) unless a test
+   * says otherwise, and `browserUse`, say.
+   */
+  const services: Record<string, unknown> = {
+    agentPresets: {
+      resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id })),
+      inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
+    },
+  }
   const llm = {
     listProviders: vi.fn(() => [{ id: 'deepseek-official', name: 'DeepSeek' }]),
     listModels: vi.fn(async (provider: string) => [{ provider, id: 'deepseek-flash', name: 'DeepSeek Flash' }] as { provider: string; id: string; name: string }[]),

@@ -317,6 +317,7 @@ describe('Runtime', () => {
     runtime = host.create()
     const module = (moduleName: string) => ({ moduleName, useHostBase: true })
     const compositions = vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => [])
+    delete host.services.agentPresets
     expect(runtime.browserAvailable()).toBe(false) // no preset registry at all
     host.services.agentPresets = { inspectCompositions: compositions }
     expect(runtime.browserAvailable()).toBe(false) // the research preset does not compose (it is broken, say)
@@ -338,6 +339,37 @@ describe('Runtime', () => {
     // A provider registered for the whole profile still counts, as before.
     host.services.browserUse = { providerName: 'chrome-devtools-mcp' }
     expect(runtime.browserAvailable()).toBe(true)
+  })
+
+  it('reads a Playwright browser for the whole profile beside the preset\'s own as a conflict that stops research, not as on', async () => {
+    runtime = host.create()
+    const research = (...moduleNames: string[]) => [{ id: 'outpost-researcher', modules: moduleNames.map(moduleName => ({ moduleName, useHostBase: true })), leakedServices: [] }]
+    const resolve = vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id }))
+    const compositions = vi.fn(() => research('@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'))
+    host.services.agentPresets = { resolve, inspectCompositions: compositions }
+    expect(runtime.browserAvailable()).toBe(true)
+    expect(await runtime.researchProblem()).toBeNull()
+
+    // Both would start an MCP server named playwright-mcp for a research session; DSH refuses the second.
+    host.services.browserUse = { providerName: 'playwright-mcp' }
+    expect(runtime.browserAvailable()).toBe(false)
+    expect(await runtime.researchProblem()).toContain('playwright-mcp')
+    // Another browser for the whole profile clashes with nothing.
+    host.services.browserUse = { providerName: 'chrome-devtools-mcp' }
+    expect(runtime.browserAvailable()).toBe(true)
+    expect(await runtime.researchProblem()).toBeNull()
+    // A research preset overridden without its browser: the profile's Playwright is the one research sessions use.
+    host.services.browserUse = { providerName: 'playwright-mcp' }
+    compositions.mockReturnValue(research('@deepseek-ai/dsh-tool-web'))
+    expect(runtime.browserAvailable()).toBe(true)
+    expect(await runtime.researchProblem()).toBeNull()
+
+    // DSH's own diagnostic of the preset (a row that did not load), and a preset DSH does not know.
+    resolve.mockResolvedValueOnce({ id: 'outpost-researcher', broken: 'browser-use-playwright: Cannot find package' })
+    expect(await runtime.researchProblem()).toContain('Cannot find package')
+    resolve.mockRejectedValueOnce(new Error('Unknown agent preset: outpost-researcher'))
+    expect(await runtime.researchProblem()).toContain('Unknown agent preset')
+    expect(resolve).toHaveBeenCalledWith('outpost-researcher')
   })
 })
 

@@ -18,7 +18,9 @@ import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
 import { SystemClock } from './clock.ts'
 import { DshModelClient } from './dsh-model.ts'
-import { AGENT_PRESET, DshSessionDriver, type AgentPresets } from './dsh-sessions.ts'
+import {
+  DshSessionDriver, PLAYWRIGHT_MODULE, PLAYWRIGHT_PROVIDER, profileBrowserProvider, researchPresetProblem, researchPresetRuns, type AgentPresets,
+} from './dsh-sessions.ts'
 import { registerRoutes } from './http.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
@@ -178,21 +180,31 @@ export class Runtime {
   /**
    * Whether research sessions can open pages in a browser. Outpost's own browser lives inside the research preset
    * (cordis.patch.yml: the browser-use service and its Playwright provider in an isolated group), so it is on when a
-   * revision of `outpost-researcher` DSH holds has a browser provider running (`inspectCompositions`: only active rows;
-   * a preset whose rows failed has no revision). A provider registered for the whole profile (`browserUse.providerName`,
-   * docs/subsystems/browser-use.md) counts too. Without either, pages behind a verification wall (公众号, 小红书, 知乎)
-   * stay unopened and their findings 「待确认」.
+   * revision of `outpost-researcher` DSH holds has a browser provider running (`researchPresetRuns`). A provider
+   * registered for the whole profile counts too, except a Playwright one beside the preset's own: that is a conflict.
+   * Without a browser, pages behind a verification wall (公众号, 小红书, 知乎) stay unopened and their findings 「待确认」.
    */
   browserAvailable(): boolean {
-    const service = this.ctx.get('browserUse') as { providerName?: unknown } | null | undefined
-    if (service !== undefined && service !== null && (!('providerName' in service) || service.providerName !== undefined)) return true
+    const profile = profileBrowserProvider(this.ctx)
     const presets = this.ctx.get('agentPresets') as AgentPresets | null | undefined
     try {
-      return presets?.inspectCompositions().some(c => c.id === AGENT_PRESET && c.modules.some(m => BROWSER_PROVIDER.test(m.moduleName))) ?? false
+      // The profile's Playwright beside the preset's own is a conflict that stops research (`researchProblem`), not a browser.
+      if (profile === PLAYWRIGHT_PROVIDER && researchPresetRuns(presets, name => name === PLAYWRIGHT_MODULE)) return false
+      return profile !== null || researchPresetRuns(presets, name => BROWSER_PROVIDER.test(name))
     } catch (error) {
       this.log(`could not read the composition of the research preset: ${messageOf(error)}`)
-      return false
+      return profile !== null
     }
+  }
+
+  /**
+   * Why no research session can start now, in DSH's words, or null when they can (`researchPresetProblem`: the research
+   * preset did not load, as when the browser packages are missing, or a Playwright browser for the whole profile clashes
+   * with the preset's own). Every recommendation, baseline, check and daily run then fails at once with
+   * `RESEARCH_PRESET_BROKEN`; 设置 says so.
+   */
+  researchProblem(): Promise<string | null> {
+    return researchPresetProblem(this.ctx)
   }
 
   /** Writes to DSH's log. */

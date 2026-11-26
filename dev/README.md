@@ -97,13 +97,13 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
 6. **浏览器兜底（默认打开，只给前哨的调研会话用）。** 公众号、小红书、知乎这类有验证页的原文，靠它用无界面 Chrome 打开核实。它装在包里的 `outpost-researcher` 预设里（`browser` 那一组：`@deepseek-ai/dsh-browser-use` 服务和 `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 提供方，`mode: launch`、`headless: true`、`executablePath` 指向本机 Chrome），所以只有前哨的调研会话有浏览器，你自己的会话没有。
 
-   - **两个包必须装进 profile**：桌面版 0.2.3-alpha.2 不自带它们，没装的话调研预设起不来，前哨的推荐、建档、核查、日更**全都跑不了**。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
+   - **两个包必须装进 profile**：桌面版 0.2.3-alpha.2 不自带它们，没装的话调研预设起不来，前哨的推荐、建档、核查、日更**全都跑不了**（每次运行立刻失败并写明原因，设置页顶上显示「调研跑不了：…」）。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
 
      ```sh
      "$DSH" plugin --profile desktop add @deepseek-ai/dsh-browser-use@0.2.3-alpha.2 @deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.3-alpha.2
      ```
 
-   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（`serverName "playwright-mcp" is already in use`）。M1 时包里那两行 `outpost-browser-use`、`outpost-browser-use-playwright` 已经去掉；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
+   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（DSH 报 `serverName "playwright-mcp" is already in use`；前哨会在建会话之前就认出这种情况，运行直接失败，设置页同样显示「调研跑不了：…」）。M1 时包里那两行 `outpost-browser-use`、`outpost-browser-use-playwright` 已经去掉；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
 
      ```sh
      grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml

@@ -46,12 +46,65 @@ export const FOLLOWUP_PRESET = 'standard'
 export const WORKSPACE_TITLE = '前哨'
 
 /**
+ * What a research run fails with when the research preset cannot compose a session (`researchPresetProblem`); what
+ * DSH said is in the log.
+ */
+export const RESEARCH_PRESET_BROKEN = '前哨的调研预设加载不了：浏览器兜底的两个包没装，或 profile 里另开了一个 Playwright 浏览器。装上包或删掉 profile 里那一行后重启。'
+/** DSH's Playwright browser provider, as the research preset composes it (cordis.patch.yml). */
+export const PLAYWRIGHT_MODULE = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+/** The name that provider registers with browser use, which is also the MCP server name its tools are reached by. */
+export const PLAYWRIGHT_PROVIDER = 'playwright-mcp'
+
+/**
  * What Outpost uses of DSH's preset registry (`ctx.agentPresets`, package `@deepseek-ai/dsh-agent-preset-registry`):
- * composing a new agent from a preset during its setup, and reading which modules each preset revision has running.
+ * whether a preset can compose a session (`resolve`, which reports a failed activation as `broken` instead of throwing),
+ * composing a new agent from it during its setup, and which modules each retained revision has running.
  */
 export interface AgentPresets {
+  resolve(id: string): Promise<{ id: string; broken?: string }>
   mount(agentCtx: Context, id: string): Promise<{ id: string }>
   inspectCompositions(): readonly { readonly id: string; readonly modules: readonly { readonly moduleName: string }[] }[]
+}
+
+/**
+ * Whether a revision of the research preset that DSH holds has a module running that passes `test` (`inspectCompositions`
+ * lists active rows only; a preset whose rows failed has no revision).
+ */
+export function researchPresetRuns(presets: AgentPresets | null | undefined, test: (moduleName: string) => boolean): boolean {
+  return presets?.inspectCompositions().some(c => c.id === AGENT_PRESET && c.modules.some(m => test(m.moduleName))) ?? false
+}
+
+/**
+ * The browser provider registered for the whole profile (`browserUse.providerName`, docs/subsystems/browser-use.md): its
+ * name, `true` when the service does not say, or null when there is none.
+ */
+export function profileBrowserProvider(ctx: Context): string | true | null {
+  const service = ctx.get('browserUse') as { providerName?: unknown } | null | undefined
+  if (service === undefined || service === null) return null
+  if (!('providerName' in service)) return true
+  return service.providerName === undefined ? null : String(service.providerName)
+}
+
+/**
+ * Why the research preset cannot compose a session now, in DSH's words, or null when it can: there is no preset registry;
+ * DSH's own diagnostic of the preset (`resolve`: a row that did not load, as when the browser packages are not
+ * installed; a preset it does not know); or a Playwright browser registered for the whole profile beside the preset's
+ * own: both would start an MCP server named `playwright-mcp` for the session, and DSH refuses the second only while
+ * creating the session, after it has written it.
+ */
+export async function researchPresetProblem(ctx: Context): Promise<string | null> {
+  const presets = ctx.get('agentPresets') as AgentPresets | null | undefined
+  if (!presets) return 'DSH has no agent preset registry'
+  try {
+    const { broken } = await presets.resolve(AGENT_PRESET)
+    if (broken !== undefined) return broken
+    if (profileBrowserProvider(ctx) === PLAYWRIGHT_PROVIDER && researchPresetRuns(presets, name => name === PLAYWRIGHT_MODULE)) {
+      return `a Playwright browser registered for the whole profile ("${PLAYWRIGHT_PROVIDER}") beside the preset's own`
+    }
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
 }
 
 /**
@@ -192,15 +245,18 @@ export class DshSessionDriver implements SessionDriver {
    * (archiving does not end the live agent): it only loses its tools, and the log says its browser stays.
    */
   async release(sessionId: string): Promise<void> {
-    if (this.chats.has(sessionId)) return
-    const handle = this.owned.get(sessionId)
-    this.owned.delete(sessionId)
-    if (!handle && this.bound.has(sessionId) && this.ctx.get('agents')?.get(sessionId as SessionId)) {
-      this.ctx.logger.warn('dsh-outpost: session %s was opened by DSH, not by Outpost; its live agent (and its browser) stays until DSH restarts', sessionId)
-    }
-    this.forget(sessionId)
     try {
-      await handle?.dispose()
+      if (this.chats.has(sessionId)) return
+      const handle = this.owned.get(sessionId)
+      this.owned.delete(sessionId)
+      if (!handle && this.bound.has(sessionId) && this.ctx.get('agents')?.get(sessionId as SessionId)) {
+        this.ctx.logger.warn('dsh-outpost: session %s was opened by DSH, not by Outpost; its live agent (and its browser) stays until DSH restarts', sessionId)
+      }
+      try {
+        this.forget(sessionId)
+      } finally {
+        await handle?.dispose() // the agent goes even when taking its tools back failed
+      }
     } catch (error) {
       this.ctx.logger.warn('dsh-outpost: could not end the live agent of session %s: %s', sessionId, error instanceof Error ? error.message : String(error))
     }
@@ -231,6 +287,16 @@ export class DshSessionDriver implements SessionDriver {
     if (preset !== AGENT_PRESET) this.chats.add(id)
     let agent = await this.resolve(id)
     if (!agent) {
+      if (preset === AGENT_PRESET) {
+        // Before anything is written: a preset that cannot compose would fail every research session, each after DSH had
+        // already written an empty one.
+        const problem = await researchPresetProblem(this.ctx)
+        if (problem !== null) {
+          this.bound.delete(id)
+          this.ctx.logger.warn('dsh-outpost: the research preset %s cannot compose a session: %s', AGENT_PRESET, problem)
+          throw new Error(RESEARCH_PRESET_BROKEN)
+        }
+      }
       await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
       const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
       if (preset === AGENT_PRESET) {

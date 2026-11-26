@@ -415,8 +415,16 @@ export function SettingsForm({ t, form, known }: { t: T; form: ConfigPageForm | 
   </div>
 }
 
-/** The browser fallback's standing: when it is off, why that matters and how to turn it on. */
-function BrowserFallback({ t, available }: { t: T; available: boolean }): ReactNode {
+/**
+ * The browser fallback's standing: when it is off, why that matters and how to turn it on. When the research preset does
+ * not load at all, that comes first, as an alert: then no research runs, browser or not.
+ */
+function BrowserFallback({ t, available, broken }: { t: T; available: boolean; broken: boolean }): ReactNode {
+  if (broken) {
+    return <section className="op-browser" data-broken="" role="alert">
+      <span>{t('settings.browser.broken')}</span>
+    </section>
+  }
   return <section className="op-browser" data-on={available ? '' : undefined} role="status">
     {available && <CheckIcon size={16} />}
     <span>{t(available ? 'settings.browser.on' : 'settings.browser.off')}</span>
@@ -427,7 +435,7 @@ export function Settings(): ReactNode {
   const { t, state, configForm } = useShell()
   return <div className="op-page op-settings">
     <h1 className="op-page-title">{t('nav.settings')}</h1>
-    {state && <BrowserFallback t={t} available={state.browserAvailable} />}
+    {state && <BrowserFallback t={t} available={state.browserAvailable} broken={state.researchBroken} />}
     <SettingsForm t={t} form={configForm} {...state ? { known: { runTime: state.runTime, dataDir: state.dataDir } } : {}} />
   </div>
 }

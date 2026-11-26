@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { DshSessionDriver, toolParameters } from '../../src/host/dsh-sessions.ts'
+import { DshSessionDriver, RESEARCH_PRESET_BROKEN, toolParameters } from '../../src/host/dsh-sessions.ts'
 import type { SessionSpec, ToolSpec } from '../../src/host/ports.ts'
 import { researchTools } from '../../src/host/tools.ts'
 import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
@@ -133,6 +133,47 @@ describe('DshSessionDriver.run', () => {
     expect(host.agent('outpost-daily-p1').id).toBe('outpost-daily-p1')
     expect(host.tools('outpost-daily-p1').size).toBe(0) // the first was taken off again
     expect(host.sent('outpost-daily-p1')).toEqual([])
+  })
+
+  it('refuses at once a research session its preset cannot compose, saying why, and writes no session', async () => {
+    const PLAYWRIGHT = { moduleName: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp', useHostBase: true }
+    const profile = { providerName: 'playwright-mcp' }
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      // A row of the preset did not load (the browser packages are not installed, say): DSH marks the preset broken.
+      host.agentPresets.resolve.mockResolvedValueOnce({ id: 'outpost-researcher', broken: 'browser-use-playwright (@deepseek-ai/dsh-experimental-browser-use-playwright-mcp): Cannot find package' })
+      await expect(driver.run(specOf(), signal)).rejects.toThrow(RESEARCH_PRESET_BROKEN)
+      expect(RESEARCH_PRESET_BROKEN).toBe('前哨的调研预设加载不了：浏览器兜底的两个包没装，或 profile 里另开了一个 Playwright 浏览器。装上包或删掉 profile 里那一行后重启。')
+      expect(host.agentPresets.resolve).toHaveBeenCalledWith('outpost-researcher')
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-researcher', expect.stringContaining('Cannot find package'))
+      // DSH does not know the preset at all (Outpost's patch was not applied).
+      host.agentPresets.resolve.mockRejectedValueOnce(Object.assign(new Error('Unknown agent preset: outpost-researcher'), { code: 'agent-preset/not-found' }))
+      await expect(driver.run(specOf(), signal)).rejects.toThrow(RESEARCH_PRESET_BROKEN)
+      // A Playwright browser for the whole profile beside the preset's own: DSH would refuse the second MCP server named
+      // playwright-mcp only while creating the session, after writing it.
+      host.ctx.reflect.provide('browserUse', profile)
+      host.agentPresets.inspectCompositions.mockReturnValue([{ id: 'outpost-researcher', modules: [PLAYWRIGHT], leakedServices: [] }])
+      await expect(driver.run(specOf(), signal)).rejects.toThrow(RESEARCH_PRESET_BROKEN)
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('%s'), 'outpost-researcher', expect.stringContaining('playwright-mcp'))
+
+      // None of it made a session, sent anything, or left tools waiting for one.
+      expect(host.agents.create).not.toHaveBeenCalled()
+      expect(host.sessionController.create).not.toHaveBeenCalled()
+      expect(await host.sessionController.resolveAgent('outpost-daily-p1')).toMatchObject({ error: { code: 'session/not-found' } })
+      await host.spawn('outpost-daily-p1')
+      expect(host.tools('outpost-daily-p1').size).toBe(0)
+    } finally {
+      warn.mockRestore()
+    }
+    // A 追问 chat runs DSH's standard preset: the research preset's state is not its concern.
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
+    expect(host.sessionController.create).toHaveBeenCalledOnce()
+    // Once the profile's browser is another than Playwright, research opens again.
+    profile.providerName = 'chrome-devtools-mcp'
+    const p = driver.run(specOf({ sessionId: 'outpost-daily-p2' }), signal)
+    await host.started('outpost-daily-p2')
+    host.turnEnd('outpost-daily-p2', { kind: 'completed' })
+    expect(await p).toMatchObject({ reason: 'completed' })
   })
 
   it('refuses a session id without the outpost- prefix', async () => {
@@ -440,6 +481,28 @@ describe('DshSessionDriver.release', () => {
       // DSH holds the agent it resumed and offers no way to let it go: said in the log, with the session's id.
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-old')
       expect(warn).not.toHaveBeenCalledWith(expect.anything(), 'outpost-followup-1')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('never throws, even when taking the session\'s tools back fails', async () => {
+    const first = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await first
+    // The next round's tool is registered with a disposer that throws when it is taken back.
+    const register = (host.agent('outpost-daily-p1').ctx as unknown as { tools: { register: ReturnType<typeof vi.fn> } }).tools.register
+    register.mockImplementationOnce(() => () => { throw new Error('the tool registry is gone') })
+    const second = driver.run(specOf({ tools: [probe('outpost_submit_facts').tool] }), signal)
+    await host.started('outpost-daily-p1', 2)
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await second
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      await expect(driver.release('outpost-daily-p1')).resolves.toBeUndefined()
+      expect(host.created[0]!.handle.dispose).toHaveBeenCalledOnce() // the live agent goes all the same
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-p1', expect.stringContaining('the tool registry is gone'))
     } finally {
       warn.mockRestore()
     }

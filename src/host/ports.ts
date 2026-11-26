@@ -51,8 +51,8 @@ export interface SessionDriver {
   /**
    * Lets go of the live state of a research session whose run is over: its agent, and with it the browser it launched (one
    * Playwright MCP server and one Chrome per session; without this they stay until the host restarts). The session itself
-   * stays, and can still be opened in the host to read. A session the driver did not open itself (a follow-up chat) is
-   * left alone. Never throws: a failure is logged.
+   * stays, and can still be opened in the host to read. A follow-up chat (the user's own) is left alone. Never throws: a
+   * failure is logged.
    */
   release(sessionId: string): Promise<void>
   archive(sessionId: string): Promise<void>

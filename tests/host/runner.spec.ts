@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { costOf } from '../../src/core/cost.ts'
 import type { ModelRef } from '../../src/core/models.ts'
 import type { Id, Product, Run } from '../../src/core/types.ts'
+import { RESEARCH_PRESET_BROKEN } from '../../src/host/dsh-sessions.ts'
 import { startFollowup } from '../../src/host/followup.ts'
 import { JobRunner, NUDGE_TEXT, RELEASE_WAIT_MS, RETRY_DELAY_MS, isTransient, type RuntimeSettings, type SessionPlan } from '../../src/host/jobs/runner.ts'
 import { researchTools } from '../../src/host/tools.ts'
@@ -252,6 +253,16 @@ describe('sessions', () => {
     expect(time.waits).toEqual([])
   })
 
+  it('fails a run at once, saying why, when the research preset cannot compose a session', async () => {
+    let calls = 0
+    driver.run = async () => { calls++; throw new Error(RESEARCH_PRESET_BROKEN) }
+    const run = await runner.session('daily', { productId: 'p1' }, build)
+    expect(run).toMatchObject({ status: 'failed', error: RESEARCH_PRESET_BROKEN })
+    expect(calls).toBe(1) // not a passing failure: no retry, no wait, no nudge
+    expect(time.waits).toEqual([])
+    expect(driver.nudges).toEqual([])
+  })
+
   it('fails the run when the session cannot be opened at all', async () => {
     driver.run = async () => { throw new Error('dsh-outpost: DSH created session "x" instead of "y"') }
     const run = await runner.session('daily', { productId: 'p1' }, build)
@@ -327,6 +338,7 @@ describe('sessions', () => {
       return completed()
     }
     const nudged = await runner.session('daily', { productId: 'p1' }, build)
+    expect(nudged.status).toBe('done') // a failed expect inside the nudge would have failed the run instead
     expect(driver.nudges.at(-1)).toEqual({ sessionId: nudged.sessionId, text: NUDGE_TEXT })
     expect(driver.released.at(-1)).toBe(nudged.sessionId)
 

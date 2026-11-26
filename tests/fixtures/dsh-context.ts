@@ -167,8 +167,12 @@ export function dshHost() {
       return handle
     }),
   }
-  /** DSH's preset registry: `mount` composes an agent from a preset during its setup. */
+  /**
+   * DSH's preset registry: `resolve` says whether a preset can compose a session (`broken` when not), `mount` composes an
+   * agent from it during its setup.
+   */
   const agentPresets = {
+    resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id })),
     mount: vi.fn(async (_agentCtx: Context, id: string) => ({ id })),
     inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
   }

@@ -185,6 +185,7 @@ describe('GET state', () => {
     expect(state.todayUnread).toBe(1)
     expect(state.todayCostYuan).toBe(1.25)
     expect(state.browserAvailable).toBe(false)
+    expect(state.researchBroken).toBe(false)
     // The time the daily run is due, for the page that says when the first brief will arrive.
     expect(state.runTime).toBe(rt.settings().runTime)
     expect(state.runTime).toMatch(/^\d\d:\d\d$/)
@@ -247,6 +248,21 @@ describe('GET state', () => {
     host.services.browserUse = { providerName: 'playwright-mcp' }
     expect(await browser()).toBe(true)
     expect(host.ctx.get).toHaveBeenCalledWith('browserUse')
+  })
+
+  it('says when research cannot run because its preset does not compose, apart from whether the browser is on', async () => {
+    const state = async () => ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>()
+    const presets = host.services.agentPresets as { resolve: ReturnType<typeof vi.fn>; inspectCompositions: ReturnType<typeof vi.fn> }
+    expect(await state()).toMatchObject({ researchBroken: false })
+    // The browser packages are missing: DSH marks the preset broken, and no research session can start.
+    presets.resolve.mockResolvedValueOnce({ id: 'outpost-researcher', broken: 'browser-use-playwright: Cannot find package' })
+    expect(await state()).toMatchObject({ researchBroken: true, browserAvailable: false })
+    expect(presets.resolve).toHaveBeenCalledWith('outpost-researcher')
+    // A Playwright browser for the whole profile beside the preset's own: a conflict, not 「on」.
+    presets.inspectCompositions.mockReturnValue([{ id: 'outpost-researcher', modules: [{ moduleName: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp', useHostBase: true }], leakedServices: [] }])
+    expect(await state()).toMatchObject({ researchBroken: false, browserAvailable: true })
+    host.services.browserUse = { providerName: 'playwright-mcp' }
+    expect(await state()).toMatchObject({ researchBroken: true, browserAvailable: false })
   })
 })
 
