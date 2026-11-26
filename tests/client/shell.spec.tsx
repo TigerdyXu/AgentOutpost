@@ -151,6 +151,22 @@ describe('middle column', () => {
     expect(row('挑产品')!.getAttribute('aria-current')).toBeNull()
   })
 
+  it('does not count a candidate whose product is in the track already (it was linked in by 也加到), as the pick page does not', async () => {
+    // A track still being picked can hold a product put there from another track; the recommendation may offer it too.
+    const api = stubApi({
+      'GET tracks/:id/candidates': {
+        batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5,
+        candidates: [candidate('a'), candidate('b'), candidate('c', { tier: 'consider', selected: false })]
+          .map(c => ({ ...c, product: product(c.productId, c.id), trackedIn: [], trackedStatus: null })),
+      },
+    })
+    // p-a is in the track (by 也加到); p-b and p-c are not.
+    await mount(<MiddleColumn />, { state: state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p-a', 'a'))], { status: 'picking' })] }) })
+    expect(api.requests.find(r => r.path === 'tracks/t1/candidates')).toBeDefined()
+    expect(end('挑产品')).toBe('已选 1') // only b: a is tracked already, c was not picked by default
+    expect(row('a')).toBeDefined() // the tracked product is a row of the track, not a pick
+  })
+
   it('counts the picks the 挑产品 page reports instead of the defaults', async () => {
     const api = stubApi({})
     await mount(<MiddleColumn />, { state: state({ tracks: [track('t1', 'Personal Agent', [], { status: 'picking' })] }), picks: { t1: 5 } })

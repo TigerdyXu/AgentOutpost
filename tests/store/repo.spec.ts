@@ -257,6 +257,27 @@ describe('Repo: tracks and products', () => {
     expect(repo.productsOfTrack(a.id).map(p => p.name)).toEqual(['Cursor'])
   })
 
+  it('dimensionsOfProduct leaves out the dimensions of an archived track', () => {
+    const repo = newRepo()
+    const live = repo.createTrack(spec({ name: 'Live', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'pricing', label: '价格' }] }))
+    const gone = repo.createTrack(spec({ name: 'Gone', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'only-gone', label: '只有归档的有' }] }))
+    const cursor = repo.upsertProduct(product())
+    const lone = repo.upsertProduct(product({ name: 'Zed', company: 'Zed Industries' }))
+    repo.linkProduct(live.id, cursor.id)
+    repo.linkProduct(gone.id, cursor.id)
+    repo.linkProduct(gone.id, lone.id)
+    expect(repo.dimensionsOfProduct(cursor.id).map(d => d.key)).toEqual(['positioning', 'pricing', 'only-gone'])
+
+    // Once the track is archived its custom dimensions drive nothing for the product (top-ups, checks, the product page).
+    repo.updateTrack(gone.id, { status: 'archived' })
+    expect(repo.dimensionsOfProduct(cursor.id)).toEqual([{ key: 'positioning', label: '定位' }, { key: 'pricing', label: '价格' }])
+    expect(repo.dimensionsOfProduct(lone.id)).toEqual([]) // a product only an archived track holds has none to keep up
+    // The link itself is not touched, and a track that is picking or active still counts.
+    expect(repo.productsOfTrack(gone.id).map(p => p.name)).toEqual(['Cursor', 'Zed'])
+    repo.updateTrack(gone.id, { status: 'active' })
+    expect(repo.dimensionsOfProduct(cursor.id).map(d => d.key)).toEqual(['positioning', 'pricing', 'only-gone'])
+  })
+
   it('linking the same product to the same track twice keeps one link', () => {
     const repo = newRepo()
     const t = repo.createTrack(spec())

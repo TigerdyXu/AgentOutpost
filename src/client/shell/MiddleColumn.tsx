@@ -67,12 +67,14 @@ function PickRow({ trackId, count, onChoose }: { trackId: Id; count: number | un
 
 /**
  * 「已选 n」 before the 挑产品 page reports its picks (after a reload, say): the candidates the latest recommendation picked
- * by default (the strong ones; an excluded one never counts), read again as they arrive (every 2 s while the recommendation
- * runs, every 30 s after).
+ * by default (the strong ones; an excluded one never counts, nor one whose product is in the track already, put there by
+ * 也加到: the page does not count it either), read again as they arrive (every 2 s while the recommendation runs, every
+ * 30 s after).
  */
-function DefaultPickRow({ trackId, onChoose }: { trackId: Id; onChoose: () => void }): ReactNode {
+function DefaultPickRow({ trackId, tracked, onChoose }: { trackId: Id; tracked: ReadonlySet<Id>; onChoose: () => void }): ReactNode {
   const { data } = useCandidates(trackId)
-  return <PickRow trackId={trackId} count={data?.candidates.filter(c => c.selected && c.tier !== 'excluded').length} onChoose={onChoose} />
+  const count = data?.candidates.filter(c => c.selected && c.tier !== 'excluded' && !tracked.has(c.productId)).length
+  return <PickRow trackId={trackId} count={count} onChoose={onChoose} />
 }
 
 function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folded: boolean; onFold: () => void; onChoose: () => void }): ReactNode {
@@ -86,7 +88,7 @@ function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folde
       <span className="op-group-end">{picking ? t('nav.picking') : products.length}</span>
     </button>
     {!folded && <div className="op-group-rows">
-      {picking && (picks[track.id] === undefined ? <DefaultPickRow trackId={track.id} onChoose={onChoose} />
+      {picking && (picks[track.id] === undefined ? <DefaultPickRow trackId={track.id} tracked={new Set(products.map(item => item.product.id))} onChoose={onChoose} />
         : <PickRow trackId={track.id} count={picks[track.id]} onChoose={onChoose} />)}
       {products.map(({ product, hasNew, progress }) => {
         const end = product.status === 'baselining'

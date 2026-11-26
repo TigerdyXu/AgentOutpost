@@ -85,9 +85,12 @@ export class Repo {
     return this.select(PRODUCT, 'JOIN track_products tp ON tp.product_id = products.id WHERE tp.track_id = ? ORDER BY tp.rowid', trackId)
   }
 
-  /** The dimensions of every track the product belongs to, merged by key; the first label seen for a key wins. */
+  /**
+   * The dimensions of every track the product belongs to, merged by key; the first label seen for a key wins. An archived
+   * track keeps nothing running, so its own dimensions drive no top-up, check or product page.
+   */
   dimensionsOfProduct(productId: Id): Dimension[] {
-    const rows = this.db.prepare('SELECT t.dimensions FROM track_products tp JOIN tracks t ON t.id = tp.track_id WHERE tp.product_id = ? ORDER BY tp.rowid').all(productId)
+    const rows = this.db.prepare("SELECT t.dimensions FROM track_products tp JOIN tracks t ON t.id = tp.track_id WHERE tp.product_id = ? AND t.status <> 'archived' ORDER BY tp.rowid").all(productId)
     const merged = new Map<string, Dimension>()
     for (const row of rows) for (const d of JSON.parse(String(row.dimensions)) as Dimension[]) if (!merged.has(d.key)) merged.set(d.key, d)
     return [...merged.values()]
