@@ -36,7 +36,7 @@ beforeEach(() => {
   db = openDb(join(dir, 'outpost.sqlite'))
   time = instantClock(new Date(2026, 10, 25, 9, 30, 0))
   repo = new Repo(db, () => time.clock.now())
-  settings = { dailyBudgetYuan: 20, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => PRICES }
+  settings = { dailyBudgetYuan: 20, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => PRICES }
   answer = '今天 Cursor 后台 Agent 正式上线，Windsurf 降价仍待确认。'
   complete = vi.fn<ModelClient['complete']>(async () => {
     if (answer instanceof Error) throw answer
@@ -150,6 +150,29 @@ describe('synthesizeBrief', () => {
     await synthesizeBrief(deps, DAY)
     expect(host.llm.stream).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'deepseek-official', model: 'deepseek-flash' }))
     expect(synthRuns()[1]).toMatchObject({ status: 'done', usage: USED, costYuan: costOf(USED, PRICES) })
+  })
+
+  it('writes the gist on a subscription brief model even when the day\'s budget is used up', async () => {
+    const claude = { provider: 'anthropic', model: 'claude-sonnet-4-5' }
+    const free = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+    settings = {
+      ...settings, dailyBudgetYuan: 1, briefModel: claude,
+      billingFor: model => model?.provider === 'anthropic' ? 'subscription' : 'metered',
+      pricesOf: model => model?.provider === 'anthropic' ? free : PRICES,
+    }
+    found(daily('p1', 'done', { costYuan: 1 }), 'Cursor 后台 Agent 正式上线') // DeepSeek research spent the day's budget
+
+    const brief = await synthesizeBrief(deps, DAY)
+
+    expect(complete).toHaveBeenCalledOnce()
+    expect(brief.gist).toBe(answer)
+    expect(synthRuns()).toMatchObject([{ status: 'done', error: null, usage: USED, costYuan: 0 }])
+
+    // On the research model (DSH's default, DeepSeek), the budget still holds it back.
+    settings = { ...settings, briefModel: null }
+    await synthesizeBrief(deps, DAY)
+    expect(complete).toHaveBeenCalledOnce()
+    expect(synthRuns()[1]).toMatchObject({ status: 'skipped', error: '今日总预算已用完' })
   })
 
   it('falls back to a sentence from the top finding when the answer is empty, too long, or missing', async () => {

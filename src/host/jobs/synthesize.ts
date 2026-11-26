@@ -33,10 +33,10 @@ export interface BriefDeps {
   model: ModelClient
   clock: Clock
   /**
-   * Read on each use: the day's budget (the gist is not written once it is spent), and the models and their prices: the
-   * gist's tokens are priced by the brief's model.
+   * Read on each use: the day's budget (the gist is not written once it is spent, unless the brief's model costs nothing),
+   * and the models, how they are paid and their prices: the gist's tokens are priced by the brief's model.
    */
-  settings: () => Pick<RuntimeSettings, 'dailyBudgetYuan' | 'pricesOf'> & ModelSettings
+  settings: () => Pick<RuntimeSettings, 'dailyBudgetYuan' | 'billingFor' | 'pricesOf'> & ModelSettings
   /** Aborts when Outpost stops (`JobRunner.lifetime`): a gist being written is given up at once, not after its 2 minutes. */
   stop?: AbortSignal
 }
@@ -154,13 +154,13 @@ async function writeGist(deps: BriefDeps, date: string, main: Finding[]): Promis
   const run = repo.createRun({ kind: 'synthesize', date, trackId: null, productId: null })
   const end = (patch: Partial<Run>) => repo.updateRun(run.id, { endedAt: clock.now().toISOString(), ...patch })
 
-  const refused = budgetRefusal(repo, settings().dailyBudgetYuan, date, null)
+  const writer = modelFor('brief', settings()) // the model the client writes with: the brief's, as configured now
+  const refused = budgetRefusal(repo, settings(), writer, date, null) // none on a local or subscription model
   if (refused) {
     end({ status: 'skipped', error: refused })
     return fallback
   }
   repo.updateRun(run.id, { status: 'running', startedAt: clock.now().toISOString() })
-  const writer = modelFor('brief', settings()) // the model the client writes with: the brief's, as configured now
   try {
     const user = [`日期：${date}`, '今天值得看的发现（按重要程度排）：', ...main.map((f, i) => describe(f, i + 1, name(f.productId), date))].join('\n')
     const timeout = AbortSignal.timeout(GIST_TIMEOUT_MS)

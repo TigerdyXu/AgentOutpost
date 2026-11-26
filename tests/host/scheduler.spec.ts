@@ -47,7 +47,7 @@ beforeEach(() => {
   db = openDb(join(dir, 'outpost.sqlite'))
   clock = manualClock('2026-11-25T07:00')
   repo = new Repo(db, () => clock.clock.now())
-  settings = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
+  settings = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   complete = vi.fn<ModelClient['complete']>(async () => ({ text: '今天 Cursor 有一条重要更新。', usage: usage({ inputTokens: 1000 }) }))
   log = vi.fn<(message: string) => void>()
   plays = {}
@@ -582,6 +582,20 @@ describe('Scheduler: the day', () => {
     expect(dailyIds()).toEqual(['p1', 'p3'])
     expect(repo.runsOfDate(DAY, 'daily').find(r => r.productId === 'p2')).toMatchObject({ status: 'skipped', error: '该产品今日预算已用完' })
     expect(repo.getBrief(DAY)!.skipped).toEqual([{ productId: 'p2', reason: '该产品今日预算已用完' }])
+  })
+
+  it('starts the daily runs of products researched on a local model even when the budget is used up', async () => {
+    settings.model = { provider: 'ollama', model: 'qwen3:8b' }
+    settings.billingFor = model => model?.provider === 'ollama' ? 'local' : 'metered'
+    const spent = repo.createRun({ kind: 'verify', date: DAY, trackId: null, productId: 'p1' }) // a check on DeepSeek spent the day's budget
+    repo.updateRun(spent.id, { status: 'done', costYuan: 20 })
+    repo.upsertProduct({ id: 'p2', name: 'Windsurf', company: 'Windsurf Inc', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: 0 })
+
+    await scheduler.runDay(DAY)
+
+    expect(dailyIds()).toEqual(['p1', 'p2', 'p3'])
+    expect(repo.runsOfDate(DAY, 'daily').filter(r => r.status === 'skipped')).toEqual([])
+    expect(repo.getBrief(DAY)!.skipped).toEqual([])
   })
 
   it('re-baselines stuck products, and fills in missing dimensions before a product\'s daily run', async () => {

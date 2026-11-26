@@ -26,6 +26,7 @@
  * start; its unfinished products are not researched for that day any more.
  */
 import { cutoffAt, localDate, nextRunAt, shouldCatchUp, tomorrowRunAt } from '../core/calendar.ts'
+import { modelFor, type Billing, type ModelRef, type ModelSettings } from '../core/models.ts'
 import type { Id, Product, Run } from '../core/types.ts'
 import type { Repo } from '../store/repo.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
@@ -48,12 +49,14 @@ const DEFAULT_RUN_TIME = '08:00'
 const RUN_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
 /** Read on each use: they can change while Outpost runs. */
-export interface SchedulerSettings {
+export interface SchedulerSettings extends ModelSettings {
   /** `HH:MM`, local time. */
   runTime: string
   /** Products updated at the same time. */
   maxParallel: number
   dailyBudgetYuan: number
+  /** How work on a model is paid (`RuntimeSettings.billingFor`): research on a model that is not metered is not held to the budget. */
+  billingFor(model: ModelRef | null): Billing
 }
 
 export interface SchedulerDeps {
@@ -352,7 +355,8 @@ export class Scheduler {
         await this.topUp(productId, date)
         continue
       }
-      const refused = budgetRefusal(repo, settings().dailyBudgetYuan, date, productId)
+      const now = settings()
+      const refused = budgetRefusal(repo, now, modelFor('research', now), date, productId) // none on a local or subscription model
       if (refused) { // not started at all: a skipped run says why, for the brief
         const run = repo.createRun({ kind: 'daily', date, trackId: null, productId })
         repo.updateRun(run.id, { status: 'skipped', error: refused, endedAt: clock.now().toISOString() })

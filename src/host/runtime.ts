@@ -11,8 +11,8 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { OutpostConfig } from '../config.ts'
 import { localDate } from '../core/calendar.ts'
-import { pricesFor, type PriceTable } from '../core/cost.ts'
-import { billingOf, modelFor, type ModelRef } from '../core/models.ts'
+import { pricesFor } from '../core/cost.ts'
+import { billingOf, modelFor, type Billing, type ModelRef } from '../core/models.ts'
 import { openDb, lockDataDir, type Db } from '../store/db.ts'
 import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
@@ -139,7 +139,8 @@ export class Runtime {
       verifyModel: c.verifyModel.get() ?? null,
       briefModel: c.briefModel.get() ?? null,
       followupModel: c.followupModel.get() ?? null,
-      pricesOf: model => this.pricesOf(model, c.prices.get()),
+      billingFor: model => this.billingFor(model),
+      pricesOf: model => pricesFor(this.billingFor(model), c.prices.get()),
     }
   }
 
@@ -155,17 +156,17 @@ export class Runtime {
   }
 
   /**
-   * The prices of tokens used on `model` (null: DSH's default model, as it is now): `table` when its provider is metered,
-   * nothing when it is local or the subscription (`billingOf`, by the provider's id and DSH's name for it). When DSH
-   * cannot say which model is its default, `table`: an estimate on the safe side of the budget.
+   * How work on `model` is paid (null: DSH's default model, as it is now), by its provider's id and DSH's name for it
+   * (`billingOf`). When DSH cannot say which model is its default: metered, on the safe side, so that the budget still
+   * holds the work and its tokens are estimated with the price table.
    */
-  private pricesOf(model: ModelRef | null, table: PriceTable): PriceTable {
+  private billingFor(model: ModelRef | null): Billing {
     const route = model ?? this.defaultModel()
-    if (!route) return table
+    if (!route) return 'metered'
     let name: string | undefined
     try { name = this.ctx.llm.listProviders().find(p => p.id === route.provider)?.name }
     catch { /* known by its id alone */ }
-    return pricesFor(billingOf(route.provider, name), table)
+    return billingOf(route.provider, name)
   }
 
   /** Today's local date, `YYYY-MM-DD`. */

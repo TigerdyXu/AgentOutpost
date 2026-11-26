@@ -29,7 +29,7 @@ beforeEach(() => {
   const { clock } = instantClock(new Date(2026, 10, 25, 9, 0, 0))
   repo = new Repo(db, () => clock.now())
   driver = new FakeDriver()
-  const settings: RuntimeSettings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
+  const settings: RuntimeSettings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   log = vi.fn<(message: string) => void>()
   runner = new JobRunner({ repo, driver, clock, settings: () => settings, log })
   verifyProduct = vi.fn<BaselineDeps['verifyProduct']>(async () => {})

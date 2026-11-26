@@ -394,6 +394,26 @@ describe('models', () => {
     }
   })
 
+  it('decides how an unset model is billed by DSH\'s default model, and calls it metered when DSH cannot say', async () => {
+    const other = apiHost()
+    other.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'box', name: 'Ollama (local)' }])
+    other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'box', model: 'qwen3:8b' })
+    const rt = other.create()
+    try {
+      const { billingFor } = rt.settings()
+      expect(billingFor(null)).toBe('local')
+      expect(billingFor({ provider: 'anthropic', model: 'claude-sonnet-4-5' })).toBe('subscription')
+      expect(billingFor({ provider: 'deepseek-official', model: 'deepseek-flash' })).toBe('metered')
+      other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'deepseek-official', model: 'deepseek-flash' })
+      expect(billingFor(null)).toBe('metered')
+      other.agentDefaultModel.currentSelection.mockImplementation(() => { throw new Error('no default model') })
+      expect(billingFor(null)).toBe('metered') // the budget still holds it
+    } finally {
+      await rt.stop()
+      other.cleanup()
+    }
+  })
+
   it('prices by the provider of the model, DSH\'s default model when none is chosen', async () => {
     const other = apiHost({ config: dataDir => Config({ dataDir, prices: { inputPerMTok: 3 } }) })
     other.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'box', name: 'Ollama (local)' }, { id: 'anthropic', name: 'Anthropic' }])

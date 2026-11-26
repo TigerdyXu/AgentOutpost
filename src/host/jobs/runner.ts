@@ -1,8 +1,9 @@
 /**
  * Runs Outpost's research sessions. Each session gets a `Run` row and, in order: a budget check (a run the budget does
- * not allow is `skipped` with the reason), a place among at most `maxParallel` sessions at a time (the budget is checked
- * again once it gets one, so work queued behind a run that used the budget up does not start; recommendations need no
- * place, see `UNPOOLED`), its rounds with the agent
+ * not allow is `skipped` with the reason; a run on a local or subscription model costs ¥0 and is never refused), a
+ * place among at most `maxParallel` sessions at a time (the budget is checked again once it gets one, so work queued
+ * behind a run that used the budget up does not start; recommendations need no place, see `UNPOOLED`), its rounds
+ * with the agent
  * (a transient model or network failure retried, an agent that stops without `outpost_done` nudged once), and the
  * tokens it used priced into the run as they come. A check runs on the verify model and everything else on the research
  * model (`modelFor`), as configured when the session starts; its tokens are priced by that model's provider, so a run on a
@@ -10,7 +11,7 @@
  */
 import { localDate } from '../../core/calendar.ts'
 import { canSpend, costOf, type PriceTable } from '../../core/cost.ts'
-import { modelFor, type ModelRef, type ModelSettings } from '../../core/models.ts'
+import { modelFor, type Billing, type ModelRef, type ModelSettings } from '../../core/models.ts'
 import type { Id, Run, RunKind, RunStatus, Usage } from '../../core/types.ts'
 import type { Repo } from '../../store/repo.ts'
 import type { Clock, IconFetcher, SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from '../ports.ts'
@@ -20,6 +21,11 @@ export interface RuntimeSettings extends ModelSettings {
   maxParallel: number
   dailyBudgetYuan: number
   sessionTimeoutMin: number
+  /**
+   * How work on `model` is paid (null: DSH's default model, as it is now), by its provider (`billingOf`); `metered` when
+   * DSH cannot say which model its default is.
+   */
+  billingFor(model: ModelRef | null): Billing
   /**
    * The prices of tokens used on `model` (null: DSH's default model): the configured price table for a metered provider,
    * all 0 for a local or subscription one (`pricesFor`).
@@ -84,10 +90,14 @@ export function isTransient(outcome: SessionOutcome): boolean {
 }
 
 /**
- * Why work counted toward `date` (and toward `productId`'s own budget, if it has one) may not start now, or null when it
- * may: the day's spending has reached `dailyBudgetYuan`, or the product's has reached its `dailyBudgetYuan`.
+ * Why work on `model` counted toward `date` (and toward `productId`'s own budget, if it has one) may not start now, or
+ * null when it may: the day's spending has reached `dailyBudgetYuan`, or the product's has reached its `dailyBudgetYuan`.
+ * The budget guards money: work on a model that is not metered (local, the subscription) costs ¥0 and is never refused
+ * by it, whatever has been spent.
  */
-export function budgetRefusal(repo: Repo, dailyBudgetYuan: number, date: string, productId: Id | null): string | null {
+export function budgetRefusal(repo: Repo, settings: Pick<RuntimeSettings, 'dailyBudgetYuan' | 'billingFor'>, model: ModelRef | null, date: string, productId: Id | null): string | null {
+  if (settings.billingFor(model) !== 'metered') return null
+  const { dailyBudgetYuan } = settings
   if (!(typeof dailyBudgetYuan === 'number' && dailyBudgetYuan >= 0)) return INVALID_BUDGET
   const own = productId ? repo.getProduct(productId)?.dailyBudgetYuan : null
   const verdict = canSpend({
@@ -193,16 +203,17 @@ export class JobRunner {
     const release = UNPOOLED.has(run.kind) ? (this.stopped ? null : () => {}) : await this.slot()
     if (!release) return finish('failed', STOPPED_ERROR)
     try {
+      // The model as configured now, when the session starts. Passed as is: a model DSH no longer offers is not swapped
+      // for another; the session fails and says so.
+      const model = this.modelOf(run)
       // Spending may have reached the budget while this run waited for its place.
-      const late = this.refusal(run)
+      const late = this.refusal(run, model)
       if (late) return finish('skipped', late)
       let done = false
       const plan = build(id)
       const tools = plan.tools(() => { done = true })
       const sessionId = `outpost-${run.kind}-${id.slice(0, 8)}`
       this.repo.updateRun(id, { status: 'running', startedAt: this.clock.now().toISOString(), sessionId })
-      // Passed as configured: a model DSH no longer offers is not swapped for another; the session fails and says so.
-      const model = modelFor(run.kind === 'verify' ? 'verify' : 'research', this.settings())
       const spec: SessionSpec = { sessionId, title: plan.title, prompt: plan.prompt, tools, model }
       const used = noUsage()
       let outcome = await this.round(id, model, used, signal => this.driver.run(spec, signal))
@@ -259,9 +270,14 @@ export class JobRunner {
 
   // ---- budget, places, time ----
 
-  /** Why the run may not start now, or null when it may. */
-  private refusal(run: Run): string | null {
-    return budgetRefusal(this.repo, this.settings().dailyBudgetYuan, run.date, run.productId)
+  /** The model the run's session works on: a check on the verify model, everything else on the research model. */
+  private modelOf(run: Run): ModelRef | null {
+    return modelFor(run.kind === 'verify' ? 'verify' : 'research', this.settings())
+  }
+
+  /** Why the run may not start now on `model`, or null when it may. */
+  private refusal(run: Run, model = this.modelOf(run)): string | null {
+    return budgetRefusal(this.repo, this.settings(), model, run.date, run.productId)
   }
 
   /** Waits for a place among the sessions running; resolves with its release, or null once the runner stopped. */

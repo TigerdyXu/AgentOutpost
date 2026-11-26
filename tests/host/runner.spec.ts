@@ -36,7 +36,7 @@ beforeEach(() => {
   time = instantClock(new Date(2026, 10, 25, 8, 0, 0)) // local wall-clock, so TODAY is the same day in every time zone
   repo = new Repo(db, () => time.clock.now())
   driver = new FakeDriver()
-  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => PRICES }
+  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => PRICES }
   log = vi.fn<(message: string) => void>()
   runner = new JobRunner({ repo, driver, clock: time.clock, settings: () => settings, log })
   cursor = repo.upsertProduct({ id: 'p1', ...productSpec('Cursor', 'Anysphere') })
@@ -368,6 +368,41 @@ describe('models', () => {
     expect(priced.at(-1)).toBeNull()
     expect(third).toMatchObject({ status: 'skipped', error: '今日总预算已用完' })
     expect(repo.spentOn(TODAY)).toBe(16)
+  })
+
+  it('starts a check on a local model when DeepSeek runs used the budget up, and still refuses DeepSeek research', async () => {
+    // Research on DSH's default model (DeepSeek, metered); the check on a local model, which costs nothing.
+    settings.verifyModel = LOCAL
+    settings.billingFor = model => model?.provider === 'ollama' ? 'local' : 'metered'
+    settings.pricesOf = model => model?.provider === 'ollama' ? FREE : PRICES
+    settings.maxParallel = 1
+    settings.dailyBudgetYuan = 5
+    driver.script['outpost-'] = finishes()
+    driver.script['outpost-daily-'] = finishes({ outputTokens: 1_000_000 }) // 8 yuan
+
+    // A DeepSeek run holds the one place and spends the day's budget while a check and more research wait behind it:
+    // looked at again once they get the place, the check still starts and the research does not.
+    const [spender, check, research] = await Promise.all([
+      runner.session('daily', { productId: 'p1' }, build),
+      runner.session('verify', { productId: 'p2' }, daily('p2')),
+      runner.session('daily', { productId: 'p2' }, daily('p2')),
+    ])
+    expect(spender).toMatchObject({ status: 'done', costYuan: 8 })
+    expect(check).toMatchObject({ status: 'done', error: null, costYuan: 0 })
+    expect(research).toMatchObject({ status: 'skipped', error: '今日总预算已用完', sessionId: null })
+
+    // Asked when the budget is already spent: the same.
+    expect(await runner.session('verify', { productId: 'p1' }, build)).toMatchObject({ status: 'done', costYuan: 0 })
+    expect(await runner.session('daily', { productId: 'p1' }, build)).toMatchObject({ status: 'skipped', error: '今日总预算已用完' })
+
+    // A product's own budget does not hold it back either.
+    settings.dailyBudgetYuan = 100
+    repo.upsertProduct({ id: 'p1', ...productSpec('Cursor', 'Anysphere', { dailyBudgetYuan: 1 }) })
+    expect(await runner.session('verify', { productId: 'p1' }, build)).toMatchObject({ status: 'done' })
+    expect(await runner.session('daily', { productId: 'p1' }, build)).toMatchObject({ status: 'skipped', error: '该产品今日预算已用完' })
+
+    expect(driver.runs.map(s => [kindOf(s.sessionId), s.model])).toEqual([['daily', null], ['verify', LOCAL], ['verify', LOCAL], ['verify', LOCAL]])
+    expect(repo.spentOn(TODAY)).toBe(8)
   })
 
   it('passes the configured model as is, even when DSH no longer offers it', async () => {
