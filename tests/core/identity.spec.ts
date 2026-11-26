@@ -18,11 +18,21 @@ describe('identityKey', () => {
     expect(identityKey('Muse', 'Meta')).not.toBe(identityKey('Muse', 'Muse AI'))
   })
 
-  it('keeps names and companies made only of symbols apart, by what they are', () => {
+  it('drops only spaces and punctuation, not symbols, so 「Kimi+」 is not 「Kimi」', () => {
+    // The design says 「去掉空格和标点」: a symbol (+, ★, ©…) is part of the name.
+    expect(identityKey('Kimi+', '月之暗面')).not.toBe(identityKey('Kimi', '月之暗面'))
+    expect(identityKey('Kimi +', '月之暗面')).toBe(identityKey('Kimi+', '月之暗面')) // the space still goes
     expect(identityKey('★', 'X')).not.toBe(identityKey('☆', 'X'))
     expect(identityKey('X', '★')).not.toBe(identityKey('X', '☆'))
-    expect(identityKey(' ★ ', 'X')).toBe(identityKey('★', 'X')) // still trimmed
-    expect(identityKey('Ｘ', '★')).toBe(identityKey('x', '★')) // and unified
+    expect(identityKey(' ★ ', 'X')).toBe(identityKey('★', 'X'))
+    expect(identityKey('Ｘ', '★')).toBe(identityKey('x', '★')) // still unified
+  })
+
+  it('keeps names and companies made only of punctuation apart, by what they are', () => {
+    // Dropping the punctuation would leave nothing, and every such name would match every other.
+    expect(identityKey('!!!', 'X')).not.toBe(identityKey('???', 'X'))
+    expect(identityKey('X', '—')).not.toBe(identityKey('X', '…'))
+    expect(identityKey(' ！！ ', 'X')).toBe(identityKey('!!', 'X')) // trimmed, and unified (NFKC)
   })
 
   it('does not run the name into the company', () => {
