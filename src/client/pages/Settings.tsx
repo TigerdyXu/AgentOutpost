@@ -4,12 +4,14 @@
  * not the panel's shell. It edits the volatile fields through DSH (`ConfigForm.mutate`, fenced by the revision the edit
  * began from); where DSH offers no writable form it shows the same values, read-only, and says where to change them.
  */
-import { useCallback, useId, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
 import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ModelsView } from '../../host/api.ts'
+import { call, describeError } from '../api.ts'
 import type { OutpostKey, T } from '../locales.ts'
 import { useShell } from '../shell/context.ts'
-import { CheckIcon } from '../ui/icons.tsx'
+import { CheckIcon, ChevronIcon } from '../ui/icons.tsx'
 
 /** `ConfigForm.mutate`'s operations. */
 type Op = Parameters<ConfigPageForm['mutate']>[0][number]
@@ -31,13 +33,36 @@ interface Fields {
   maxParallel: string
   dailyBudgetYuan: string
   sessionTimeoutMin: string
-  provider: string
-  modelName: string
+  /** The four models, each as `encodeRef(provider, model)`, or empty: research on DSH's default, the other three following research. */
+  model: string
+  verifyModel: string
+  briefModel: string
+  followupModel: string
   inputPerMTok: string
   outputPerMTok: string
   cacheReadPerMTok: string
 }
 type Key = keyof Fields
+
+/** The four models, with the label of each and of its first choice (what leaving it empty means), in the order they are shown. */
+const MODEL_ROLES = [
+  ['model', 'settings.role.research', 'settings.model.dshDefault'],
+  ['verifyModel', 'settings.role.verify', 'settings.model.sameAsResearch'],
+  ['briefModel', 'settings.role.brief', 'settings.model.sameAsResearch'],
+  ['followupModel', 'settings.role.followup', 'settings.model.sameAsResearch'],
+] as const satisfies readonly (readonly [Key, OutpostKey, OutpostKey])[]
+type ModelKey = (typeof MODEL_ROLES)[number][0]
+const MODEL_KEYS: readonly Key[] = MODEL_ROLES.map(([key]) => key)
+const isModelKey = (key: Key): key is ModelKey => MODEL_KEYS.includes(key)
+
+interface ModelRef { provider: string; model: string }
+/** A model as a drop-down's value: the provider and the model apart by U+0000, which no id contains, so no model can pass for another pair. */
+const encodeRef = (provider: string, model: string) => `${provider}\u0000${model}`
+/** The model a drop-down's value stands for; undefined for the empty value, which is no model of its own. */
+function decodeRef(value: string): ModelRef | undefined {
+  const at = value.indexOf('\u0000')
+  return at > 0 && at < value.length - 1 ? { provider: value.slice(0, at), model: value.slice(at + 1) } : undefined
+}
 
 const RUN_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const MAX_PARALLEL = { min: 1, max: 8 }
@@ -51,10 +76,12 @@ const numberOf = (value: string) => /^\d+(\.\d+)?$/.test(value.trim()) ? Number(
 /** The fields of what DSH holds (the section of the plugin's Config); a field it lacks reads empty. */
 function fieldsOf(value: Record<string, unknown> | undefined): Fields {
   const prices = isRecord(value?.prices) ? value.prices : {}
-  const model = isRecord(value?.model) ? value.model : {}
+  /** A configured model as its drop-down value; anything that is not a provider with a model reads as none. */
+  const refText = (ref: unknown) => isRecord(ref) && typeof ref.provider === 'string' && typeof ref.model === 'string' && ref.provider && ref.model ? encodeRef(ref.provider, ref.model) : ''
   return {
     runTime: textOf(value?.runTime), maxParallel: textOf(value?.maxParallel), dailyBudgetYuan: textOf(value?.dailyBudgetYuan),
-    sessionTimeoutMin: textOf(value?.sessionTimeoutMin), provider: textOf(model.provider), modelName: textOf(model.model),
+    sessionTimeoutMin: textOf(value?.sessionTimeoutMin),
+    model: refText(value?.model), verifyModel: refText(value?.verifyModel), briefModel: refText(value?.briefModel), followupModel: refText(value?.followupModel),
     inputPerMTok: textOf(prices.inputPerMTok), outputPerMTok: textOf(prices.outputPerMTok), cacheReadPerMTok: textOf(prices.cacheReadPerMTok),
   }
 }
@@ -67,14 +94,13 @@ function problemsOf(fields: Fields): Partial<Record<Key, OutpostKey>> {
   if (!(Number.isInteger(parallel) && parallel >= MAX_PARALLEL.min && parallel <= MAX_PARALLEL.max)) problems.maxParallel = 'settings.maxParallelInvalid'
   if (!(numberOf(fields.dailyBudgetYuan) >= 0)) problems.dailyBudgetYuan = 'settings.budgetInvalid'
   if (!(numberOf(fields.sessionTimeoutMin) >= 1)) problems.sessionTimeoutMin = 'settings.timeoutInvalid'
-  if ((fields.provider.trim() === '') !== (fields.modelName.trim() === '')) problems.modelName = 'settings.modelBoth'
   for (const key of PRICES) if (!(numberOf(fields[key]) >= 0)) problems[key] = 'settings.budgetInvalid'
   return problems
 }
 
-/** Whether `value` is the same thing as `saved` for `key`: numbers by value (2 and 2.0), text without its edges. */
+/** Whether `value` is the same thing as `saved` for `key`: a model exactly, numbers by value (2 and 2.0), text without its edges. */
 const same = (key: Key, value: string, saved: string) =>
-  key === 'runTime' || key === 'provider' || key === 'modelName' ? value.trim() === saved.trim() : numberOf(value) === numberOf(saved) || value.trim() === saved.trim()
+  isModelKey(key) ? value === saved : key === 'runTime' ? value.trim() === saved.trim() : numberOf(value) === numberOf(saved) || value.trim() === saved.trim()
 
 /** The writes that turn `saved` into `values` (only the fields in `edited`), assuming `values` has no problem. */
 function opsOf(saved: Fields, values: Fields, edited: readonly Key[]): Op[] {
@@ -84,10 +110,10 @@ function opsOf(saved: Fields, values: Fields, edited: readonly Key[]): Op[] {
   for (const key of ['maxParallel', 'dailyBudgetYuan', 'sessionTimeoutMin'] as const) {
     if (changed(key)) ops.push({ op: 'set', path: [key], value: Number(values[key]) })
   }
-  if (changed('provider') || changed('modelName')) {
-    // Both empty: no model of its own, so the override goes and DSH's default model stands. Else both are there.
-    if (values.provider.trim() === '') ops.push({ op: 'unset', path: ['model'] })
-    else ops.push({ op: 'set', path: ['model'], value: { provider: values.provider.trim(), model: values.modelName.trim() } })
+  for (const key of MODEL_KEYS.filter(changed)) {
+    // No model of its own: the field goes (research then runs on DSH's default model, the others follow research), not an empty one.
+    const ref = decodeRef(values[key])
+    ops.push(ref ? { op: 'set', path: [key], value: ref } : { op: 'unset', path: [key] })
   }
   // The prices are one object in the Config: written whole when any of them changed.
   if (PRICES.some(changed)) ops.push({ op: 'set', path: ['prices'], value: Object.fromEntries(PRICES.map(key => [key, Number(values[key])])) })
@@ -113,6 +139,77 @@ function TextField({ label, hint, unit, value, problem, disabled, inputMode, onC
   </div>
 }
 
+// ---- the models DSH offers ----
+
+/** What `GET models` gave: the list (kept across a later failure), or why there is none; `reload` asks again. */
+interface ModelList { view?: ModelsView; error?: Error; reload: () => void }
+
+/**
+ * Asks the plugin for the models DSH can use (once, and again on `reload`) while `enabled`. The form asks for them itself:
+ * it also stands in the Plugin Manager's page, outside the panel's shell, so it cannot be handed them. DSH asks every
+ * provider anew each time, which is why they are not polled.
+ */
+function useModelList(enabled: boolean): ModelList {
+  const [state, setState] = useState<{ view?: ModelsView; error?: Error }>({})
+  const [round, setRound] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    call('GET models', undefined, { signal: controller.signal }).then(
+      view => { setState({ view }) },
+      (failure: unknown) => { if (!controller.signal.aborted) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)) })) },
+    )
+    return () => { controller.abort() }
+  }, [enabled, round])
+  const reload = useCallback(() => { setState(previous => previous.view ? { view: previous.view } : {}); setRound(count => count + 1) }, [])
+  return { ...state, reload }
+}
+
+interface ChoiceGroup { key: string; label: string; choices: { value: string; label: string }[]; error: string | null }
+
+/**
+ * What a drop-down offers beside its first choice: DSH's providers (its names, its order) with their models. A model among
+ * `kept` (the one saved, and the one showing) that is not in the list stays, in its provider's group, or in a group of its
+ * own when the provider is gone, marked 「当前不可用」 (not marked while there is no list at all: nothing is known then); so
+ * a saved model that cannot be listed is neither dropped nor lost to a change of mind. A provider that failed to list says
+ * so, in a note that cannot be chosen.
+ */
+function choicesOf(t: T, view: ModelsView | undefined, kept: readonly string[]): ChoiceGroup[] {
+  const groups: ChoiceGroup[] = (view?.groups ?? []).map(group => ({
+    key: group.provider, label: group.name, error: group.error,
+    choices: group.models.map(model => ({ value: encodeRef(group.provider, model.id), label: model.name || model.id })),
+  }))
+  for (const value of new Set(kept)) {
+    const ref = decodeRef(value)
+    if (!ref || groups.some(group => group.choices.some(choice => choice.value === value))) continue
+    const choice = { value, label: view ? t('settings.model.unavailableMark', { model: ref.model }) : ref.model }
+    const own = groups.find(group => group.key === ref.provider)
+    if (own) own.choices.push(choice)
+    else groups.push({ key: ref.provider, label: ref.provider, choices: [choice], error: null })
+  }
+  return groups
+}
+
+/** One use of a model: its name, and a drop-down of what it can run on (`first` is the choice of leaving it empty). */
+function ModelField({ label, first, value, groups, disabled, onChange }: {
+  label: string; first: string; value: string; groups: ChoiceGroup[]; disabled: boolean; onChange: (value: string) => void
+}): ReactNode {
+  const id = useId()
+  return <div className="op-model-row">
+    <label className="op-set-label" htmlFor={id}>{label}</label>
+    <div className="op-select-wrap">
+      <select id={id} className="op-input op-select" value={value} disabled={disabled} onChange={event => { onChange(event.target.value) }}>
+        <option value="">{first}</option>
+        {groups.map(group => <optgroup key={group.key} label={group.label}>
+          {group.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+          {group.error !== null && <option disabled>{group.error}</option>}
+        </optgroup>)}
+      </select>
+      <ChevronIcon size={14} />
+    </div>
+  </div>
+}
+
 function Section({ title, tag, hint, children }: { title: string; tag?: string; hint?: string; children: ReactNode }): ReactNode {
   return <section className="op-set-section">
     <header className="op-set-head">
@@ -130,7 +227,11 @@ function ReadOnly({ t, values }: { t: T; values: Partial<Fields> }): ReactNode {
     <dt className="op-setting-label">{label}</dt>
     <dd className="op-setting-value">{value || t('runs.none')}</dd>
   </div>
-  const model = values.provider || values.modelName ? [values.provider, values.modelName].filter(Boolean).join(' / ') : t('settings.modelDefault')
+  /** A model as `provider / model`; none is what its first choice says (DSH's default for research, else following research). */
+  const modelRow = ([key, label, first]: (typeof MODEL_ROLES)[number]) => {
+    const ref = decodeRef(values[key] ?? '')
+    return row(key, t(label), ref ? `${ref.provider} / ${ref.model}` : t(first))
+  }
   const priced = (value: string | undefined) => value ? t('settings.price', { amount: value }) : undefined
   return <>
     <Section title={t('settings.section.daily')}>
@@ -142,7 +243,7 @@ function ReadOnly({ t, values }: { t: T; values: Partial<Fields> }): ReactNode {
       </dl>
     </Section>
     <Section title={t('settings.section.model')}>
-      <dl className="op-settings-list">{row('model', t('settings.section.model'), model)}</dl>
+      <dl className="op-settings-list">{MODEL_ROLES.map(modelRow)}</dl>
     </Section>
     <Section title={t('settings.section.prices')} tag={t('settings.estimateOnly')}>
       <dl className="op-settings-list">
@@ -160,7 +261,7 @@ type Notice = { kind: 'saved' } | { kind: 'problem'; text: string }
  * The editable fields with their save bar. Only the fields the reader touched are kept (`edits`), over what DSH holds
  * now, so a field changed elsewhere meanwhile is not written back with an old value.
  */
-function Editable({ t, form }: { t: T; form: ConfigPageForm }): ReactNode {
+function Editable({ t, form, models }: { t: T; form: ConfigPageForm; models: ModelList }): ReactNode {
   const saved = fieldsOf(form.state.value)
   const [edits, setEdits] = useState<Partial<Fields>>({})
   const [saving, setSaving] = useState(false)
@@ -216,10 +317,18 @@ function Editable({ t, form }: { t: T; form: ConfigPageForm }): ReactNode {
         {field('sessionTimeoutMin', t('settings.timeout'), { hint: t('settings.timeoutHint'), inputMode: 'decimal' })}
       </div>
     </Section>
-    <Section title={t('settings.section.model')} hint={t('settings.modelHint')}>
-      <div className="op-set-grid" data-wide="">
-        {field('provider', t('settings.provider'))}
-        {field('modelName', t('settings.modelName'))}
+    <Section title={t('settings.section.model')}>
+      <div className="op-model-rows">
+        {MODEL_ROLES.map(([key, label, first]) => <ModelField key={key} label={t(label)} first={t(first)} value={values[key]} groups={choicesOf(t, models.view, [saved[key], values[key]])}
+          disabled={saving} onChange={value => { edit(key, value) }} />)}
+      </div>
+      {models.error && <p className="op-set-error op-models-error" role="status">
+        {t('settings.model.listFailed', { reason: describeError(t, models.error) })}{' '}
+        <button type="button" className="op-link" onClick={models.reload}>{t('settings.model.reload')}</button>
+      </p>}
+      <div className="op-model-notes">
+        <p className="op-set-hint">{t('settings.model.claudeHint')}</p>
+        <p className="op-set-hint">{t('settings.model.billingHint')}</p>
       </div>
     </Section>
     <Section title={t('settings.section.prices')} tag={t('settings.estimateOnly')} hint={t('settings.pricesHint')}>
@@ -251,8 +360,10 @@ export function SettingsForm({ t, form, known }: { t: T; form: ConfigPageForm | 
   const editable = form !== undefined && snapshot?.status === 'ready' && snapshot.writable ? form : undefined
   const value = snapshot?.status === 'ready' ? snapshot.value : undefined
   const dataDir = known?.dataDir || textOf(value?.dataDir)
+  // Only an editable form has drop-downs to fill; one asked for here lives as long as the form does (not as long as its fields).
+  const models = useModelList(editable !== undefined)
   return <div className="op-settings-body">
-    {editable ? <Editable t={t} form={editable} /> : <>
+    {editable ? <Editable t={t} form={editable} models={models} /> : <>
       <p className="op-settings-note">{snapshot?.status === 'loading' ? t('settings.loading') : t('settings.readOnly')}</p>
       <ReadOnly t={t} values={value ? fieldsOf(value) : { runTime: known?.runTime }} />
     </>}

@@ -2413,6 +2413,73 @@ button.op-run-open {
   min-width: 0;
 }
 
+/* The four models: a row is a label and a drop-down, the labels one column wide so the drop-downs line up. A row on a narrow page
+   (the Plugin Manager's) wraps to the label over its drop-down. */
+.op-model-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.op-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.op-model-row > .op-set-label {
+  flex: 0 0 184px;
+}
+
+.op-select-wrap {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+/* The native drop-down, drawn as the other fields; its arrow is the panel's own chevron, which the clicks pass through. */
+.op-select {
+  padding-right: 36px;
+  appearance: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.op-select:disabled {
+  cursor: not-allowed;
+}
+
+.op-select option,
+.op-select optgroup {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.op-select option:disabled {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.op-select-wrap > .op-glyph {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  translate: 0 -50%;
+  color: var(--dsw-alias-label-secondary);
+  pointer-events: none;
+}
+
+/* What is true of every model choice, under the rows: how to get a Claude subscription, and what is not counted. */
+.op-model-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .op-input[aria-invalid="true"] {
   box-shadow: 0 0 0 1px var(--dsw-alias-state-error-primary);
 }
@@ -2531,6 +2598,10 @@ button.op-run-open {
 
   .op-tab:not([aria-selected="true"]):hover {
     color: var(--dsw-alias-label-primary);
+  }
+
+  .op-select:not(:disabled):hover {
+    background: var(--dsw-alias-interactive-bg-hover);
   }
 
   .op-menu-item:not(:disabled):hover {
