@@ -2436,7 +2436,7 @@ button.op-run-open {
   position: relative;
   flex: 1 1 240px;
   min-width: 0;
-  max-width: 420px;
+  max-width: 560px;
 }
 
 /* The native drop-down, drawn as the other fields; its arrow is the panel's own chevron, which the clicks pass through. */

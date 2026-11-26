@@ -222,17 +222,18 @@ describe('the models', () => {
   it('offers the models DSH can use, grouped by provider', async () => {
     await mount(<Settings />, { state: state(), configForm: formOf().form })
     const research = picker(RESEARCH)
-    // DSH's own names for the providers are the group titles; its default model comes first, and only for research.
+    // DSH's own names for the providers are the group titles, and every model names its source too (a closed drop-down shows
+    // only the choice); the default model comes first, and only for research.
     expect(offered(research)).toEqual([
-      'DeepSeek Harness 的默认模型',
-      'DeepSeek › deepseek-flash', 'DeepSeek › deepseek-pro',
-      'Ollama (local) › qwen3:8b', 'Ollama (local) › llama3.2',
+      'DeepSeek Harness 的默认模型（DeepSeek · deepseek-flash）',
+      'DeepSeek › DeepSeek · deepseek-flash', 'DeepSeek › DeepSeek · deepseek-pro',
+      'Ollama (local) › Ollama (local) · qwen3:8b', 'Ollama (local) › Ollama (local) · llama3.2',
     ])
     expect([...research.querySelectorAll('optgroup')].map(group => group.label)).toEqual(['DeepSeek', 'Ollama (local)'])
     expect(research.options[0]!.value).toBe('')
     for (const label of [VERIFY, BRIEF, FOLLOWUP]) {
       const select = picker(label)
-      expect(select.options[0]!.textContent).toBe('跟调研一样')
+      expect(select.options[0]!.textContent).toBe('跟调研一样（DeepSeek · deepseek-flash）')
       expect(select.options[0]!.value).toBe('')
       expect(offered(select).slice(1)).toEqual(offered(research).slice(1))
       expect(select.value).toBe('')
@@ -248,6 +249,33 @@ describe('the models', () => {
     const { form } = formOf({ ...SAVED, model: { provider: 'deepseek-official', model: 'deepseek-pro' }, briefModel: { provider: 'ollama', model: 'llama3.2' } })
     await mount(<Settings />, { state: state(), configForm: form })
     expect([RESEARCH, VERIFY, BRIEF, FOLLOWUP].map(label => picker(label).value)).toEqual([ref('deepseek-official', 'deepseek-pro'), '', ref('ollama', 'llama3.2'), ''])
+    // What the reader sees closed names the source: which provider, so how it is billed, and which model.
+    expect([RESEARCH, BRIEF].map(label => picker(label).selectedOptions[0]!.textContent)).toEqual(['DeepSeek · deepseek-pro', 'Ollama (local) · llama3.2'])
+    // A choice too long for the box is cut short there: its whole is the tooltip.
+    expect([RESEARCH, VERIFY].map(label => picker(label).title)).toEqual(['DeepSeek · deepseek-pro', '跟调研一样（DeepSeek · deepseek-pro）'])
+    // 「跟调研一样」 says what research is on, and follows what is picked for research before it is saved.
+    expect(picker(VERIFY).selectedOptions[0]!.textContent).toBe('跟调研一样（DeepSeek · deepseek-pro）')
+    await choose(RESEARCH, ref('ollama', 'qwen3:8b'))
+    expect([VERIFY, BRIEF, FOLLOWUP].map(label => picker(label).options[0]!.textContent)).toEqual(Array(3).fill('跟调研一样（Ollama (local) · qwen3:8b）'))
+    // Research's own first choice is DSH's default model, whatever research is on now.
+    expect(picker(RESEARCH).options[0]!.textContent).toBe('DeepSeek Harness 的默认模型（DeepSeek · deepseek-flash）')
+  })
+
+  it('says what the default choices come to, and only when it can tell', async () => {
+    // DSH's default model is one the list does not name (its provider is not listed): the ids stand in for the names.
+    stubApi({ 'GET models': { ...MODELS, defaultModel: { provider: 'lmstudio', model: 'gemma-3' } } })
+    await mount(<Settings />, { state: state(), configForm: formOf().form })
+    expect(picker(RESEARCH).options[0]!.textContent).toBe('DeepSeek Harness 的默认模型（lmstudio · gemma-3）')
+    expect(picker(VERIFY).options[0]!.textContent).toBe('跟调研一样（lmstudio · gemma-3）')
+    unmount()
+    // DSH cannot say its default: the plain phrases.
+    stubApi({ 'GET models': { ...MODELS, defaultModel: null } })
+    await mount(<Settings />, { state: state(), configForm: formOf().form })
+    expect([RESEARCH, VERIFY, BRIEF, FOLLOWUP].map(label => picker(label).options[0]!.textContent)).toEqual(['DeepSeek Harness 的默认模型', '跟调研一样', '跟调研一样', '跟调研一样'])
+    unmount()
+    // ... but a research model of its own is named even then, for the three that follow it.
+    await mount(<Settings />, { state: state(), configForm: formOf({ ...SAVED, model: { provider: 'ollama', model: 'qwen3:8b' } }).form })
+    expect(picker(VERIFY).options[0]!.textContent).toBe('跟调研一样（Ollama (local) · qwen3:8b）')
   })
 
   it('saves a role’s model and unsets it when set back to follow research', async () => {
@@ -301,12 +329,12 @@ describe('the models', () => {
     await mount(<Settings />, { state: state(), configForm: form })
     // Ollama is up but no longer has it: it stays in its own group, marked, and is what the drop-down shows.
     const followup = picker(FOLLOWUP)
-    expect(offered(followup)).toContain('Ollama (local) › qwen2:7b（当前不可用）')
+    expect(offered(followup)).toContain('Ollama (local) › Ollama (local) · qwen2:7b（当前不可用）')
     expect(followup.value).toBe(ref('ollama', 'qwen2:7b'))
     expect(followup.selectedOptions[0]!.textContent).toContain('当前不可用')
     // Its provider is gone altogether (signed out): a group of its own, named as it is saved.
     const brief = picker(BRIEF)
-    expect(offered(brief).at(-1)).toBe('anthropic › claude-sonnet-4-5（当前不可用）')
+    expect(offered(brief).at(-1)).toBe('anthropic › anthropic · claude-sonnet-4-5（当前不可用）')
     expect(brief.value).toBe(ref('anthropic', 'claude-sonnet-4-5'))
     // A model that is offered carries no mark, and the others are not given the saved one.
     expect(offered(picker(VERIFY)).join()).not.toContain('当前不可用')
@@ -317,7 +345,7 @@ describe('the models', () => {
     expect(picker(FOLLOWUP).value).toBe(ref('ollama', 'qwen2:7b'))
     // Changing one's mind does not lose it: it is still there to go back to, and going back is no change.
     await choose(FOLLOWUP, ref('deepseek-official', 'deepseek-pro'))
-    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › qwen2:7b（当前不可用）')
+    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › Ollama (local) · qwen2:7b（当前不可用）')
     await choose(FOLLOWUP, ref('ollama', 'qwen2:7b'))
     expect(saveButton().disabled).toBe(true)
   })
@@ -327,18 +355,31 @@ describe('the models', () => {
     const { form } = formOf({ ...SAVED, followupModel: { provider: 'ollama', model: 'qwen3:8b' } })
     await mount(<Settings />, { state: state(), configForm: form })
     const select = picker(VERIFY)
-    expect(offered(select)).toEqual(['跟调研一样', 'DeepSeek › deepseek-flash', 'DeepSeek › deepseek-pro', 'Ollama (local) › 读取失败'])
+    expect(offered(select)).toEqual(['跟调研一样（DeepSeek · deepseek-flash）', 'DeepSeek › DeepSeek · deepseek-flash', 'DeepSeek › DeepSeek · deepseek-pro', 'Ollama (local) › 读取失败'])
     const failed = [...select.options].find(option => option.textContent === '读取失败')!
     expect(failed.disabled).toBe(true)
     expect([...select.options].filter(option => option.disabled)).toEqual([failed])
     // A saved model of that provider is still shown (it cannot be listed now), above the note.
-    expect(offered(picker(FOLLOWUP)).slice(-2)).toEqual(['Ollama (local) › qwen3:8b（当前不可用）', 'Ollama (local) › 读取失败'])
+    expect(offered(picker(FOLLOWUP)).slice(-2)).toEqual(['Ollama (local) › Ollama (local) · qwen3:8b（当前不可用）', 'Ollama (local) › 读取失败'])
     expect(picker(FOLLOWUP).value).toBe(ref('ollama', 'qwen3:8b'))
-    // One provider failing is not the list failing.
-    expect(document.querySelector('.op-models-error')).toBeNull()
     // A model of the other provider can be picked as ever.
     await choose(VERIFY, ref('deepseek-official', 'deepseek-pro'))
     expect(picker(VERIFY).value).toBe(ref('deepseek-official', 'deepseek-pro'))
+  })
+
+  it('names the providers that failed to list, with a way to read again, though the list itself came', async () => {
+    stubApi({ 'GET models': { ...MODELS, groups: [MODELS.groups[0]!, { ...MODELS.groups[1]!, models: [], error: '读取失败' }] } })
+    await mount(<Settings />, { state: state(), configForm: formOf().form })
+    // One provider failing is not the list failing: no error line, a quiet note that says which and offers to read again.
+    expect(document.querySelector('.op-models-error')).toBeNull()
+    expect(document.querySelector('.op-models-status')?.textContent).toBe('Ollama (local)：读取失败 重新读取')
+    expect(document.querySelector('.op-models-status')?.className).toContain('op-set-hint')
+    // It asks again, and what the provider has now is offered; with all well the note is gone.
+    const again = stubApi({ 'GET models': MODELS })
+    await click('重新读取')
+    expect(again.requests.filter(request => request.path === 'models')).toHaveLength(1)
+    expect(document.querySelector('.op-models-status')).toBeNull()
+    expect(offered(picker(VERIFY))).toContain('Ollama (local) › Ollama (local) · qwen3:8b')
   })
 
   it('says how to use a Claude subscription, and how local and subscription models are billed', async () => {
@@ -357,8 +398,9 @@ describe('the models', () => {
     expect(document.querySelector('.op-models-error')?.textContent).toContain('读不到 DeepSeek Harness 的模型清单')
     expect(document.querySelector('.op-models-error')?.textContent).toContain('没读到可选的模型')
     expect(offered(picker(RESEARCH))).toEqual(['DeepSeek Harness 的默认模型'])
-    // Without the list nothing can be called unavailable: the saved model shows as it is.
-    expect(offered(picker(VERIFY))).toEqual(['跟调研一样', 'ollama › qwen3:8b'])
+    // Without the list nothing can be called unavailable: the saved model shows as it is, with its provider's id for source.
+    expect(offered(picker(VERIFY))).toEqual(['跟调研一样', 'ollama › ollama · qwen3:8b'])
+    expect(picker(VERIFY).selectedOptions[0]!.textContent).toBe('ollama · qwen3:8b')
     expect(picker(VERIFY).value).toBe(ref('ollama', 'qwen3:8b'))
     // The rest of the form still works.
     await type(field('每天几点跑'), '09:30')
@@ -370,8 +412,32 @@ describe('the models', () => {
     await click('重新读取')
     expect(again.requests.filter(request => request.path === 'models')).toHaveLength(1)
     expect(document.querySelector('.op-models-error')).toBeNull()
-    expect(offered(picker(RESEARCH))).toContain('Ollama (local) › qwen3:8b')
-    expect(offered(picker(VERIFY))).not.toContain('ollama › qwen3:8b')
+    expect(offered(picker(RESEARCH))).toContain('Ollama (local) › Ollama (local) · qwen3:8b')
+    expect(offered(picker(VERIFY))).not.toContain('ollama › ollama · qwen3:8b')
+  })
+
+  it('says the list is being read, on the first read and on reading again, and the drop-downs work meanwhile', async () => {
+    // Answers held back by hand (`stubApi` answers at once).
+    const answers: ((response: Response) => void)[] = []
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { answers.push(resolve) })))
+    await mount(<Settings />, { state: state(), configForm: formOf({ ...SAVED, followupModel: { provider: 'ollama', model: 'qwen3:8b' } }).form })
+    const status = () => document.querySelector('.op-models-status')
+    expect(status()?.textContent).toBe('正在读取可用的模型…')
+    expect(status()?.className).toContain('op-set-hint')
+    expect(all<HTMLSelectElement>('.op-select').some(select => select.disabled)).toBe(false)
+    // The list does not come (DSH fails): the line gives way to the one saying why, with the way to read again.
+    await act(async () => { answers[0]!(Response.json({ error: '请求超时' }, { status: 502 })) })
+    await settle()
+    expect(status()?.textContent).toBe('没读到可选的模型：请求超时 重新读取')
+    // Reading again: the failure line gives way to the reading line, until the answer comes; then neither is left.
+    await click('重新读取')
+    expect(answers).toHaveLength(2)
+    expect(status()?.textContent).toBe('正在读取可用的模型…')
+    expect(document.querySelector('.op-models-error')).toBeNull()
+    await act(async () => { answers[1]!(Response.json(MODELS)) })
+    await settle()
+    expect(status()).toBeNull()
+    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › Ollama (local) · qwen3:8b')
   })
 
   it('shows the saved models while the list is being read, and an edit made meanwhile survives its arrival', async () => {
@@ -381,14 +447,14 @@ describe('the models', () => {
     const { form, mutate } = formOf({ ...SAVED, followupModel: { provider: 'ollama', model: 'qwen3:8b' } })
     await mount(<Settings />, { state: state(), configForm: form })
     // Nothing is called unavailable while nothing is known; the saved model is simply what the drop-down shows.
-    expect(offered(picker(FOLLOWUP))).toEqual(['跟调研一样', 'ollama › qwen3:8b'])
+    expect(offered(picker(FOLLOWUP))).toEqual(['跟调研一样', 'ollama › ollama · qwen3:8b'])
     expect(picker(FOLLOWUP).value).toBe(ref('ollama', 'qwen3:8b'))
     expect(document.querySelector('.op-models-error')).toBeNull()
     await type(field('每天几点跑'), '09:30')
     await act(async () => { answer(Response.json(MODELS)) })
     await settle()
     // The list is in, the model is in it (so not marked), and the edit is still there.
-    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › qwen3:8b')
+    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › Ollama (local) · qwen3:8b')
     expect(offered(picker(FOLLOWUP)).join()).not.toContain('当前不可用')
     expect(picker(FOLLOWUP).value).toBe(ref('ollama', 'qwen3:8b'))
     expect(field('每天几点跑').value).toBe('09:30')
@@ -401,7 +467,7 @@ describe('the models', () => {
     const { form, mutate } = formOf()
     await mount(<SettingsForm t={t} form={form} />)
     expect(api.requests.filter(request => request.path === 'models')).toHaveLength(1)
-    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › llama3.2')
+    expect(offered(picker(FOLLOWUP))).toContain('Ollama (local) › Ollama (local) · llama3.2')
     await choose(FOLLOWUP, ref('ollama', 'llama3.2'))
     await click(saveButton())
     expect(mutate).toHaveBeenCalledWith([{ op: 'set', path: ['followupModel'], value: { provider: 'ollama', model: 'llama3.2' } }], 7)

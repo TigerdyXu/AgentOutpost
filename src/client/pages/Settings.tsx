@@ -141,8 +141,8 @@ function TextField({ label, hint, unit, value, problem, disabled, inputMode, onC
 
 // ---- the models DSH offers ----
 
-/** What `GET models` gave: the list (kept across a later failure), or why there is none; `reload` asks again. */
-interface ModelList { view?: ModelsView; error?: Error; reload: () => void }
+/** What `GET models` gave: the list (kept across a later failure), or why there is none; `loading` while it is being asked; `reload` asks again. */
+interface ModelList { view?: ModelsView; error?: Error; loading: boolean; reload: () => void }
 
 /**
  * Asks the plugin for the models DSH can use (once, and again on `reload`) while `enabled`. The form asks for them itself:
@@ -150,40 +150,66 @@ interface ModelList { view?: ModelsView; error?: Error; reload: () => void }
  * provider anew each time, which is why they are not polled.
  */
 function useModelList(enabled: boolean): ModelList {
-  const [state, setState] = useState<{ view?: ModelsView; error?: Error }>({})
+  const [state, setState] = useState<{ view?: ModelsView; error?: Error; loading: boolean }>({ loading: enabled })
   const [round, setRound] = useState(0)
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
+    // Asking again drops the last failure (the line saying so gives way to the one saying it is being read), not the last list.
+    setState(previous => ({ ...previous, error: undefined, loading: true }))
     call('GET models', undefined, { signal: controller.signal }).then(
-      view => { setState({ view }) },
-      (failure: unknown) => { if (!controller.signal.aborted) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)) })) },
+      view => { setState({ view, loading: false }) },
+      (failure: unknown) => { if (!controller.signal.aborted) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)), loading: false })) },
     )
     return () => { controller.abort() }
   }, [enabled, round])
-  const reload = useCallback(() => { setState(previous => previous.view ? { view: previous.view } : {}); setRound(count => count + 1) }, [])
+  const reload = useCallback(() => { setRound(count => count + 1) }, [])
   return { ...state, reload }
 }
 
 interface ChoiceGroup { key: string; label: string; choices: { value: string; label: string }[]; error: string | null }
 
 /**
+ * A model as a choice reads, `DeepSeek · deepseek-flash`: where it comes from, then which. A closed drop-down shows only its
+ * choice, not the group it sits in, and the source decides how the spend is counted (the subscription, a local model, the
+ * price table), so every choice names it.
+ */
+const sourced = (source: string, model: string) => `${source} · ${model}`
+
+/** `ref` as DSH names it (its provider's name, its model's name) when the list has it, else by the ids. */
+function nameOf(view: ModelsView, ref: ModelRef): string {
+  const group = view.groups.find(item => item.provider === ref.provider)
+  return sourced(group?.name ?? ref.provider, group?.models.find(model => model.id === ref.model)?.name || ref.model)
+}
+
+/**
+ * The first choice of a drop-down, the one for leaving it empty, with what it comes to when the list tells: research on DSH's
+ * default model, the others on what research is set to (or, with none, DSH's default model). Just the phrase while there is
+ * no list, or DSH did not say its default.
+ */
+function firstChoice(t: T, view: ModelsView | undefined, key: ModelKey, first: OutpostKey, research: string): string {
+  const target = key === 'model' ? view?.defaultModel : decodeRef(research) ?? view?.defaultModel
+  return view && target ? t('settings.model.withTarget', { choice: t(first), model: nameOf(view, target) }) : t(first)
+}
+
+/**
  * What a drop-down offers beside its first choice: DSH's providers (its names, its order) with their models. A model among
  * `kept` (the one saved, and the one showing) that is not in the list stays, in its provider's group, or in a group of its
- * own when the provider is gone, marked 「当前不可用」 (not marked while there is no list at all: nothing is known then); so
- * a saved model that cannot be listed is neither dropped nor lost to a change of mind. A provider that failed to list says
- * so, in a note that cannot be chosen.
+ * own (named by the provider's id) when the provider is gone, marked 「当前不可用」 (not marked while there is no list at all:
+ * nothing is known then); so a saved model that cannot be listed is neither dropped nor lost to a change of mind. A provider
+ * that failed to list says so, in a note that cannot be chosen.
  */
 function choicesOf(t: T, view: ModelsView | undefined, kept: readonly string[]): ChoiceGroup[] {
   const groups: ChoiceGroup[] = (view?.groups ?? []).map(group => ({
     key: group.provider, label: group.name, error: group.error,
-    choices: group.models.map(model => ({ value: encodeRef(group.provider, model.id), label: model.name || model.id })),
+    choices: group.models.map(model => ({ value: encodeRef(group.provider, model.id), label: sourced(group.name, model.name || model.id) })),
   }))
   for (const value of new Set(kept)) {
     const ref = decodeRef(value)
     if (!ref || groups.some(group => group.choices.some(choice => choice.value === value))) continue
-    const choice = { value, label: view ? t('settings.model.unavailableMark', { model: ref.model }) : ref.model }
     const own = groups.find(group => group.key === ref.provider)
+    const source = own?.label ?? ref.provider
+    const choice = { value, label: sourced(source, view ? t('settings.model.unavailableMark', { model: ref.model }) : ref.model) }
     if (own) own.choices.push(choice)
     else groups.push({ key: ref.provider, label: ref.provider, choices: [choice], error: null })
   }
@@ -195,10 +221,12 @@ function ModelField({ label, first, value, groups, disabled, onChange }: {
   label: string; first: string; value: string; groups: ChoiceGroup[]; disabled: boolean; onChange: (value: string) => void
 }): ReactNode {
   const id = useId()
+  // A choice too long for the box is cut short there; the whole of it is the tooltip.
+  const shown = value === '' ? first : groups.flatMap(group => group.choices).find(choice => choice.value === value)?.label
   return <div className="op-model-row">
     <label className="op-set-label" htmlFor={id}>{label}</label>
     <div className="op-select-wrap">
-      <select id={id} className="op-input op-select" value={value} disabled={disabled} onChange={event => { onChange(event.target.value) }}>
+      <select id={id} className="op-input op-select" value={value} title={shown} disabled={disabled} onChange={event => { onChange(event.target.value) }}>
         <option value="">{first}</option>
         {groups.map(group => <optgroup key={group.key} label={group.label}>
           {group.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
@@ -208,6 +236,23 @@ function ModelField({ label, first, value, groups, disabled, onChange }: {
       <ChevronIcon size={14} />
     </div>
   </div>
+}
+
+/**
+ * One line under the drop-downs about the list: that it is being read (also on asking again), else why there is none, else which
+ * providers did not list; the last two with a way to ask again. Nothing when all is well. The drop-downs work meanwhile.
+ */
+function ModelsStatus({ t, models }: { t: T; models: ModelList }): ReactNode {
+  const retry = <button type="button" className="op-link" onClick={models.reload}>{t('settings.model.reload')}</button>
+  if (models.loading) return <p className="op-set-hint op-models-status" role="status">{t('settings.model.loading')}</p>
+  if (models.error) {
+    return <p className="op-set-error op-models-status op-models-error" role="status">
+      {t('settings.model.listFailed', { reason: describeError(t, models.error) })} {retry}
+    </p>
+  }
+  const failed = (models.view?.groups ?? []).filter(group => group.error !== null)
+  if (failed.length === 0) return null
+  return <p className="op-set-hint op-models-status" role="status">{failed.map(group => `${group.name}：${group.error}`).join('；')} {retry}</p>
 }
 
 function Section({ title, tag, hint, children }: { title: string; tag?: string; hint?: string; children: ReactNode }): ReactNode {
@@ -319,13 +364,10 @@ function Editable({ t, form, models }: { t: T; form: ConfigPageForm; models: Mod
     </Section>
     <Section title={t('settings.section.model')}>
       <div className="op-model-rows">
-        {MODEL_ROLES.map(([key, label, first]) => <ModelField key={key} label={t(label)} first={t(first)} value={values[key]} groups={choicesOf(t, models.view, [saved[key], values[key]])}
-          disabled={saving} onChange={value => { edit(key, value) }} />)}
+        {MODEL_ROLES.map(([key, label, first]) => <ModelField key={key} label={t(label)} first={firstChoice(t, models.view, key, first, values.model)} value={values[key]}
+          groups={choicesOf(t, models.view, [saved[key], values[key]])} disabled={saving} onChange={value => { edit(key, value) }} />)}
       </div>
-      {models.error && <p className="op-set-error op-models-error" role="status">
-        {t('settings.model.listFailed', { reason: describeError(t, models.error) })}{' '}
-        <button type="button" className="op-link" onClick={models.reload}>{t('settings.model.reload')}</button>
-      </p>}
+      <ModelsStatus t={t} models={models} />
       <div className="op-model-notes">
         <p className="op-set-hint">{t('settings.model.claudeHint')}</p>
         <p className="op-set-hint">{t('settings.model.billingHint')}</p>

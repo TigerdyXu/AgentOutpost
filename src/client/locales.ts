@@ -296,6 +296,8 @@ const TEXT = {
     'Local models and a Claude subscription count as ¥0 and do not use the daily budget; with a pay-as-you-go Anthropic API key, Outpost does not count that spending.'],
   'settings.model.listFailed': ['没读到可选的模型：{reason}', 'Could not read the models to choose from: {reason}'],
   'settings.model.reload': ['重新读取', 'Read again'],
+  'settings.model.loading': ['正在读取可用的模型…', 'Reading the models that can be used…'],
+  'settings.model.withTarget': ['{choice}（{model}）', '{choice} ({model})'],
   'settings.section.prices': ['价格表', 'Prices'],
   'settings.estimateOnly': ['估算用', 'For estimates'],
   'settings.pricesHint': ['只用来估算每次运行的花费；以各家官网的价格为准', 'Used only to estimate what a run cost; the providers’ own price lists decide what you pay'],
