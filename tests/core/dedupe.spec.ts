@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalUrl, findingKey, isDuplicate } from '../../src/core/dedupe.ts'
+import { canonicalUrl, findingKey, isDuplicate, sourceUrl, type DedupeSource } from '../../src/core/dedupe.ts'
 import { canonicalUrl as urlCanonicalUrl } from '../../src/core/url.ts'
 
 const wechat = (q: string) => `https://mp.weixin.qq.com/s?${q}`
-const recent = (productId: string, headline: string, urls: string[]) => ({ productId, headline, dedupeKey: findingKey(productId, headline, urls), urls })
+const recent = (productId: string, headline: string, urls: DedupeSource[]) => ({ productId, headline, dedupeKey: findingKey(productId, headline, urls.map(sourceUrl)), urls })
 
 describe('canonicalUrl', () => {
   it('is the one from url.ts, which keeps the query (no second definition that drops it)', () => {
@@ -63,6 +63,22 @@ describe('findingKey', () => {
 })
 
 describe('isDuplicate', () => {
+  it('lets two different findings cite the same App Store or official page, whose content changes under one address', () => {
+    const appstore: DedupeSource = { url: 'https://apps.apple.com/cn/app/doubao/id6459478672', kind: 'appstore', isOfficial: false }
+    const changelog: DedupeSource = { url: 'https://cursor.com/changelog', kind: 'official', isOfficial: true }
+    const blog: DedupeSource = { url: 'https://cursor.com/blog', kind: 'media', isOfficial: true } // official, whatever its kind
+    expect(isDuplicate({ productId: 'p', headline: '豆包 iOS 版加入视频通话', urls: [appstore] }, [recent('p', '豆包 iOS 版支持离线语音', [appstore])])).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: 'Cursor 2.1 发布', urls: [changelog] }, [recent('p', 'Cursor 2.0 发布', [changelog])])).toBe(false)
+    expect(isDuplicate({ productId: 'p', headline: '后台 Agent 正式上线', urls: [blog] }, [recent('p', '推出团队定价', [blog])])).toBe(false)
+    // Either side saying so is enough: a page the agent once cited without its kind is still the same page.
+    expect(isDuplicate({ productId: 'p', headline: 'Cursor 2.1 发布', urls: [changelog] }, [recent('p', 'Cursor 2.0 发布', [changelog.url])])).toBe(false)
+    // The same headline is still the same news, whatever page it cites.
+    expect(isDuplicate({ productId: 'p', headline: '豆包 iOS 版支持离线语音！', urls: [appstore] }, [recent('p', '豆包 iOS 版支持离线语音', [appstore])])).toBe(true)
+    // Two findings resting on one media article are one story, however they are worded.
+    const article: DedupeSource = { url: 'https://36kr.com/p/1', kind: 'media', isOfficial: false }
+    expect(isDuplicate({ productId: 'p', headline: '换了个说法', urls: [article] }, [recent('p', '原来的标题', [article])])).toBe(true)
+  })
+
   it('treats a shared article URL as the same finding', () =>
     expect(isDuplicate({ productId: 'p', headline: '完全不同的标题', urls: ['https://www.a.com/x/?utm_source=x'] }, [{ productId: 'p', headline: '另一个标题', dedupeKey: 'k', urls: ['https://a.com/x'] }])).toBe(true))
 

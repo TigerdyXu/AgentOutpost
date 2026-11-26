@@ -416,7 +416,7 @@ img.op-icon {
   background-color: var(--dsw-alias-bg-layer-1);
 }
 
-/* ---- tags: 官方 推论 AI 归纳 今天改过 待确认 原文打不开 迟到 重要 值得留意 已证实 ---- */
+/* ---- tags: 官方 推论 AI 归纳 今天改过 待确认 原文打不开 迟到 重要 值得留意 已证实 AI 整理 · 未核查 ---- */
 
 .op-tag {
   --op-tone: var(--dsw-alias-link);
@@ -458,7 +458,8 @@ img.op-icon {
 }
 
 .op-tag[data-kind="unopened"],
-.op-tag[data-kind="late"] {
+.op-tag[data-kind="late"],
+.op-tag[data-kind="unchecked"] {
   --op-tone: var(--dsw-alias-label-secondary);
   --op-tone-fill: var(--dsw-alias-card-fill);
 }
@@ -1700,6 +1701,13 @@ textarea.op-input {
   font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* 「AI 整理 · 未核查」 under the strip's end: the facts cite nothing and nothing checks them. */
+.op-facts-note {
+  display: flex;
+  justify-content: flex-end;
+  margin: 6px 0 0;
 }
 
 .op-positioning {

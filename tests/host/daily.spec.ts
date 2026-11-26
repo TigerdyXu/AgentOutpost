@@ -74,7 +74,7 @@ describe('runDailyProduct', () => {
 
     expect(events).toEqual(['daily start', 'daily end', 'verify'])
     expect(driver.runs.map(s => s.title)).toEqual([`前哨 · Cursor 日更 ${DAY}`, `前哨 · Cursor 核查 ${DAY}`])
-    expect(driver.runs[0]!.tools.map(t => t.name)).toEqual(['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_submit_facts', 'outpost_done'])
+    expect(driver.runs[0]!.tools.map(t => t.name)).toEqual(['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_done'])
     expect(run).toMatchObject({ kind: 'daily', productId: 'p1', date: DAY, status: 'done', error: null })
     expect(runsOf('verify')).toMatchObject([{ productId: 'p1', status: 'done' }]) // the check counts toward the same day
     // The finding was checked and lands in that day's brief; the card edit on it became the dossier's first version.

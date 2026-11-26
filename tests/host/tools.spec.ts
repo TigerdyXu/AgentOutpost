@@ -91,7 +91,8 @@ describe('researchTools', () => {
     const names = (kind: Kind) => researchTools(kind, scopeOf()).map(t => t.name)
     expect(names('recommend')).toEqual(['outpost_submit_candidate', 'outpost_done'])
     expect(names('baseline')).toEqual(['outpost_read', 'outpost_submit_card', 'outpost_submit_facts', 'outpost_done'])
-    expect(names('daily')).toEqual(['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_submit_facts', 'outpost_done'])
+    // The key facts are written by the baseline only: nothing checks them, so the daily run does not change them.
+    expect(names('daily')).toEqual(['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_done'])
     expect(names('verify')).toEqual(['outpost_read_pending', 'outpost_report_check', 'outpost_add_source', 'outpost_done'])
     expect(names('followup')).toEqual(['outpost_read'])
   })
@@ -149,11 +150,23 @@ describe('outpost_submit_finding', () => {
 
   it('rejects a duplicate finding', async () => {
     const call = toolbox('daily')
-    expect(await call('outpost_submit_finding', finding)).toMatchObject({ findingId: expect.any(String) })
-    const again = await call('outpost_submit_finding', { ...finding, headline: '别的说法' }) // same article, new words
+    const article = source({ url: 'https://36kr.example/p/123', publisher: '36氪', kind: 'media', isOfficial: false })
+    expect(await call('outpost_submit_finding', { ...finding, sources: [article] })).toMatchObject({ findingId: expect.any(String) })
+    const again = await call('outpost_submit_finding', { ...finding, headline: '别的说法', sources: [article] }) // same article, new words
     expect(again).toMatchObject({ error: expect.stringContaining('重复') })
     expect((again as { error: string }).error).toBe('这条和已有发现重复：Cursor 推出团队定价')
     expect(repo.findingsOfProduct(product.id)).toHaveLength(1)
+  })
+
+  it('accepts a new entry of a changelog or App Store page an earlier finding cited, but not the same news again', async () => {
+    const call = toolbox('daily')
+    const appstore = source({ url: 'https://apps.apple.com/app/cursor/id1', publisher: 'App Store', kind: 'appstore', isOfficial: false, quote: '新增后台 Agent' })
+    expect(await call('outpost_submit_finding', finding)).toMatchObject({ findingId: expect.any(String) }) // the changelog page
+    expect(await call('outpost_submit_finding', { ...finding, headline: 'Cursor 后台 Agent 正式上线' })).toMatchObject({ findingId: expect.any(String) }) // a new entry on it
+    expect(await call('outpost_submit_finding', { ...finding, headline: 'Cursor iOS 版上线', sources: [appstore] })).toMatchObject({ findingId: expect.any(String) })
+    expect(await call('outpost_submit_finding', { ...finding, headline: 'Cursor iOS 版加入语音输入', sources: [appstore] })).toMatchObject({ findingId: expect.any(String) })
+    expect(await call('outpost_submit_finding', { ...finding, headline: 'Cursor iOS 版上线！', sources: [appstore] })).toMatchObject({ error: '这条和已有发现重复：Cursor iOS 版上线' })
+    expect(repo.findingsOfProduct(product.id)).toHaveLength(4)
   })
 
   it('rejects the same news found again through another repost, or submitted again the next day', async () => {
@@ -357,7 +370,7 @@ describe('outpost_submit_facts', () => {
   })
 
   it('does not make a new version out of the same facts', async () => {
-    const call = toolbox('daily')
+    const call = toolbox('baseline')
     await call('outpost_submit_facts', facts)
     expect(await call('outpost_submit_facts', facts)).toEqual({ factsVersion: 1, unchanged: true })
     expect(repo.latestFacts(product.id)!.version).toBe(1)

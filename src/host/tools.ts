@@ -38,7 +38,8 @@ const UNOPENED_NOTE = 'openedVia=unopened：quoteFound/supportsClaim 按未知�
 const TOOL_NAMES: Record<RunToolKind, string[]> = {
   recommend: ['outpost_submit_candidate', 'outpost_done'],
   baseline: ['outpost_read', 'outpost_submit_card', 'outpost_submit_facts', 'outpost_done'],
-  daily: ['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_submit_facts', 'outpost_done'],
+  // No outpost_submit_facts: the key facts are nobody's check (the panel says 「AI 整理 · 未核查」), so only the baseline writes them.
+  daily: ['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_done'],
   verify: ['outpost_read_pending', 'outpost_report_check', 'outpost_add_source', 'outpost_done'],
   followup: ['outpost_read'],
 }
@@ -196,9 +197,12 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
     return { cardEditId: edit.id }
   }
 
-  /** The product's findings of the last 14 days, in the shape `isDuplicate` compares: with their raw source addresses. */
+  /**
+   * The product's findings of the last 14 days, in the shape `isDuplicate` compares: with their raw source addresses and
+   * what kind of page each is.
+   */
   const recentFindings = (productId: Id): RecentFinding[] => repo.findingsOfProduct(productId, RECENT_DAYS).map(f =>
-    ({ productId: f.productId, dedupeKey: f.dedupeKey, headline: f.headline, urls: repo.getSources(f.sourceIds).map(s => s.url) }))
+    ({ productId: f.productId, dedupeKey: f.dedupeKey, headline: f.headline, urls: repo.getSources(f.sourceIds).map(s => ({ url: s.url, kind: s.kind, isOfficial: s.isOfficial })) }))
 
   /** Everything of this product that waits for a check. */
   const waiting = (productId: Id) => ({
@@ -237,7 +241,7 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       }),
 
     tool('outpost_read',
-      '读取这个产品现有的资料：基本信息、维度、关键事实、各维度档案卡片（摘要、要点、正文 body 和它引用的 sources，body 里的 [n] 指 sources 里的第 n 个）、近 14 天已经提交过的发现（标题、状态、时间）、已经引用过的网址。开工前先读一遍：已经报告过的消息不要再提交，哪怕换了说法；已经引用过的网址不要当新来源。无参数。',
+      '读取这个产品现有的资料：基本信息、维度、关键事实、各维度档案卡片（摘要、要点、正文 body 和它引用的 sources，body 里的 [n] 指 sources 里的第 n 个）、近 14 天已经提交过的发现（标题、状态、时间）、已经引用过的网址。开工前先读一遍：已经报告过的消息不要再提交，哪怕换了说法；已经引用过的文章不要当新来源（更新日志、发布说明、应用商店页、官方博客这类会更新内容的页面上的新条目除外）。无参数。',
       NoArguments, () => {
         const productId = needProduct()
         const product = repo.getProduct(productId) ?? reject('找不到这个产品')
@@ -274,12 +278,13 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       }),
 
     tool('outpost_submit_finding',
-      '提交一条新发现（日更阶段，一件事一条）。headline ≤30 字，why ≤80 字（为什么值得看）；importance 为 major、notable 或 minor；claimKind 为 self（官方说自己的事）或 third-party（别人的说法）；dimensions 是它涉及的维度（可以为空，必须是这个产品的维度）；inference 表示这是不是你的推论；sources 至少 1 个来源，quote 是原文里的一句原话（1–200 字，逐字抄）。和近 14 天已有的发现重复（同一篇报道、同一个标题，或同一件事换了说法）会被拒绝，并告诉你重复的是哪条。成功返回 { findingId }；发现要等核查后才会进哨报。',
+      '提交一条新发现（日更阶段，一件事一条）。headline ≤30 字，why ≤80 字（为什么值得看）；importance 为 major、notable 或 minor；claimKind 为 self（官方说自己的事）或 third-party（别人的说法）；dimensions 是它涉及的维度（可以为空，必须是这个产品的维度）；inference 表示这是不是你的推论；sources 至少 1 个来源，quote 是原文里的一句原话（1–200 字，逐字抄）。和近 14 天已有的发现重复（同一篇报道、同一个标题，或同一件事换了说法）会被拒绝，并告诉你重复的是哪条；官方页面和应用商店页上的新条目不因网址相同算重复。成功返回 { findingId }；发现要等核查后才会进哨报。',
       SubmitFinding, args => {
         const productId = needProduct()
         checkDimensions(productId, 'dimensions', args.dimensions)
         const urls = args.sources.map(s => s.url)
-        const twin = recentFindings(productId).find(r => isDuplicate({ productId, headline: args.headline, urls }, [r]))
+        const cited = args.sources.map(s => ({ url: s.url, kind: s.kind, isOfficial: s.isOfficial }))
+        const twin = recentFindings(productId).find(r => isDuplicate({ productId, headline: args.headline, urls: cited }, [r]))
         if (twin) reject(`这条和已有发现重复：${twin.headline}`)
         const sources = storeSources(args.sources)
         const finding = repo.addFinding({

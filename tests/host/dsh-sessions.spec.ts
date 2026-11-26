@@ -314,10 +314,11 @@ describe('DshSessionDriver.nudge', () => {
 })
 
 describe('DshSessionDriver.startInteractive', () => {
-  it('opens the follow-up chat with its tools and the first message, without waiting for an answer', async () => {
+  it('opens the follow-up chat on DSH\'s standard preset with its tools and the first message, without waiting for an answer', async () => {
     const tools = researchTools('followup', { repo: {} as never, runId: 'r1', trackId: null, productId: 'p1', now: () => new Date(), icons: { fetch: async () => null }, onDone: () => {} })
     await driver.startInteractive({ sessionId: 'outpost-ask-1', title: '追问 · Cursor', prompt: '它的团队版多少钱？', tools })
-    expect(host.sessionController.create).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'outpost-ask-1', agentPreset: 'outpost-researcher' }))
+    // The user's own chat (design §7.7): DSH's ordinary agent, not the research preset, which has only the web.
+    expect(host.sessionController.create).toHaveBeenCalledWith({ sessionId: 'outpost-ask-1', workspaceId: `ws-${workspaceDir}`, agentPreset: 'standard' })
     expect(host.sessionController.rename).toHaveBeenCalledWith({ sessionId: 'outpost-ask-1', title: '追问 · Cursor' })
     expect([...host.tools('outpost-ask-1').keys()]).toEqual(['outpost_read'])
     expect(host.sent('outpost-ask-1')).toEqual([expect.objectContaining({ content: [{ type: 'text', text: '它的团队版多少钱？' }] })])

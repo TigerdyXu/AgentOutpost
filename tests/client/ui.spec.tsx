@@ -90,7 +90,7 @@ it('labels each tag kind with the design’s words', async () => {
   await mount(<>{TAG_KINDS.map(kind => <Tag key={kind} kind={kind} />)}</>)
   expect(all('.op-tag').map(tag => [tag.dataset.kind, tag.textContent])).toEqual([
     ['official', '官方'], ['inference', '推论'], ['ai', 'AI 归纳'], ['fresh', '今天改过'], ['unconfirmed', '待确认'],
-    ['unopened', '原文打不开'], ['late', '迟到'], ['major', '重要'], ['notable', '值得留意'], ['promoted', '已证实'],
+    ['unopened', '原文打不开'], ['late', '迟到'], ['major', '重要'], ['notable', '值得留意'], ['promoted', '已证实'], ['unchecked', 'AI 整理 · 未核查'],
   ])
 })
 

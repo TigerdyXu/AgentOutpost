@@ -1,5 +1,5 @@
 import { canonicalUrl } from './url.ts'
-import type { Id } from './types.ts'
+import type { Id, SourceKind } from './types.ts'
 
 // The one canonicalUrl lives in url.ts and keeps the query (a WeChat article is told apart only by its query).
 export { canonicalUrl }
@@ -34,21 +34,47 @@ export function findingKey(productId: Id, headline: string, urls: string[]): str
   return JSON.stringify([productId, headlineText(headline), canonicalUrls(urls)])
 }
 
+/**
+ * A source of a finding as `isDuplicate` sees it: its raw address, with its kind and whether it is the product's own when
+ * those are known (a bare address counts as an ordinary article).
+ */
+export type DedupeSource = string | { url: string; kind: SourceKind; isOfficial: boolean }
+
+/** The address of a `DedupeSource`. */
+export const sourceUrl = (s: DedupeSource): string => typeof s === 'string' ? s : s.url
+
+/**
+ * A page whose content changes under one address: an official page (a changelog, release notes, the official blog) or an
+ * app store page. Two findings citing it can be two different pieces of news, so sharing it says nothing.
+ */
+const isStandingPage = (s: DedupeSource) => typeof s !== 'string' && (s.isOfficial || s.kind === 'official' || s.kind === 'appstore')
+
+/** The canonical addresses of the `sources` that are articles (not standing pages), empty ones dropped. */
+function articleUrls(sources: DedupeSource[], standing: Set<string>): Set<string> {
+  return new Set(sources.map(sourceUrl).filter((u) => u.trim() !== '').map(canonicalUrl).filter((u) => !standing.has(u)))
+}
+
 /** What `isDuplicate` needs to know about an earlier finding. `headline` is the finding's own headline, as written. */
-export interface RecentFinding { productId: Id; headline: string; dedupeKey: string; urls: string[] }
+export interface RecentFinding { productId: Id; headline: string; dedupeKey: string; urls: DedupeSource[] }
 
 /**
  * Whether a candidate finding repeats a recent one of the same product. It does if any of these holds:
  * - the key is the same (same headline text over the same articles);
- * - they share an article (canonical URL), whatever the headlines say;
+ * - they share an article (canonical URL), whatever the headlines say. A standing page (official, or an app store page,
+ *   as either side describes it) does not count: a changelog or an App Store page shows new entries under one address;
  * - the headline text is the same (whitespace, punctuation and case ignored), whatever articles each cites: the same
  *   news found again through another repost, or submitted again the next day.
  * `urls` on both sides are the raw source addresses, not canonical forms. Findings of other products never match, and
  * a headline that is nothing but punctuation and spaces is not compared by its text.
  */
-export function isDuplicate(c: { productId: Id; headline: string; urls: string[] }, recent: RecentFinding[]): boolean {
-  const key = findingKey(c.productId, c.headline, c.urls)
-  const mine = new Set(canonicalUrls(c.urls))
+export function isDuplicate(c: { productId: Id; headline: string; urls: DedupeSource[] }, recent: RecentFinding[]): boolean {
+  const key = findingKey(c.productId, c.headline, c.urls.map(sourceUrl))
   const text = headlineText(c.headline)
-  return recent.some((r) => r.productId === c.productId && (r.dedupeKey === key || (text !== '' && headlineText(r.headline) === text) || canonicalUrls(r.urls).some((u) => mine.has(u))))
+  return recent.some((r) => {
+    if (r.productId !== c.productId) return false
+    if (r.dedupeKey === key || (text !== '' && headlineText(r.headline) === text)) return true
+    const standing = new Set([...c.urls, ...r.urls].filter(isStandingPage).map((s) => canonicalUrl(sourceUrl(s))))
+    const mine = articleUrls(c.urls, standing)
+    return [...articleUrls(r.urls, standing)].some((u) => mine.has(u))
+  })
 }

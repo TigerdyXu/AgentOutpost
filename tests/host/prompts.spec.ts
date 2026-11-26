@@ -60,8 +60,20 @@ describe('renderPrompt', () => {
     for (const rule of [
       'outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', "outpost_done('无新动态')", 'recentFindings', 'knownUrls', '2026-11-24',
       '发版', '更新日志', '官方公告', '报道', '用户口碑', 'self', 'third-party', 'major', 'notable', 'minor', 'findingIds', '逐字', '不要凑数',
-      '在 outpost_read 给的 body 上改',
+      '在 outpost_read 给的 body 上改', 'dimensions',
     ]) expect(daily, rule).toContain(rule)
     expect(daily.indexOf('outpost_read')).toBeLessThan(daily.indexOf('outpost_submit_finding'))
+    expect(daily).not.toContain('outpost_submit_facts') // the daily run has no such tool
+    // The dimensions a finding touches are asked for in the step that describes the finding.
+    const step4 = daily.slice(daily.indexOf('4. '), daily.indexOf('5. '))
+    expect(step4).toMatch(/dimensions[^\n]*outpost_read/)
+  })
+
+  it('tells the daily analyst that pages updated in place stay sources of new entries, and to skip only news already reported', () => {
+    const daily = renderPrompt('daily', DAILY_VARS)
+    const step1 = daily.slice(daily.indexOf('1. '), daily.indexOf('2. '))
+    for (const page of ['更新日志', '发布说明', 'App Store', '官方博客']) expect(step1, page).toContain(page)
+    expect(step1).toMatch(/knownUrls[^\n]*新条目[^\n]*recentFindings/)
+    expect(daily).not.toContain('knownUrls 里的网址不算新来源')
   })
 })

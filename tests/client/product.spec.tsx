@@ -181,6 +181,9 @@ describe('the profile', () => {
     await show()
     const facts = all('.op-fact').map(fact => [fact.querySelector('.op-fact-k')?.textContent, fact.querySelector('.op-fact-v')?.textContent])
     expect(facts).toEqual([['形态', 'App 内代理'], ['平台', '安卓 · iOS 内测'], ['价格', '免费'], ['首发', '2026-09'], ['对标', 'Meta Muse、蚂蚁灵光']])
+    // Nothing checks the key facts, and they cite nothing: the strip says so.
+    const unchecked = document.querySelector<HTMLElement>('.op-facts-note .op-tag')!
+    expect([unchecked.dataset.kind, unchecked.textContent]).toEqual(['unchecked', 'AI 整理 · 未核查'])
     expect(document.querySelector('.op-positioning')?.textContent).toBe('住在豆包里的个人代理：记住你的习惯，替你跨 App 跑腿。')
     expect(dcards().map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['定位', '目标人群', '价值场景', '体验', '关键技术', '商业化'])
     // A card is the dimension's name, its conclusions, how many sources stand behind it, and the way to open it.
@@ -210,9 +213,10 @@ describe('the profile', () => {
     expect(all('.op-fact').map(fact => fact.querySelector('.op-fact-v')?.textContent)).toEqual(['App 内代理', '—', '免费', '2026-09', '—'])
     expect(document.querySelector('.op-positioning')).toBeNull()
     unmount()
-    // No facts at all: every one is —, and the strip stays.
+    // No facts at all: every one is —, and the strip stays, with nothing to call unchecked.
     await show(view({ facts: null }))
     expect(all('.op-fact').map(fact => fact.querySelector('.op-fact-v')?.textContent)).toEqual(['—', '—', '—', '—', '—'])
+    expect(document.querySelector('.op-facts-note')).toBeNull()
   })
 
   it('marks only a card changed today as 今天改过, never a first version', async () => {

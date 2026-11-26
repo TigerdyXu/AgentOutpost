@@ -35,7 +35,10 @@ export interface SessionDriver {
   run(spec: SessionSpec, signal: AbortSignal): Promise<SessionOutcome>
   /** Say one more thing in the same session and wait for that round to end. */
   nudge(sessionId: string, text: string, signal: AbortSignal): Promise<SessionOutcome>
-  /** A follow-up chat for the user: create the session and send the message, without waiting for an answer. */
+  /**
+   * A follow-up chat for the user: create the session (on the host's ordinary chat preset, not the research one) and send
+   * the message, without waiting for an answer.
+   */
   startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void>
   /** Gives an existing session (a follow-up chat, after a restart) its tools again, without sending it anything. */
   rebind(sessionId: string, tools: ToolSpec[]): void

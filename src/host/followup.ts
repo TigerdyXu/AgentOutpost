@@ -1,5 +1,6 @@
 /**
- * 追问 (design §5.2, §7.7): a DSH chat for the user about one finding. The session 「追问 · <产品> <标题>」 starts with a
+ * 追问 (design §5.2, §7.7): a DSH chat for the user about one finding, on DSH's standard preset (the driver's
+ * `startInteractive`), not the research one. The session 「追问 · <产品> <标题>」 starts with a
  * message (`prompts/followup.md`) holding the finding, its sources with their quotes, and the summary and points of each
  * of the product's cards; its one Outpost tool is `outpost_read`, for the full dossier. The panel then opens the session.
  */

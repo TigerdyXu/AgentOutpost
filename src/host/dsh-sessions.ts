@@ -1,6 +1,7 @@
 /**
  * `SessionDriver` on DSH: Outpost's research sessions are ordinary DSH sessions in the 「前哨」 workspace, running the
- * `outpost-researcher` preset. Each gets the `outpost_*` tools of its round on its own agent, and is told what to do with a
+ * `outpost-researcher` preset (a 追问 chat runs DSH's `standard` preset instead: it is the user's own conversation, design
+ * §7.7). Each gets the `outpost_*` tools of its round on its own agent, and is told what to do with a
  * message of Outpost's own (`source.kind: 'dsh-outpost'`), never one posing as the user. A round ends with the end of the
  * turn that took its message; what it cost is the usage of that turn's assistant messages.
  *
@@ -31,6 +32,11 @@ declare module '@deepseek-ai/dsh-llm' {
 /** Every Outpost session id starts with this; the tools go only to sessions that carry it. */
 export const SESSION_PREFIX = 'outpost-'
 export const AGENT_PRESET = 'outpost-researcher'
+/**
+ * The preset of a 追问 chat: DSH's own `standard` agent (`packages/bundle/web-app/presets/standard.patch.yml` in the dsh
+ * source), which the desktop and web profiles compose, with `outpost_read` added.
+ */
+export const FOLLOWUP_PRESET = 'standard'
 /** Title of the DSH workspace the sessions live in. */
 export const WORKSPACE_TITLE = '前哨'
 
@@ -126,7 +132,7 @@ export class DshSessionDriver implements SessionDriver {
   }
 
   async startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void> {
-    const agent = await this.open(spec)
+    const agent = await this.open(spec, FOLLOWUP_PRESET)
     agent.followup(this.message(spec.prompt))
     await this.persist()
   }
@@ -163,8 +169,8 @@ export class DshSessionDriver implements SessionDriver {
     this.attached.delete(sessionId)
   }
 
-  /** The live agent of the session, created (and titled) first when it does not exist; its tools registered. */
-  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>): Promise<Agent> {
+  /** The live agent of the session, created (and titled) first, on `preset`, when it does not exist; its tools registered. */
+  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, preset = AGENT_PRESET): Promise<Agent> {
     const id = spec.sessionId
     if (!id.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${id}" must start with "${SESSION_PREFIX}"`)
     // Bound before the agent exists, so that `agent/created` finds the tools.
@@ -173,7 +179,7 @@ export class DshSessionDriver implements SessionDriver {
     if (!agent) {
       await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
       const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
-      const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: AGENT_PRESET })
+      const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
       if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
       agent = await this.resolve(id)
       if (!agent) throw new Error(`dsh-outpost: session "${id}" vanished right after it was created`)

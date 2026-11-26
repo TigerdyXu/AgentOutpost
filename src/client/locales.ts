@@ -49,6 +49,7 @@ const TEXT = {
   'tag.major': ['重要', 'Major'],
   'tag.notable': ['值得留意', 'Notable'],
   'tag.promoted': ['已证实', 'Confirmed'],
+  'tag.unchecked': ['AI 整理 · 未核查', 'Compiled by AI · unchecked'],
 
   'source.open': ['打开原文：{title}', 'Open the source: {title}'],
 

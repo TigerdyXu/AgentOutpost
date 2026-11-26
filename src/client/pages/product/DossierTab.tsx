@@ -13,7 +13,10 @@ import { SourceChip } from '../../ui/SourceChip.tsx'
 import { Tag } from '../../ui/Tag.tsx'
 import { RichText } from './richText.tsx'
 
-/** What the strip says of `facts`: five cells, 「—」 for what is not known. */
+/**
+ * What the strip says of `facts`: five cells, 「—」 for what is not known. The facts cite no source and no check looks at
+ * them, so known ones carry 「AI 整理 · 未核查」.
+ */
 function FactsStrip({ facts }: { facts: Facts | null }): ReactNode {
   const { t } = useShell()
   const none = t('dossier.fact.none')
@@ -24,9 +27,12 @@ function FactsStrip({ facts }: { facts: Facts | null }): ReactNode {
     [t('dossier.fact.first'), facts?.firstReleased.trim() || none],
     [t('dossier.fact.rivals'), facts && facts.rivals.length > 0 ? facts.rivals.join(t('today.list')) : none],
   ]
-  return <dl className="op-facts">
-    {cells.map(([name, value]) => <div key={name} className="op-fact"><dt className="op-fact-k">{name}</dt><dd className="op-fact-v">{value}</dd></div>)}
-  </dl>
+  return <>
+    <dl className="op-facts">
+      {cells.map(([name, value]) => <div key={name} className="op-fact"><dt className="op-fact-k">{name}</dt><dd className="op-fact-v">{value}</dd></div>)}
+    </dl>
+    {facts && <p className="op-facts-note"><Tag kind="unchecked" /></p>}
+  </>
 }
 
 interface CardProps {
