@@ -804,6 +804,52 @@ describe('runs', () => {
     expect(repo.getRun(runId)).toMatchObject({ kind: 'daily', productId: 'p1', date: TODAY })
   })
 
+  it('retries a failed check as a check alone, after which the daily run it failed counts as done', async () => {
+    const track = addTrack({ dimensions: [{ key: 'positioning', label: '定位' }] })
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    card('p1', 'positioning', 1, [])
+    const daily = addRun('daily', { status: 'failed', error: '核查没有完成：模型返回了无法解析的内容' }, TODAY, { productId: 'p1' })
+    const failed = addRun('verify', { status: 'failed', error: '模型返回了无法解析的内容' }, TODAY, { productId: 'p1' })
+    const source = repo.addSource({
+      url: 'https://cursor.com/changelog/2-0', title: 'Cursor 2.0', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true,
+      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+    })
+    const waiting = repo.addFinding({ // what the daily run handed in, still waiting for a check
+      productId: 'p1', runId: daily.id, headline: '后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [source.id], status: 'pending',
+      statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: randomUUID(), verifiedOn: null,
+    })
+    host.driver.script['outpost-verify-'] = checksAll
+
+    const { runId } = ok(await host.call('POST', `runs/${failed.id}/retry`)).json<ApiResponse<'POST runs/:id/retry'>>()
+
+    expect(repo.getRun(runId)).toMatchObject({ kind: 'verify', productId: 'p1', date: TODAY })
+    await vi.waitFor(() => { expect(repo.getRun(daily.id)).toMatchObject({ status: 'done', error: null }) })
+    expect(host.driver.runs.map(r => r.title)).toEqual(['前哨 · Cursor 核查 2026-11-25']) // no daily session, only the check
+    expect(repo.getFinding(waiting.id)).toMatchObject({ status: 'verified', verifiedOn: TODAY })
+    await vi.waitFor(() => { expect(repo.getBrief(TODAY)!.findingIds).toEqual([waiting.id]) })
+  })
+
+  it('refuses to retry what was already done again: a later run of the same work, a finished update that day, a newer batch', async () => {
+    const track = addTrack()
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    const daily = addRun('daily', { status: 'failed', error: '网络错误' }, TODAY, { productId: 'p1' })
+    addRun('daily', { status: 'done' }, TODAY, { productId: 'p1' }) // the scheduler tried it once more, and it went through
+    const check = addRun('verify', { status: 'failed', error: '模型出错' }, '2026-11-24', { productId: 'p1' })
+    addRun('verify', { status: 'failed', error: '模型又出错' }, '2026-11-24', { productId: 'p1' }) // a later check that day: that one is the one to retry
+    addRun('daily', { status: 'done' }, '2026-11-23', { productId: 'p1' })
+    const afterDone = addRun('verify', { status: 'failed', error: '模型出错' }, '2026-11-23', { productId: 'p1' }) // that day's update is done
+    const recommend = addRun('recommend', { status: 'failed', error: '模型出错' }, TODAY, { trackId: track.id })
+    addRun('recommend', { status: 'done' }, TODAY, { trackId: track.id })
+
+    for (const run of [daily, check, afterDone, recommend]) {
+      const reply = await host.call('POST', `runs/${run.id}/retry`)
+      expect(reply.status, run.kind).toBe(409)
+      expect(reply.json()).toEqual({ error: '已经重新跑过了' })
+    }
+    await flush()
+    expect(host.driver.runs).toEqual([])
+  })
+
   it('retries a failed recommendation as a new batch, and a failed baseline as a new baseline', async () => {
     const track = addTrack({ status: 'picking' })
     const recommend = addRun('recommend', { status: 'failed', error: '模型出错' }, TODAY, { trackId: track.id })

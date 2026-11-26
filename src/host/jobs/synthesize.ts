@@ -32,6 +32,8 @@ export interface BriefDeps {
   clock: Clock
   /** Read on each use: the day's budget (the gist is not written once it is spent) and the prices of its tokens. */
   settings: () => Pick<RuntimeSettings, 'dailyBudgetYuan' | 'prices'>
+  /** Aborts when Outpost stops (`JobRunner.lifetime`): a gist being written is given up at once, not after its 2 minutes. */
+  stop?: AbortSignal
 }
 
 /** The gist is at most this many characters (code points), punctuation included. */
@@ -45,8 +47,8 @@ const IMPORTANCE = { major: '重要', notable: '值得留意', minor: '小更新
  * Writes the brief of `date` from what is known now and stores it, replacing an earlier one of that day (whose
  * creation time it keeps). When nothing `major` or `notable` is shown the gist is `NO_NEWS_GIST` and the model is not
  * called; otherwise the model writes it (`prompts/synthesize.md`) in a `synthesize` run dated `date`, which carries its
- * cost. When the answer cannot be used (empty, over 60 字, the call failed, or the day's budget is spent) the gist is a
- * plain sentence made from the top finding.
+ * cost. When the answer cannot be used (empty, over 60 字, the call failed or was cut short by a stop, or the day's budget
+ * is spent) the gist is a plain sentence made from the top finding.
  */
 export async function synthesizeBrief(deps: BriefDeps, date: string): Promise<Brief> {
   return compose(deps, date, null)
@@ -155,12 +157,14 @@ async function writeGist(deps: BriefDeps, date: string, main: Finding[]): Promis
   repo.updateRun(run.id, { status: 'running', startedAt: clock.now().toISOString() })
   try {
     const user = [`日期：${date}`, '今天值得看的发现（按重要程度排）：', ...main.map((f, i) => describe(f, i + 1, name(f.productId), date))].join('\n')
-    const { text, usage } = await model.complete({ system: renderPrompt('synthesize', {}), user }, AbortSignal.timeout(GIST_TIMEOUT_MS))
+    const timeout = AbortSignal.timeout(GIST_TIMEOUT_MS)
+    const { text, usage } = await model.complete({ system: renderPrompt('synthesize', {}), user }, deps.stop ? AbortSignal.any([timeout, deps.stop]) : timeout)
     const gist = cleanGist(text)
     end({ status: 'done', usage, costYuan: costOf(usage, settings().prices), error: gist === null ? UNUSABLE_GIST : null })
     return gist ?? fallback
   } catch (error) {
-    end({ status: 'failed', error: error instanceof Error ? error.message : String(error) })
+    // Cut short by a stop: interrupted, not broken (the brief is written again on the next start).
+    end({ status: 'failed', error: deps.stop?.aborted ? STOPPED_ERROR : error instanceof Error ? error.message : String(error) })
     return fallback
   }
 }

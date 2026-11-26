@@ -125,7 +125,11 @@ export interface Api {
   'POST followup': { body: { findingId: Id }; response: { sessionId: string } }
   /** The runs of the last `days` days (today counts as one), newest first. */
   'GET runs': { query?: { days?: number }; response: { runs: RunRow[] } }
-  /** Runs a failed run's work again and answers with the new run. */
+  /**
+   * Runs a failed run's work again and answers with the new run: a failed check of a tracked product as that check alone,
+   * for its day. 409 「已经重新跑过了」 when that work was done again since (a later run of the same work, a finished
+   * update of the product that day, a newer batch of the track).
+   */
   'POST runs/:id/retry': { response: { runId: Id } }
 }
 
@@ -293,14 +297,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
 
   /**
    * Starts work on the product unless some is in flight, and answers with the run in flight, else the first run `start`
-   * made, else (a baseline with nothing left to do but settle, say) the product's latest run of that work.
+   * made, else (a baseline with nothing left to do but settle, say) the product's latest run of that work. Runs dated
+   * before `since` (default: yesterday) are not looked at, as in `startedRun`.
    */
-  const productWork = async (p: Product, start: () => Promise<unknown>, label: string): Promise<Id> => {
+  const productWork = async (p: Product, start: () => Promise<unknown>, label: string, since = shiftDate(rt.today(), -1)): Promise<Id> => {
     const ofProduct = (r: Run) => r.productId === p.id && PRODUCT_WORK.has(r.kind)
     const active = repo.activeRuns(p.id).find(ofProduct)
     if (active) return active.id
-    const runId = await startedRun(ofProduct, () => { rt.background(start(), label) })
-    const latest = runId ?? repo.listRuns(shiftDate(rt.today(), -1)).find(ofProduct)?.id
+    const runId = await startedRun(ofProduct, () => { rt.background(start(), label) }, since)
+    const latest = runId ?? repo.listRuns(since).find(ofProduct)?.id
     if (latest === undefined) throw new Error(`${label} started no run`)
     return latest
   }
@@ -308,6 +313,25 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   const updateNow = (p: Product) => productWork(p, () => rt.scheduler.runProductNow(p.id), `update of product ${p.id}`)
   /** The product's baseline again (what it lacks), through the scheduler likewise. */
   const baselineNow = (p: Product) => productWork(p, () => rt.scheduler.baseline([p.id]), `baseline of product ${p.id}`)
+  /** The product's check alone, counted toward `date`, through the scheduler likewise (重试 of a failed check). */
+  const checkNow = (p: Product, date: string) => {
+    const yesterday = shiftDate(rt.today(), -1)
+    return productWork(p, () => rt.scheduler.recheck(p.id, date), `check of product ${p.id}`, date < yesterday ? date : yesterday)
+  }
+
+  /**
+   * Whether the work of a failed run was done again since, so that 重试 would pay for it twice: for a daily update or a
+   * check, the product has a daily run of that day that is done, or a later run of the same kind that day (the scheduler
+   * tries a failed product once more and resumes an interrupted one; that later run is the one to retry if it failed
+   * too); for a recommendation, the track has a newer batch.
+   */
+  const redone = (run: Run): boolean => {
+    if (run.kind === 'recommend') return run.trackId !== null && repo.latestRun('recommend', { trackId: run.trackId })?.id !== run.id
+    if (run.kind !== 'daily' && run.kind !== 'verify') return false
+    const day = repo.runsOfDate(run.date).filter(r => r.productId === run.productId)
+    const later = day.slice(day.findIndex(r => r.id === run.id) + 1)
+    return day.some(r => r.kind === 'daily' && r.status === 'done') || later.some(r => r.kind === run.kind)
+  }
 
   const table: { [K in keyof Api]: Handler<K> } = {
     'GET health': () => ({ ok: true }),
@@ -516,6 +540,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST runs/:id/retry': async ({ params }) => {
       const run = repo.getRun(params.id!) ?? notFound('找不到这次运行')
       if (run.status !== 'failed') throw new ApiError(409, '只有失败的运行可以重试')
+      if (redone(run)) throw new ApiError(409, '已经重新跑过了')
       switch (run.kind) {
         case 'recommend': {
           if (!run.trackId) throw new ApiError(409, '这次推荐不属于任何赛道，没法重试')
@@ -527,8 +552,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           const p = product(run.productId ?? '')
           if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, '这个产品没有在跟踪，先恢复跟踪再更新')
           // A failed baseline is retried as one (for a tracked product too: the 7-day limit on top-ups is for the daily
-          // runs, not for the user asking); a failed update or check as 「立即更新」, which re-baselines a product in 建档中.
-          return { runId: await (run.kind === 'baseline' ? baselineNow(p) : updateNow(p)) }
+          // runs, not for the user asking); a failed update as 「立即更新」, which re-baselines a product in 建档中; a failed
+          // check of a tracked product as that check alone, for its day (the research it would check is already in).
+          if (run.kind === 'baseline') return { runId: await baselineNow(p) }
+          return { runId: await (run.kind === 'verify' && p.status === 'tracking' ? checkNow(p, run.date) : updateNow(p)) }
         }
         case 'synthesize': {
           // The model is asked only when the day has something to sum up; with nothing, the brief is rewritten all the same.

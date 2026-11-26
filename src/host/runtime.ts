@@ -110,7 +110,7 @@ export class Runtime {
     this.runner = new JobRunner({ repo: this.repo, driver: this.driver, clock: this.clock, settings: () => this.settings(), log })
     const jobs: JobDeps = { repo: this.repo, runner: this.runner, clock: this.clock, icons: this.icons }
     this.jobs = { ...jobs, verifyProduct: (productId, scope) => verifyProduct(jobs, productId, scope) }
-    this.briefs = { repo: this.repo, model: this.model, clock: this.clock, settings: () => this.settings() }
+    this.briefs = { repo: this.repo, model: this.model, clock: this.clock, settings: () => this.settings(), stop: this.runner.stopSignal }
     this.scheduler = new Scheduler({
       clock: this.clock,
       repo: this.repo,
@@ -120,6 +120,7 @@ export class Runtime {
       appendLate: (date, productId) => appendLate(this.briefs, date, productId),
       archiveOld: now => this.runner.archiveOld(now),
       rebaseline: productIds => baselineProducts(this.jobs, productIds),
+      verifyProduct: (productId, date) => verifyProduct(jobs, productId, 'daily', date),
       log,
     })
   }

@@ -242,6 +242,33 @@ describe('DshSessionDriver.run', () => {
     expect(await p).toMatchObject({ reason: 'timeout' })
   })
 
+  it('warns, naming the session, when a round ends without ever having seen which turn took its message', async () => {
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      // A DSH that neither announces the claim nor records the message: the round cannot tell its turn, and waits.
+      host.withoutClaimEvents()
+      host.failBeforeRecording('outpost-daily-p1')
+      const timer = new AbortController()
+      const p = driver.run(specOf(), timer.signal)
+      await host.started('outpost-daily-p1')
+      timer.abort()
+      expect(await p).toEqual({ reason: 'timeout', usage: zero })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-p1')
+      expect(warn.mock.calls.at(-1)![0]).toContain('turn')
+
+      // A round that knew its turn and simply ran out of time says nothing of the kind.
+      warn.mockClear()
+      const other = new AbortController()
+      const q = driver.run(specOf({ sessionId: 'outpost-daily-p2' }), other.signal)
+      await host.started('outpost-daily-p2') // its message is recorded (user/message): the round knows its turn
+      other.abort()
+      await q
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('reports timeout without sending anything when the signal has already aborted', async () => {
     const timer = new AbortController()
     timer.abort()

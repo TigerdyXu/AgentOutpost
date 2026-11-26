@@ -6,7 +6,7 @@ import { NO_NEWS_GIST } from '../../src/core/brief.ts'
 import { costOf } from '../../src/core/cost.ts'
 import type { Finding, Id, Importance, Run, RunStatus } from '../../src/core/types.ts'
 import { VERIFY_BUDGET_NOTE } from '../../src/host/jobs/daily.ts'
-import type { RuntimeSettings } from '../../src/host/jobs/runner.ts'
+import { STOPPED_ERROR, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { GIST_MAX_CHARS, appendLate, cleanGist, synthesizeBrief, type BriefDeps } from '../../src/host/jobs/synthesize.ts'
 import { PROMOTED_NOTE } from '../../src/host/jobs/verify.ts'
 import type { ModelClient } from '../../src/host/ports.ts'
@@ -212,6 +212,26 @@ describe('synthesizeBrief', () => {
     expect(repo.getBrief(DAY)!.findingIds).toEqual([waiting.id]) // still in the brief of its own day
     // How the panel tells it apart (documented in synthesize.ts): verified that day, as a promotion.
     expect(repo.getFinding(waiting.id)).toMatchObject({ verifiedOn: DAY_3, statusNote: PROMOTED_NOTE })
+  })
+
+  it('gives up on the gist at once when Outpost stops, instead of waiting up to 2 minutes', async () => {
+    const stop = new AbortController()
+    deps = { ...deps, stop: stop.signal }
+    let asked: AbortSignal | undefined
+    complete.mockImplementationOnce((_req, signal) => {
+      asked = signal
+      return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true }) })
+    })
+    found(daily('p1'), 'Cursor 后台 Agent 正式上线')
+
+    const writing = synthesizeBrief(deps, DAY)
+    await vi.waitFor(() => { expect(asked).toBeDefined() })
+    expect(asked!.aborted).toBe(false)
+    stop.abort()
+    expect(asked!.aborted).toBe(true)
+
+    expect((await writing).gist).toBe('Cursor 后台 Agent 正式上线') // the plain sentence, as for any answer it could not use
+    expect(synthRuns()[0]).toMatchObject({ status: 'failed', error: STOPPED_ERROR }) // interrupted, not broken
   })
 
   it('keeps what arrived while the model was writing the gist', async () => {

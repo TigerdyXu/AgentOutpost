@@ -260,6 +260,33 @@ describe('Runtime', () => {
     }
   })
 
+  it('stop does not wait for the brief\'s model call: the gist being written is given up at once', async () => {
+    seed(repo => {
+      product(repo, 'p1')
+      const run = repo.createRun({ kind: 'daily', date: '2026-11-25', trackId: null, productId: 'p1' })
+      repo.updateRun(run.id, { status: 'done' })
+      repo.addFinding({
+        productId: 'p1', runId: run.id, headline: 'Cursor 后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [], status: 'verified',
+        statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'k', verifiedOn: '2026-11-25',
+      })
+    })
+    let asked: AbortSignal | undefined
+    host.complete.mockImplementation((_req, signal) => {
+      asked = signal
+      return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true }) })
+    })
+    runtime = host.create()
+    runtime.start()
+    void runtime.scheduler.rewriteBrief('2026-11-25')
+    await vi.waitFor(() => { expect(asked).toBeDefined() })
+
+    const rt = runtime
+    runtime = undefined
+    await rt.stop() // with the 2-minute limit alone, this would wait (and the test time out)
+    expect(asked!.aborted).toBe(true)
+    expect(inspect(repo => repo.runsOfDate('2026-11-25', 'synthesize'))[0]).toMatchObject({ status: 'failed', error: STOPPED_ERROR })
+  })
+
   it('stop ends the sessions in flight, then closes the store, takes its tools back and releases the lock', async () => {
     const held = gate()
     host.driver.script['outpost-recommend-'] = async round => {

@@ -231,7 +231,9 @@ export class DshSessionDriver implements SessionDriver {
    * The turn is known when DSH claims the message (`agent/inbox/claimed`). It records the message (`user/message`) only
    * after checking the model, tools, system prompt, pre-step hooks and request, and a turn that fails or is blocked there
    * ends with no `user/message` (agent-loop `preStep`); matching on the record alone would wait for the time limit and
-   * lose the error. The record still marks the turn should a claim go unannounced.
+   * lose the error. The record still marks the turn should a claim go unannounced. A round that ends on `signal` without
+   * ever having seen either is logged as a warning naming the session: DSH's events no longer say which turn took the
+   * message (an adapter mismatch), and every round would otherwise end only at its time limit, silently.
    */
   private async round(agent: Agent, text: string, signal: AbortSignal): Promise<SessionOutcome> {
     const usage = noUsage()
@@ -255,6 +257,9 @@ export class DshSessionDriver implements SessionDriver {
     })
     const stop = () => { unclaimed(); unevented() }
     const onAbort = () => {
+      if (mine === undefined) {
+        this.ctx.logger.warn('dsh-outpost: session %s ended its round (time limit or stop) without seeing which turn took its message: no agent/inbox/claimed and no user/message for it. If this repeats, DSH\'s session events may have changed.', sessionId)
+      }
       try { this.ctx.sessionController.cancel({ sessionId }) } catch { /* no live agent: nothing runs to stop */ }
       settle({ reason: 'timeout', usage: { ...usage } })
     }

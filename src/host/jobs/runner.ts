@@ -140,6 +140,9 @@ export class JobRunner {
     this.hold(work.catch(error => { this.log(`${label} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`) }))
   }
 
+  /** Aborts when `stop` is called: work outside the sessions (the brief's model call) ends with them. */
+  get stopSignal(): AbortSignal { return this.lifetime.signal }
+
   /** Resolves once every session and tracked job, including those they start meanwhile, has finished. */
   async idle(): Promise<void> {
     while (this.pending.size) await Promise.all([...this.pending])

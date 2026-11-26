@@ -33,7 +33,7 @@ let scheduler: Scheduler
 let plays: Record<Id, Outcome[]>
 let holds: Record<Id, ReturnType<typeof gate>>
 let events: string[]
-let calls: { runDailyProduct: { productId: Id; date: string }[]; archiveOld: Date[]; rebaseline: Id[][] }
+let calls: { runDailyProduct: { productId: Id; date: string }[]; archiveOld: Date[]; rebaseline: Id[][]; verifyProduct: { productId: Id; date: string }[] }
 let trackId: Id
 
 const addProduct = (id: Id, name: string, status: 'tracking' | 'baselining' | 'paused' = 'tracking', withCard = true) => {
@@ -53,7 +53,7 @@ beforeEach(() => {
   plays = {}
   holds = {}
   events = []
-  calls = { runDailyProduct: [], archiveOld: [], rebaseline: [] }
+  calls = { runDailyProduct: [], archiveOld: [], rebaseline: [], verifyProduct: [] }
   trackId = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }], status: 'active' }).id
   addProduct('p1', 'Cursor')
   addProduct('p2', 'Windsurf')
@@ -85,6 +85,14 @@ beforeEach(() => {
     appendLate: (date, productId) => appendLate(briefDeps, date, productId),
     archiveOld: async now => { calls.archiveOld.push(now) },
     rebaseline: async ids => { calls.rebaseline.push(ids); events.push(`rebaseline ${ids.join(',')}`) },
+    verifyProduct: async (productId, date) => {
+      calls.verifyProduct.push({ productId, date })
+      events.push(`check ${productId}`)
+      const run = repo.createRun({ kind: 'verify', date, trackId: null, productId })
+      await holds[`check ${productId}`]?.promise
+      repo.updateRun(run.id, { status: 'done', endedAt: clock.clock.now().toISOString() })
+      events.push(`check ${productId} done`)
+    },
     log,
   }
   scheduler = new Scheduler(deps)
@@ -332,6 +340,54 @@ describe('Scheduler: when to run', () => {
     clock.set('2026-11-25T07:12') // three checks
     expect(clock.pending()).toEqual([local('2026-11-25T08:00')])
     expect(log.mock.calls.filter(([message]) => message.includes('99:99'))).toHaveLength(1)
+  })
+
+  it('writes no brief and does not count the day when nothing is tracked yet, so products tracked later still run that day', async () => {
+    db.prepare('DELETE FROM track_products').run() // a fresh install: nothing tracked yet
+    clock.set('2026-11-25T09:00')
+    scheduler.start() // past 08:00: today is caught up at once, with nothing to run
+    await flush()
+    expect(calls.runDailyProduct).toEqual([])
+    expect(repo.getBrief(DAY)).toBeNull() // no 「今天没有值得看的变化」 for a day nothing was looked at
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined()
+
+    repo.linkProduct(trackId, 'p1') // the user picks a product; it is tracked once its baseline is through
+    settings.runTime = '09:02' // and moves the run time two minutes ahead
+    clock.set('2026-11-25T09:01')
+    expect(clock.pending()).toEqual([local('2026-11-25T09:02')])
+    clock.set('2026-11-25T09:02')
+    await flush()
+    expect(dailyIds()).toEqual(['p1'])
+    expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p1'])
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
+  it('still re-baselines products stuck in 建档中 on a day with nothing tracked, once that day', async () => {
+    db.prepare('DELETE FROM track_products').run()
+    addProduct('p4', 'Zed', 'baselining', false) // its baseline failed yesterday
+    deps.rebaseline = async ids => { calls.rebaseline.push(ids); for (const id of ids) recordBaseline(id, 'failed') }
+    scheduler = new Scheduler(deps)
+    clock.set('2026-11-25T09:00')
+    scheduler.start()
+    await flush()
+    expect(calls.rebaseline).toEqual([['p4']])
+    expect(repo.getBrief(DAY)).toBeNull()
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined()
+
+    scheduler.stop()
+    clock.set('2026-11-25T11:00')
+    const next = new Scheduler(deps) // the desktop app is opened again the same day: the day runs again, Zed is not baselined again
+    next.start()
+    await flush()
+    next.stop()
+    expect(calls.rebaseline).toEqual([['p4']])
+
+    clock.set('2026-11-26T09:00')
+    const tomorrow = new Scheduler(deps)
+    tomorrow.start()
+    await flush()
+    tomorrow.stop()
+    expect(calls.rebaseline).toEqual([['p4'], ['p4']]) // the next day it is tried again
   })
 
   it('stops looking once stopped', async () => {
@@ -749,6 +805,20 @@ describe('Scheduler: 立即更新', () => {
     expect(complete).toHaveBeenCalledOnce()
   })
 
+  it('does not run a product again that 立即更新 finished while it waited in the day\'s line', async () => {
+    settings.maxParallel = 1
+    holds.p1 = gate() // the day holds its only place with Cursor; Windsurf and Cline wait in line
+    const day = scheduler.runDay(DAY)
+    await flush()
+
+    await scheduler.runProductNow('p3') // Cline is updated now
+    holds.p1!.open()
+    await day
+
+    expect(dailyIds()).toEqual(['p1', 'p3', 'p2']) // not Cline a second time
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+  })
+
   it('waits for the product\'s run in flight rather than starting a second one beside it', async () => {
     holds.p1 = gate()
     const day = scheduler.runDay(DAY)
@@ -841,6 +911,59 @@ describe('Scheduler: work started from outside the day', () => {
 
   it('idle resolves at once when nothing runs', async () => {
     await expect(scheduler.idle()).resolves.toBeUndefined()
+  })
+})
+
+describe('Scheduler: 重试 of a failed check', () => {
+  const CHECK_FAILED = '核查没有完成：模型返回了无法解析的内容'
+
+  it('checks the product again without a daily session; its daily run then counts as done and the brief takes it', async () => {
+    seedRun('p1', 'failed', CHECK_FAILED) // its research went through, its check did not
+    plays.p1 = [{ findings: [{ headline: 'Cursor 后台 Agent 正式上线' }] }]
+
+    await scheduler.recheck('p1', DAY)
+
+    expect(calls.verifyProduct).toEqual([{ productId: 'p1', date: DAY }])
+    expect(calls.runDailyProduct).toEqual([])
+    expect(repo.runsOfDate(DAY, 'daily')[0]).toMatchObject({ productId: 'p1', status: 'done', error: null })
+    expect(repo.getBrief(DAY)!.quietProductIds).toEqual(['p1']) // looked at, no longer 「未能更新」
+
+    await scheduler.runDay(DAY) // the day does not run Cursor again
+    expect(dailyIds()).toEqual(['p2', 'p3'])
+  })
+
+  it('leaves the daily run failed when the check did not finish again', async () => {
+    seedRun('p1', 'failed', CHECK_FAILED)
+    deps.verifyProduct = async () => { throw new Error('核查失败') }
+    scheduler = new Scheduler(deps)
+
+    await scheduler.recheck('p1', DAY)
+
+    expect(repo.runsOfDate(DAY, 'daily')[0]).toMatchObject({ status: 'failed', error: CHECK_FAILED })
+    expect(repo.getBrief(DAY)).toBeNull()
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('核查失败'))
+  })
+
+  it('never runs beside the product\'s daily run: it waits for it, and the day waits for the check', async () => {
+    holds.p1 = gate()
+    const day = scheduler.runDay(DAY)
+    await flush()
+    const check = scheduler.recheck('p1', DAY)
+    await flush()
+    expect(calls.verifyProduct).toEqual([]) // not beside the running update
+    holds.p1!.open()
+    await Promise.all([day, check])
+    expect(events.indexOf('daily p1 done')).toBeLessThan(events.indexOf('check p1'))
+
+    holds['check p2'] = gate()
+    const second = scheduler.recheck('p2', DAY)
+    await flush()
+    const now = scheduler.runProductNow('p2')
+    await flush()
+    expect(dailyIds().filter(id => id === 'p2')).toHaveLength(1) // 立即更新 waits for the check
+    holds['check p2']!.open()
+    await Promise.all([second, now])
+    expect(events.indexOf('check p2 done')).toBeLessThan(events.lastIndexOf('daily p2'))
   })
 })
 

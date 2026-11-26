@@ -17,6 +17,8 @@ const LOOKBACK_DAYS = 30
 
 /** The note on a daily run that did its work but whose check the budget did not allow: its findings wait, unshown, for the next check. */
 export const VERIFY_BUDGET_NOTE = '核查因预算未完成'
+/** How the error of a daily run that did its work but whose check failed begins (the check's own reason follows). */
+export const CHECK_NOT_DONE = '核查没有完成：'
 
 /**
  * Runs the daily session for the product, counted toward `date` (`YYYY-MM-DD`: its findings belong to that day's brief,
@@ -60,7 +62,7 @@ export async function runDailyProduct(deps: JobDeps, productId: Id, date: string
     const check = error.run
     if (check.status === 'skipped') repo.updateRun(run.id, { error: VERIFY_BUDGET_NOTE })
     else if (check.error === STOPPED_ERROR) repo.updateRun(run.id, { status: 'failed', error: STOPPED_ERROR })
-    else repo.updateRun(run.id, { status: 'failed', error: `核查没有完成：${error.message}` })
+    else repo.updateRun(run.id, { status: 'failed', error: `${CHECK_NOT_DONE}${error.message}` })
   }
   return repo.getRun(run.id)!
 }

@@ -63,6 +63,7 @@ beforeEach(() => {
     appendLate: (date, productId) => appendLate(briefs, date, productId),
     archiveOld: now => runner.archiveOld(now),
     rebaseline: ids => baselineProducts(baselines, ids),
+    verifyProduct: (productId, date) => verifyProduct(jobs, productId, 'daily', date),
     log,
   })
   trackId = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }], status: 'active' }).id
