@@ -63,9 +63,15 @@ const productIn = (state: StateView | undefined, id: Id): Product | undefined =>
 const otherTracks = (state: StateView | undefined, trackId: Id, id: Id): string[] =>
   (state?.tracks ?? []).filter(view => view.track.id !== trackId && view.products.some(item => item.product.id === id)).map(view => view.track.name)
 
-/** The line of a product Outpost followed already, which joined as it is: a paused one stays paused. */
-function followedLine(t: T, status: Product['status'], tracks: string[]): string {
-  return t(status === 'paused' ? 'add.pausedElsewhere' : 'add.linked', { tracks: tracks.length > 0 ? tracks.join('、') : t('add.otherTracks') })
+/**
+ * The line of a product that joined the track, by where the product stands. A paused one stays paused; a tracked one only
+ * tops up what this track adds; any other is being profiled, whoever began it. Both ways a product comes in (joined at
+ * once, or confirmed first) say it with this, so they agree.
+ */
+function joinedLine(t: T, status: Product['status'], tracks: string[]): string {
+  if (status !== 'paused' && status !== 'tracking') return t('add.building')
+  const named = tracks.length > 0 ? tracks.join('、') : t('add.otherTracks')
+  return t(status === 'paused' ? 'add.pausedElsewhere' : 'add.linked', { tracks: named })
 }
 
 /**
@@ -86,8 +92,8 @@ async function conclude(t: T, run: RunRow, attempt: Attempt, track: Track, state
     product = productIn(state, run.productId)
   }
   const shown: Shown = product ?? { id: run.productId, name: run.productName ?? attempt.name, iconPath: null }
-  const line = product && (product.status === 'tracking' || product.status === 'paused')
-    ? followedLine(t, product.status, otherTracks(state, track.id, product.id)) : t('add.building')
+  // A product that could not be read at all: a confirmation brings a new one, which is being profiled.
+  const line = product ? joinedLine(t, product.status, otherTracks(state, track.id, product.id)) : t('add.building')
   return { ok: true, line, product: shown }
 }
 
@@ -171,7 +177,7 @@ function AddProductPage({ view }: { view: TrackView }): ReactNode {
       } else {
         // Followed already: it joined without a confirmation, and what it says is known now.
         const known = productIn(state, answer.linked)
-        const line = answer.already ? t('add.already', { track: track.name }) : followedLine(t, answer.status, otherTracks(state, track.id, answer.linked))
+        const line = answer.already ? t('add.already', { track: track.name }) : joinedLine(t, answer.status, otherTracks(state, track.id, answer.linked))
         counter.current += 1
         addAttempt({
           key: `linked-${counter.current}`, name: typed, runId: null, before,
@@ -221,9 +227,12 @@ function AddProductPage({ view }: { view: TrackView }): ReactNode {
     const adjustment = refine.trim()
     let sent = false
     try {
-      await call('POST tracks/:id/recommend', { id: track.id, body: adjustment ? { refine: adjustment } : {} })
+      const { batchId } = await call('POST tracks/:id/recommend', { id: track.id, body: adjustment ? { refine: adjustment } : {} })
       sent = true
       setRefine('')
+      // The batch is the run's id. A round the budget turns away is over before the host answers, so it would never be seen
+      // running: it is watched from here, and its reason is told when it is read.
+      setWatched(previous => previous.includes(batchId) ? previous : [...previous, batchId])
     } catch (failure) {
       // 409: a round is running already. That is the round the user waits for; the words typed stay for the next.
       if (failure instanceof ApiError && failure.status === 409) sent = true

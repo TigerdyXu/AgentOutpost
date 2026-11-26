@@ -103,6 +103,8 @@ describe('middle column', () => {
     expect(pageTitle()).toBe('给「Personal Agent」添加产品')
     expect(first!.querySelectorAll('.op-row')[1]!.getAttribute('aria-current')).toBe('page')
     expect(second!.querySelectorAll('.op-row')[1]!.getAttribute('aria-current')).toBeNull()
+    // The quiet look is for a row that is not shown: the state attribute the stylesheet's blue rests on stays on the selected one.
+    expect(first!.querySelectorAll('.op-row')[1]!.hasAttribute('data-quiet')).toBe(true)
     await click(second!.querySelectorAll<HTMLElement>('.op-row')[1]!)
     expect(pageTitle()).toBe('给「AI 眼镜」添加产品')
     // The page is remembered for the next visit, with its track.

@@ -2689,7 +2689,7 @@ button.op-run-open {
 /* ---- hover, where hovering exists; keyboard focus everywhere ---- */
 
 @media (hover: hover) {
-  .op-row[data-quiet]:hover {
+  .op-row[data-quiet]:not([aria-current="page"]):hover {
     color: var(--dsw-alias-label-primary);
   }
 

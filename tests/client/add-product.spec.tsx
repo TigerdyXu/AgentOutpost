@@ -1,20 +1,23 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { act, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunKind } from '../../src/core/types.ts'
-import type { RunRow } from '../../src/host/api.ts'
+import type { RunRow, StateView } from '../../src/host/api.ts'
 import { AddProduct } from '../../src/client/pages/AddProduct.tsx'
-import type { Shell } from '../../src/client/shell/context.ts'
+import { ShellContext, useShell, type Shell } from '../../src/client/shell/context.ts'
 import { all, click, fail, find, mount, product, productView, run, settle, state, stubApi, submit, text, track, tracked, type, unmount } from '../fixtures/client.tsx'
 
-// ---- the track "Personal Agent" (t1) holds Meta Muse; "AI 眼镜" (t2) follows Ray-Ban Meta and a paused 雷鸟 ----
+// ---- the track "Personal Agent" (t1) holds Meta Muse; "AI 眼镜" (t2) follows Ray-Ban Meta, a paused 雷鸟 and a 智能戒指 still being profiled ----
 
 const TRACK = 't1'
 const muse = product('p1', 'Meta Muse')
 const rayban = product('p2', 'Ray-Ban Meta')
 const rokid = product('p3', '雷鸟', { status: 'paused' })
+const ring = product('p5', '智能戒指', { status: 'baselining' })
 const here = track(TRACK, 'Personal Agent', [tracked(muse)])
-const glasses = track('t2', 'AI 眼镜', [tracked(rayban), tracked(rokid)])
+const glasses = track('t2', 'AI 眼镜', [tracked(rayban), tracked(rokid), tracked(ring)])
 const board = state({ tracks: [here, glasses] })
 
 /** A run of the kind the page watches, for t1. */
@@ -171,6 +174,16 @@ describe('adding by name', () => {
     expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p2', tab: 'dossier' })
   })
 
+  it('says a followed product that is still being profiled is being profiled, with its page, like a confirmed one', async () => {
+    const { context } = await setup().show({ 'POST tracks/:id/add-product': { linked: 'p5', status: 'baselining' } })
+    await submitName('智能戒指')
+    // Not 「已在…跟踪」: nothing tracks it yet, its profile is being built.
+    expect(lines()).toEqual(['已加入，正在建档'])
+    expect(results()[0]!.getAttribute('data-state')).toBe('ok')
+    await click(find('智能戒指'))
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p5', tab: 'dossier' })
+  })
+
   it('says a paused product was added but is still paused, and one already in the track is already there', async () => {
     let answer: unknown = { linked: 'p3', status: 'paused' }
     await setup().show({ 'POST tracks/:id/add-product': () => answer })
@@ -207,6 +220,32 @@ describe('adding by name', () => {
     s.box.runs = [...s.box.runs, confirm('r3', 'done', { subject: '又一个', productId: 'p2', productName: 'Ray-Ban Meta' })]
     await advance(2000)
     expect(lines()[0]).toBe('已在「AI 眼镜」暂停，加进来了 · 仍是暂停')
+  })
+
+  it('judges by the snapshot taken when sent, not by the track as the state has it when the run ends', async () => {
+    fakeTimers()
+    const s = setup()
+    // The column reads the state again after the submit, and the new product is in the track by the time the run is over.
+    const ctl: { show?: (next: StateView) => void } = {}
+    function Rerenders() {
+      const shell = useShell()
+      const [current, setCurrent] = useState(shell.state)
+      ctl.show = setCurrent
+      return <ShellContext.Provider value={{ ...shell, state: current }}><AddProduct /></ShellContext.Provider>
+    }
+    const gemini = product('p9', 'Gemini Agent', { status: 'baselining' })
+    stubApi({
+      'GET runs': () => ({ runs: s.box.runs }), 'GET products/:id': productView(gemini),
+      'POST tracks/:id/add-product': () => { s.box.runs = [confirm('r1', 'running')]; return { runId: 'r1' } },
+    })
+    await mount(<Rerenders />, { state: board, route: { page: 'addProduct', trackId: TRACK } })
+    await submitName('Gemini Agent')
+    expect(lines()).toEqual(['正在确认这个产品…'])
+    await act(async () => { ctl.show!(state({ tracks: [track(TRACK, 'Personal Agent', [tracked(muse), tracked(gemini)]), glasses] })) })
+    s.box.runs = [confirm('r1', 'done', { productId: 'p9', productName: 'Gemini Agent' })]
+    await advance(2000)
+    // It was not in the track when it was sent, so it is not 「已经在…里了」.
+    expect(lines()).toEqual(['已加入，正在建档'])
   })
 
   it('shows one line for a name asked twice while it is being confirmed', async () => {
@@ -267,7 +306,7 @@ describe('asking for another batch', () => {
   it('asks for another batch with the adjustment and points to the suggestions', async () => {
     fakeTimers()
     const s = setup()
-    const { api, context } = await s.show({ 'POST tracks/:id/recommend': () => { s.box.runs = [recommend('r5', 'running')]; return { batchId: 'b2' } } })
+    const { api, context } = await s.show({ 'POST tracks/:id/recommend': () => { s.box.runs = [recommend('r5', 'running')]; return { batchId: 'r5' } } })
     expect(refineField().maxLength).toBe(60)
     await type(refineField(), '多找些国内的')
     await submit('.op-add-again')
@@ -287,7 +326,7 @@ describe('asking for another batch', () => {
 
   it('asks without an adjustment too', async () => {
     const s = setup()
-    const { api } = await s.show({ 'POST tracks/:id/recommend': () => { s.box.runs = [recommend('r5', 'queued')]; return { batchId: 'b2' } } })
+    const { api } = await s.show({ 'POST tracks/:id/recommend': () => { s.box.runs = [recommend('r5', 'queued')]; return { batchId: 'r5' } } })
     await click('再推荐一批')
     expect(requestsFor(api, 'POST', 'tracks/t1/recommend').map(r => r.body ?? {})).toEqual([{}])
     expect(find('正在找…')).toBeTruthy()
@@ -318,7 +357,21 @@ describe('asking for another batch', () => {
     expect(find('正在找…').hasAttribute('disabled')).toBe(true)
   })
 
-  it('shows any other failure, and says when the round it asked for did not run', async () => {
+  it('explains a round the budget turned away at once, though the first reading after the ask already says skipped', async () => {
+    const s = setup()
+    // The host finishes a refused round before it answers, and the batch it names is that run: it is never seen running.
+    const { api } = await s.show({
+      'POST tracks/:id/recommend': () => { s.box.runs = [recommend('r8', 'skipped', { error: '今日总预算已用完' })]; return { batchId: 'r8' } },
+    })
+    await click('再推荐一批')
+    expect(requestsFor(api, 'POST', 'tracks/t1/recommend')).toHaveLength(1)
+    expect(document.querySelector('.op-add-again [role="status"]')?.textContent).toBe('没跑成：今日总预算已用完')
+    expect(find('再推荐一批').hasAttribute('disabled')).toBe(false)
+    // The way to the suggestions stays: the user asked, and they may want to see what is there.
+    expect(find('去「候选推荐」看')).toBeTruthy()
+  })
+
+  it('shows any other failure, and says how a round it asked for ended when it did not run', async () => {
     fakeTimers()
     const s = setup()
     let broken = true
@@ -326,13 +379,13 @@ describe('asking for another batch', () => {
       'POST tracks/:id/recommend': () => {
         if (broken) return fail(500, '前哨内部出错，详情见 DSH 日志')
         s.box.runs = [recommend('r6', 'running')]
-        return { batchId: 'b3' }
+        return { batchId: 'r6' }
       },
     })
     await click('再推荐一批')
     expect(document.querySelector('.op-add-again [role="alert"]')?.textContent).toBe('前哨内部出错，详情见 DSH 日志')
     expect(find('再推荐一批').hasAttribute('disabled')).toBe(false)
-    // It starts this time, but is refused for the budget: the reason, in the words of the picking page.
+    // It starts this time, and is refused for the budget a moment later: the reason, in the words of the picking page.
     broken = false
     await click('再推荐一批')
     expect(document.querySelector('.op-add-again [role="alert"]')).toBeNull()
@@ -368,5 +421,15 @@ describe('keeping up', () => {
     const left = reads()
     await advance(20_000)
     expect(reads()).toBe(left)
+  })
+})
+
+describe('the style of the quiet row', () => {
+  it('never lets its hover colour reach the selected row (a jsdom test cannot compare specificity, so the selectors are read)', () => {
+    const css = readFileSync(join(process.cwd(), 'src/client/styles.css'), 'utf8')
+    const hovers = [...css.matchAll(/([^{}]*\[data-quiet\][^{}]*:hover[^{}]*)\{/g)].map(match => match[1]!.trim())
+    expect(hovers.length).toBeGreaterThan(0)
+    // `.op-row[data-quiet]:hover` outweighs `.op-row[aria-current="page"]`: the selected row would lose its blue.
+    for (const selector of hovers) expect(selector).toContain(':not([aria-current="page"])')
   })
 })
