@@ -975,6 +975,24 @@ describe('POST tracks/:id/add-product', () => {
     expect(repo.listRuns('')).toEqual([])
   })
 
+  it('refuses a name that is only spaces and punctuation, which would start a paid confirmation for nothing', async () => {
+    vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const t = addTrack()
+    addProduct('p1', 'Cursor', 'tracking')
+    for (const name of ['!!!', ' ？！ ', '—', '…', '（）', '、 。']) {
+      const reply = await host.call('POST', `tracks/${t.id}/add-product`, { name })
+      expect(reply.status, name).toBe(400)
+      expect(reply.json().issues, name).toEqual([{ path: 'name', message: '请填产品名' }])
+    }
+    await flush()
+    expect(repo.listRuns('')).toEqual([]) // no confirmation was started, so nothing is spent
+    expect(repo.productsOfTrack(t.id)).toEqual([])
+    // A name with a letter, a digit or a symbol among its punctuation is a name.
+    expect(ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: 'Cursor!' })).json()).toEqual({ linked: 'p1', status: 'tracking' })
+    expect(ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: 'Kimi+' })).json()).toEqual({ runId: expect.any(String) })
+  })
+
   it('rejects an empty name and a non-http official url', async () => {
     vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
     vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()

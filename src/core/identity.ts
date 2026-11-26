@@ -17,12 +17,23 @@ export function nameKey(name: string): string {
 }
 
 /**
+ * Whether a product's name says anything once spaces and punctuation are dropped. 「!!!」 or 「（ ）」 do not: nothing of them
+ * is left to look a product up by (`nameKey` keeps such a name as it is, only so that two of them stay apart), so a name
+ * typed by hand that is one has no product to be, and is refused before anything is started or paid for.
+ */
+export function hasNameKey(name: string): boolean {
+  return stripped(name.normalize('NFKC')) !== ''
+}
+
+const stripped = (unified: string) => unified.replace(/[\s\p{Z}\p{P}]/gu, '')
+
+/**
  * Without spaces (`\s`, `\p{Z}`) and punctuation (`\p{P}`). A name made only of those (「!!!」) would shrink to nothing and
  * match every other one, so it is kept as it is, trimmed.
  */
 const simplified = (text: string) => {
   const unified = text.normalize('NFKC').toLowerCase()
-  return unified.replace(/[\s\p{Z}\p{P}]/gu, '') || unified.trim()
+  return stripped(unified) || unified.trim()
 }
 
 /**

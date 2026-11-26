@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { identityKey } from '../../src/core/identity.ts'
+import { hasNameKey, identityKey, nameKey } from '../../src/core/identity.ts'
 
 describe('identityKey', () => {
   it('ignores punctuation, so a name with or without an exclamation mark is one product', () => {
@@ -37,5 +37,20 @@ describe('identityKey', () => {
 
   it('does not run the name into the company', () => {
     expect(identityKey('AB', 'C')).not.toBe(identityKey('A', 'BC'))
+  })
+})
+
+describe('hasNameKey', () => {
+  it('is false for a name that spaces and punctuation would shrink to nothing, in any width', () => {
+    for (const name of ['!!!', '？！', ' - ', '…', '（）', '  ', '', '—— ——', '、。']) expect(hasNameKey(name), JSON.stringify(name)).toBe(false)
+  })
+
+  it('is true for a name with a letter, a digit, a symbol or a character of any script', () => {
+    for (const name of ['Cursor', '千问Go!', 'GPT-4o', '4', 'Kimi+', '★', 'ａ', '豆包', ' Muse ']) expect(hasNameKey(name), name).toBe(true)
+  })
+
+  it('agrees with nameKey, which keeps such a name as it is rather than empty so that two of them stay apart', () => {
+    expect(nameKey('!!!')).toBe('!!!')
+    expect(hasNameKey('!!!')).toBe(false)
   })
 })

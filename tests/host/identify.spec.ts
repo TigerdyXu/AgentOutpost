@@ -10,7 +10,7 @@ import { JobRunner, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { researchTools } from '../../src/host/tools.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
-import { FakeDriver, completed, gate, instantClock, type Play } from '../fixtures/fake-driver.ts'
+import { FakeDriver, completed, failure, gate, instantClock, type Play } from '../fixtures/fake-driver.ts'
 
 const IDENTIFY = 'outpost-identify-'
 
@@ -213,6 +213,50 @@ describe('startIdentify', () => {
     await runner.idle()
     expect(repo.getRun(refused)).toMatchObject({ status: 'skipped', error: '今日总预算已用完', productId: null })
     expect(driver.runs).toHaveLength(2)
+  })
+
+  it('a passed candidate stands whatever becomes of the session after it was handed in: the product joins and the run names it', async () => {
+    // The agent hands the product in, then the session fails for a reason of its own (a model that stays down, a timeout,
+    // the runner stopping). The check is done and the product joined, with its baseline paid for: the run carries it.
+    const after: Record<string, () => ReturnType<typeof failure> | ReturnType<typeof completed>> = {
+      'Gemini Agent': () => failure('model unavailable'),
+      'Qwen Agent': () => ({ reason: 'timeout', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 } }),
+    }
+    driver.script[IDENTIFY] = async round => {
+      const name = ['Gemini Agent', 'Qwen Agent'].find(n => round.text.includes(n))!
+      await round.call('outpost_submit_candidate', submission(name, name === 'Gemini Agent' ? 'Google' : '阿里巴巴', 'strong')) // no outpost_done
+      return after[name]!()
+    }
+
+    const errored = await startIdentify(deps, track.id, { name: 'Gemini Agent', officialUrl: null })
+    const timedOut = await startIdentify(deps, track.id, { name: 'Qwen Agent', officialUrl: null })
+    await runner.idle()
+
+    const joined = new Map(repo.productsOfTrack(track.id).map(p => [p.name, p]))
+    expect([...joined.keys()].sort()).toEqual(['Gemini Agent', 'Qwen Agent'])
+    expect(repo.getRun(errored)).toMatchObject({ status: 'failed', error: 'model unavailable', productId: joined.get('Gemini Agent')!.id })
+    expect(repo.getRun(timedOut)).toMatchObject({ status: 'failed', productId: joined.get('Qwen Agent')!.id })
+    expect(repo.getRun(timedOut)!.error).toContain('30')
+    expect(scheduler.baseline).toHaveBeenCalledWith([joined.get('Gemini Agent')!.id])
+    expect(scheduler.baseline).toHaveBeenCalledWith([joined.get('Qwen Agent')!.id])
+  })
+
+  it('a passed candidate stands when the runner is stopped before the agent is done', async () => {
+    driver.script[IDENTIFY] = async round => {
+      await round.call('outpost_submit_candidate', submission('Gemini Agent', 'Google', 'strong'))
+      await new Promise<void>(resolve => { round.signal.addEventListener('abort', () => { resolve() }) })
+      return { reason: 'aborted', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 } }
+    }
+
+    const runId = await startIdentify(deps, track.id, { name: 'Gemini Agent', officialUrl: null })
+    await vi.waitFor(() => { expect(repo.listCandidates(track.id, runId)).toHaveLength(1) })
+    await runner.stop()
+
+    const [product] = repo.productsOfTrack(track.id)
+    expect(product).toMatchObject({ name: 'Gemini Agent' })
+    expect(repo.getRun(runId)).toMatchObject({ status: 'failed', productId: product!.id })
+    expect(repo.getRun(runId)!.error).toBeTruthy()
+    expect(scheduler.baseline).toHaveBeenCalledWith([product!.id])
   })
 
   it('runs beside a recommendation without taking its batch or a place', async () => {

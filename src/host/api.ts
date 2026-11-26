@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
-import { FOLLOWED, nameKey } from '../core/identity.ts'
+import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
@@ -240,7 +240,8 @@ const TrackPatch = z.object({ name: text(MAX_NAME).min(1).optional(), brief: tex
 const Recommend = z.object({ refine: text(MAX_REFINE).optional() })
 const Start = z.object({ candidateIds: z.array(z.string().min(1)).min(1).max(MAX_START) })
 const AddProduct = z.object({
-  name: text(MAX_PRODUCT_NAME).min(1),
+  // A name of nothing but spaces and punctuation (「!!!」) is no name: the same complaint as an empty one, before a paid confirmation starts.
+  name: text(MAX_PRODUCT_NAME).min(1).refine(hasNameKey, '请填产品名'),
   officialUrl: z.preprocess(value => value === null || (typeof value === 'string' && !value.trim()) ? undefined : value,
     z.string().trim().max(MAX_URL).url({ protocol: /^https?$/, error: 'officialUrl must be an http:// or https:// address' }).optional()),
 })

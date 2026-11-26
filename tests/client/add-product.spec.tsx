@@ -161,6 +161,49 @@ describe('adding by name', () => {
     expect(all('.op-add-result button')).toHaveLength(0)
   })
 
+  it('says a product was added when its confirmation failed after the product joined: the run names the product', async () => {
+    fakeTimers()
+    const gemini = product('p9', 'Gemini Agent', { status: 'baselining', company: 'Google' })
+    const s = setup()
+    const { context } = await s.show({
+      'POST tracks/:id/add-product': () => { s.box.runs = [confirm('r1', 'running')]; return { runId: 'r1' } },
+      'GET products/:id': productView(gemini),
+    })
+    await submitName('Gemini Agent')
+    expect(lines()).toEqual(['正在确认这个产品…'])
+    // The host joins a product that passed, whatever becomes of the session afterwards (a model that stays down, a timeout,
+    // the app stopping): the run ends failed, with its error and the product it joined, whose profile is being built.
+    s.box.runs = [confirm('r1', 'failed', { productId: 'p9', productName: 'Gemini Agent', error: '超过 30 分钟没有结束，已停止' })]
+    await advance(2000)
+    expect(lines()).toEqual(['已加入，正在建档'])
+    expect(results()[0]!.getAttribute('data-state')).toBe('ok')
+    expect(results()[0]!.textContent).not.toContain('没加进来')
+    expect(context.refresh).toHaveBeenCalled()
+    await click(find('Gemini Agent'))
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p9', tab: 'dossier' })
+  })
+
+  it('judges a failed confirmation that joined a product by where the product stands, like one that ended well', async () => {
+    fakeTimers()
+    const s = setup()
+    const reply: { status: 'tracking' | 'paused' } = { status: 'tracking' }
+    let n = 0
+    await s.show({
+      'POST tracks/:id/add-product': () => ({ runId: `r${++n}` }),
+      'GET products/:id': () => productView({ ...rayban, status: reply.status }),
+    })
+    // A product followed elsewhere that the confirmation settled on: tracked, topped up; the failure is not what is told.
+    await submitName('雷鸟之外')
+    s.box.runs = [confirm('r1', 'failed', { subject: '雷鸟之外', productId: 'p2', productName: 'Ray-Ban Meta', error: 'model unavailable' })]
+    await advance(2000)
+    expect(lines()).toEqual(['已在「AI 眼镜」跟踪，直接加进来了 · 只补缺的维度'])
+    // One already in the track when it was sent changed nothing.
+    await submitName('麦塔缪斯')
+    s.box.runs = [...s.box.runs, confirm('r2', 'failed', { subject: '麦塔缪斯', productId: 'p1', productName: 'Meta Muse', error: '会话被取消' })]
+    await advance(2000)
+    expect(lines()[0]).toBe('已经在「Personal Agent」里了')
+  })
+
   it('says a product tracked elsewhere was added at once', async () => {
     const { show } = setup()
     const { api, context } = await show({ 'POST tracks/:id/add-product': { linked: 'p2', status: 'tracking' } })
@@ -291,6 +334,22 @@ describe('adding by name', () => {
     expect(document.querySelector('.op-add-byname [role="alert"]')).toBeNull()
     await submit('.op-add-byname')
     expect(requestsFor(api, 'POST', 'tracks/t1/add-product').map(r => r.body)).toEqual([{ name: 'Gemini Agent', officialUrl: 'http://gemini.google.com/agent' }])
+  })
+
+  it('stops a name that is only spaces and punctuation as it stops an empty one, sending nothing', async () => {
+    const { api } = await setup().show({ 'POST tracks/:id/add-product': { runId: 'r1' } })
+    for (const name of ['!!!', ' ？！ ', '…', '（） ']) {
+      await type(nameField(), name)
+      await submit('.op-add-byname')
+      expect(document.querySelector('.op-add-byname [role="alert"]')?.textContent, name).toBe('请填产品名')
+      expect(nameField().getAttribute('aria-invalid'), name).toBe('true')
+    }
+    expect(requestsFor(api, 'POST', 'tracks/t1/add-product')).toHaveLength(0)
+    // Typing more takes the complaint away; a name with a letter among its punctuation goes through.
+    await type(nameField(), 'Kimi!')
+    expect(document.querySelector('.op-add-byname [role="alert"]')).toBeNull()
+    await submit('.op-add-byname')
+    expect(requestsFor(api, 'POST', 'tracks/t1/add-product').map(r => r.body)).toEqual([{ name: 'Kimi!' }])
   })
 
   it('picks up a confirmation still running when the page is opened again', async () => {

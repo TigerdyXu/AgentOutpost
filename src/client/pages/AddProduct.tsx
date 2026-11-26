@@ -9,6 +9,7 @@
  * the page is open.
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { hasNameKey } from '../../core/identity.ts'
 import type { Id, Product, Track } from '../../core/types.ts'
 import type { RunRow, StateView, TrackView } from '../../host/api.ts'
 import { ApiError, call, describeError, usePoll } from '../api.ts'
@@ -78,9 +79,13 @@ function joinedLine(t: T, status: Product['status'], tracks: string[]): string {
  * What a confirmation that is over came to. The run says whether a product passed (`productId`) or why not (`error`); where
  * it stands says the rest. A product that was in the track when the name was sent changed nothing; a new one is being
  * profiled; one that was followed elsewhere is tracked (or paused) and only tops up what this track adds.
+ *
+ * The product decides first, not the run's status: the host joins a product that passed whatever becomes of the session
+ * afterwards (it may end failed, from a model that stays down, a timeout or the app stopping, with its profile already
+ * being built), and only that join sets `productId`. A run without one added nothing, and says why.
  */
 async function conclude(t: T, run: RunRow, attempt: Attempt, track: Track, state: StateView | undefined): Promise<Outcome> {
-  if (run.status !== 'done' || run.productId === null) {
+  if (run.productId === null) {
     return { ok: false, line: run.error ? t('add.notAdded', { reason: run.error }) : t('add.notAddedNoReason'), product: null }
   }
   const was = attempt.before.get(run.productId)
@@ -164,7 +169,8 @@ function AddProductPage({ view }: { view: TrackView }): ReactNode {
     if (adding) return
     const typed = name.trim()
     const official = site.trim()
-    if (!typed) { setProblem({ field: 'name', text: t('add.nameRequired') }); nameBox.current?.focus(); return }
+    // A name of nothing but spaces and punctuation says as little as none (the host refuses it too).
+    if (!hasNameKey(typed)) { setProblem({ field: 'name', text: t('add.nameRequired') }); nameBox.current?.focus(); return }
     if (official && !isHttp(official)) { setProblem({ field: 'site', text: t('add.urlInvalid') }); siteBox.current?.focus(); return }
     setAdding(true)
     setProblem(null)
