@@ -127,7 +127,8 @@ export function Today(): ReactNode {
     const tracks = tracksOf(product.id)
     const labels = new Map(tracks.flatMap(track => track.dimensions).map(dimension => [dimension.key, dimension.label] as const))
     // Only what the check verified went into the profile (design §8), and only where a card took a version resting on it.
-    const changed = finding.status === 'verified' ? (view.changed?.[finding.id] ?? []).map(key => ({ key, label: labels.get(key) ?? key })) : []
+    // A dimension that no track of the product lists is not on its profile: not named, and not what 看改动 opens.
+    const changed = finding.status === 'verified' ? (view.changed?.[finding.id] ?? []).flatMap(key => labels.has(key) ? [{ key, label: labels.get(key)! }] : []) : []
     // The track the brief is filtered to, else every track the product is in (in the track list's order).
     const trackName = tracks.find(track => track.id === trackId)?.name ?? (tracks.map(track => track.name).join('、') || undefined)
     return <FindingCard key={finding.id} finding={finding} product={product} trackName={trackName}

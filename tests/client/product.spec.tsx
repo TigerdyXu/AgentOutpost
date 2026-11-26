@@ -1014,6 +1014,30 @@ describe('the ⋯ menu, tracks', () => {
     expect(result()).toBe('已移到「手机 AI 助理」')
   })
 
+  it('clears the last result when the budget editor opens', async () => {
+    await show(view(), { state: alone }, MOVED)
+    await click(more())
+    await click(control('移到其他赛道…'))
+    await click(control('手机 AI 助理'))
+    expect(result()).toBe('已移到「手机 AI 助理」 · 补 1 张卡')
+    await click(control('每日预算：不限'))
+    expect(result()).toBeUndefined()
+    expect(document.querySelector('[role="menu"] input')).not.toBeNull()
+  })
+
+  it('cuts a long track name in 从「X」拿掉 short, and keeps the whole of it as the tooltip', async () => {
+    const long = '一个名字非常非常长的赛道，长到一行放不下'
+    const crowded = state({ tracks: [track('t1', long, [mine], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [mine], { dimensions: DIMENSIONS })] })
+    await show(view(), { state: crowded }, MOVED)
+    await click(more())
+    const entry = control(`从「${long}」拿掉`)
+    expect(entry.title).toBe(long)
+    expect(entry.classList.contains('op-menu-clip')).toBe(true)
+    // The rule that cuts it is in the stylesheet, and the entries of the lists are cut by the same one.
+    const css = (await import('../../src/client/styles.css?raw')).default
+    expect(css).toMatch(/\.op-menu-clip\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/)
+  })
+
   it('says nothing, and takes no focus, when the menu was closed while the change was on its way', async () => {
     let release = () => {}
     const slow = new Promise<{ toppedUp: number }>(resolve => { release = () => { resolve({ toppedUp: 1 }) } })
@@ -1247,6 +1271,39 @@ describe('the sources tab', () => {
     }), { route: route({ tab: 'sources' }) })
     expect(list().map(row => cells(row)[0])).toEqual(['官网产品页官方', '官方公众号官方'])
     expect(cells(list()[0]!)[4]).toBe('被 2 条结论引用定位、目标人群')
+  })
+
+  it('leaves out what only a hidden card cites, and never names a dimension by its key', async () => {
+    // 定价 is a card of a track the product left, cited by s3 alone; s1 is cited by it as well as by two cards on the page.
+    const hidden = card('p1', 'pricing', { sourceIds: ['s1', 's3'], bullets: ['按次收费'] })
+    await show(view({
+      dimensions: DIMENSIONS.slice(0, 2), cards: [card('p1', 'positioning', { sourceIds: ['s1', 's2'] }), card('p1', 'audience', { sourceIds: ['s1'] }), hidden],
+      sources: [sources[0]!, sources[1]!, sources[2]!],
+    }), { route: route({ tab: 'sources' }) })
+    expect(list().map(row => row.querySelector('a')?.textContent)).toEqual(['官方发布会', '官网产品页'])
+    // How many cite it, and which: the cards on the page only.
+    expect(cells(list()[0]!)[4]).toBe('被 2 条结论引用定位、目标人群')
+    expect(cells(list()[1]!)[4]).toBe('被 1 条结论引用定位')
+    expect(text()).not.toContain('pricing')
+    // 来源 n counts what is listed.
+    expect(control('来源2').getAttribute('aria-selected')).toBe('true')
+    // The product joins a track that lists it again: its sources are back, under that track's label.
+    unmount()
+    await show(view({
+      dimensions: [...DIMENSIONS.slice(0, 2), { key: 'pricing', label: '定价' }], cards: [card('p1', 'positioning', { sourceIds: ['s1', 's2'] }), hidden],
+      sources: [sources[0]!, sources[1]!, sources[2]!],
+    }), { route: route({ tab: 'sources' }) })
+    // One citation each for the other two: the newer first.
+    expect(list().map(row => row.querySelector('a')?.textContent)).toEqual(['官方发布会', '官方公众号', '官网产品页'])
+    expect(cells(list()[0]!)[4]).toBe('被 2 条结论引用定位、定价')
+    expect(cells(list()[1]!)[4]).toBe('被 1 条结论引用定价')
+    expect(control('来源3')).toBeDefined()
+  })
+
+  it('shows no 来源 count when only hidden cards cite anything', async () => {
+    await show(view({ dimensions: DIMENSIONS.slice(0, 1), cards: [card('p1', 'pricing', { sourceIds: ['s1'] })], sources: [sources[0]!] }), { route: route({ tab: 'dossier' }) })
+    expect(all('.op-tab-n')).toHaveLength(0)
+    expect(control('来源').textContent).toBe('来源')
   })
 
   it('says what a source that could not be opened was, and shows nothing when there are none', async () => {

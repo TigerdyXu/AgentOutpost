@@ -211,6 +211,20 @@ describe('the day', () => {
     expect(cardOf('标题 f2').querySelector('.op-card-changed')).toBeNull()
     expect(inside(cardOf('标题 f2'), '看改动 →')).toBeUndefined()
   })
+
+  it('does not name a dimension that none of the product’s tracks lists any more, nor offer 看改动 for it', async () => {
+    // 定价 was a card of a track the product left: it is kept, but not on the profile, so the brief does not point there.
+    const both = finding('f1', 'p1', { dimensions: ['pricing', 'monetization'] })
+    const hidden = finding('f2', 'p2', { dimensions: ['pricing'] })
+    const { context } = await show(view([both, hidden], { changed: { f1: ['pricing', 'monetization'], f2: ['pricing'] } }))
+    expect(cardOf('标题 f1').querySelector('.op-card-changed')?.textContent).toBe('改了档案：商业化')
+    await click(inside(cardOf('标题 f1'), '看改动 →')!)
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p1', tab: 'dossier', expand: 'monetization' })
+    // Only the hidden one changed: no line, no button, and no raw key anywhere.
+    expect(cardOf('标题 f2').querySelector('.op-card-changed')).toBeNull()
+    expect(inside(cardOf('标题 f2'), '看改动 →')).toBeUndefined()
+    expect(text()).not.toContain('pricing')
+  })
 })
 
 describe('marks and notes on a card', () => {

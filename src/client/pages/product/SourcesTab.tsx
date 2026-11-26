@@ -12,18 +12,25 @@ const KINDS: Record<SourceKind, 'sources.kind.official' | 'sources.kind.media' |
   official: 'sources.kind.official', media: 'sources.kind.media', review: 'sources.kind.review', appstore: 'sources.kind.appstore', social: 'sources.kind.social',
 }
 
+/**
+ * Which dimensions cite each source (by label, in the order the page lists the dimensions), and the sources a card on the
+ * page cites. A card of a dimension that no track of the product lists is not on the page, so what only it cites is not
+ * listed, and the dimension is not named.
+ */
+export function citations(view: Pick<ProductView, 'cards' | 'dimensions' | 'sources'>): { citedBy: Map<string, string[]>; sources: Source[] } {
+  const citedBy = new Map<string, string[]>()
+  for (const { key, label } of view.dimensions) {
+    const card = view.cards.find(item => item.dimension === key)
+    for (const id of new Set(card?.sourceIds)) citedBy.set(id, [...citedBy.get(id) ?? [], label])
+  }
+  return { citedBy, sources: view.sources.filter(source => citedBy.has(source.id)) }
+}
+
 export function SourcesTab({ view }: { view: ProductView }): ReactNode {
   const { t } = useShell()
-  const labels = new Map(view.dimensions.map(dimension => [dimension.key, dimension.label] as const))
-  // The dimensions whose card cites each source, in the order the page lists the dimensions.
-  const order = [...view.dimensions.map(d => d.key), ...view.cards.map(card => card.dimension).filter(key => !labels.has(key))]
-  const citedBy = new Map<string, string[]>()
-  for (const key of order) {
-    const card = view.cards.find(item => item.dimension === key)
-    for (const id of new Set(card?.sourceIds)) citedBy.set(id, [...citedBy.get(id) ?? [], labels.get(key) ?? key])
-  }
+  const { citedBy, sources } = citations(view)
   const count = (source: Source) => citedBy.get(source.id)?.length ?? 0
-  const rows = [...view.sources].sort((a, b) => count(b) - count(a)
+  const rows = [...sources].sort((a, b) => count(b) - count(a)
     || (b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0) - (a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0))
 
   if (rows.length === 0) return <p className="op-day-empty">{t('sources.empty')}</p>

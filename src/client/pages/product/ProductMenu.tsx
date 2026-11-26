@@ -25,7 +25,7 @@ export interface ProductTracks { current: TrackRef[]; others: TrackRef[] }
 export type TrackChange = { kind: 'move'; from: Id; to: Id } | { kind: 'link'; to: Id } | { kind: 'unlink'; from: Id }
 
 /** The two entries that open a list of tracks. */
-type Pick = 'move' | 'link'
+type ListKind = 'move' | 'link'
 
 export interface ProductMenuProps {
   product: Product
@@ -50,7 +50,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
   const [busy, setBusy] = useState(false)
   // Which list of tracks is open, what was done last (said until the next thing is tried), and the entry that takes the
   // focus once the list opens or folds: the first track, or the entry that owns the list.
-  const [picking, setPicking] = useState<Pick | null>(null)
+  const [picking, setPicking] = useState<ListKind | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const focusNext = useRef<'first' | HTMLElement | null>(null)
   const working = useRef(false)
@@ -109,8 +109,8 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
 
   /** → opens the list of the entry it is on (or goes into it, if open); ← folds the list away from inside it, or from its entry. */
   const sideways = (event: KeyboardEvent, target: HTMLElement) => {
-    const entry = target.dataset.pick as Pick | undefined
-    const listed = target.closest<HTMLElement>('[data-list]')?.dataset.list as Pick | undefined
+    const entry = target.dataset.pick as ListKind | undefined
+    const listed = target.closest<HTMLElement>('[data-list]')?.dataset.list as ListKind | undefined
     if (event.key === 'ArrowRight' && entry && !target.hasAttribute('aria-disabled')) {
       event.preventDefault()
       if (picking === entry) root.current?.querySelector<HTMLElement>('[data-list] [role="menuitem"]')?.focus()
@@ -122,7 +122,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
   }
 
   /** Opens the list of tracks under its entry, or folds it away; one list is open at a time. */
-  const toggle = (kind: Pick) => {
+  const toggle = (kind: ListKind) => {
     if (tracks === null || tracks.others.length === 0) return
     setProblem(null)
     setDone(null)
@@ -185,7 +185,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
   const targets = tracks?.others ?? []
   const nowhere = targets.length === 0
   /** An entry that opens the list of the tracks to go to, and the list under it when open. */
-  const pickEntry = (kind: Pick): ReactNode => {
+  const pickEntry = (kind: ListKind): ReactNode => {
     const open = picking === kind
     return <>
       <button type="button" role="menuitem" className="op-menu-item op-menu-more" ref={entries[kind]} id={ids[kind]} data-pick={kind}
@@ -195,7 +195,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
         <ChevronIcon size={12} />
       </button>
       {open && <div className="op-menu-list" role="group" id={ids.list} data-list={kind} aria-labelledby={ids[kind]}>
-        {targets.map(target => <button key={target.id} type="button" role="menuitem" className="op-menu-item op-menu-option" title={target.name}
+        {targets.map(target => <button key={target.id} type="button" role="menuitem" className="op-menu-item op-menu-option op-menu-clip" title={target.name}
           onClick={() => { void place(kind === 'move' ? { kind, from: mine[0]!.id, to: target.id } : { kind, to: target.id }, target.name) }}>{target.name}</button>)}
       </div>}
     </>
@@ -208,7 +208,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
       {settled && <button type="button" role="menuitem" className="op-menu-item" disabled={busy}
         onClick={() => { void apply({ status: product.status === 'paused' ? 'tracking' : 'paused' }) }}>{t(product.status === 'paused' ? 'product.resume' : 'product.pause')}</button>}
       {!editing && <button type="button" role="menuitem" className="op-menu-item" ref={budgetItem}
-        onClick={() => { setValue(product.dailyBudgetYuan === null ? '' : String(product.dailyBudgetYuan)); setPicking(null); setEditing(true) }}>{budget}</button>}
+        onClick={() => { setValue(product.dailyBudgetYuan === null ? '' : String(product.dailyBudgetYuan)); setPicking(null); setDone(null); setEditing(true) }}>{budget}</button>}
       {editing && <form className="op-menu-form" noValidate onSubmit={saveBudget}>
         <label className="op-menu-label">
           <span>{t('product.budget')}</span>
@@ -225,7 +225,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
         {mine.length === 1 && pickEntry('move')}
         {pickEntry('link')}
         {nowhere && <p className="op-menu-note" id={ids.note}>{t('product.noOtherTrack')}</p>}
-        {mine.length > 1 && mine.map(track => <button key={track.id} type="button" role="menuitem" className="op-menu-item" title={track.name}
+        {mine.length > 1 && mine.map(track => <button key={track.id} type="button" role="menuitem" className="op-menu-item op-menu-clip" title={track.name}
           onClick={() => { void place({ kind: 'unlink', from: track.id }, track.name) }}>{t('product.remove', { track: track.name })}</button>)}
       </div>}
       {done && <p className="op-menu-done" role="status">{done}</p>}

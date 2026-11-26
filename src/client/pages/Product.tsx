@@ -14,7 +14,7 @@ import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
 import { ProductMenu, type ProductChange, type ProductTracks, type TrackChange } from './product/ProductMenu.tsx'
-import { SourcesTab } from './product/SourcesTab.tsx'
+import { citations, SourcesTab } from './product/SourcesTab.tsx'
 
 /** How often the profile is read, and how often while something works on it; and how often a run is asked about. */
 const POLL_MS = 5000
@@ -130,6 +130,8 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
     Number.isFinite(newest) && t('product.updated', { when: sameDay ? `${t('product.today')} ${clockTime(new Date(newest).toISOString()) ?? ''}` : shortDay(new Date(newest).toISOString(), now) ?? '' }),
   ].filter(Boolean).join(' · ')
 
+  // The sources the 来源 tab lists: those a card on the page cites.
+  const listedSources = view ? citations(view).sources.length : 0
   const unproven = feed.data?.findings.filter(finding => finding.status === 'unproven').length ?? 0
   const feedCount = feed.data ? feed.data.findings.length - unproven : 0
   const go = (next: ProductTab) => { if (next !== tab) navigate({ page: 'product', productId, tab: next }) }
@@ -171,7 +173,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
           aria-controls={`${ids}-panel`} tabIndex={tab === item ? 0 : -1} onClick={() => { go(item) }}>
           {t(`product.tab.${item}`)}
           {item === 'feed' && feedCount > 0 && <span className="op-tab-count">{feedCount}</span>}
-          {item === 'sources' && view.sources.length > 0 && <span className="op-tab-n">{view.sources.length}</span>}
+          {item === 'sources' && listedSources > 0 && <span className="op-tab-n">{listedSources}</span>}
         </button>)}
       </div>
       <div className="op-tabpanel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-${tab}`}>

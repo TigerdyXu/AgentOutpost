@@ -1765,11 +1765,15 @@ textarea.op-input {
   overflow-y: auto;
 }
 
-.op-menu-option {
+/* A track's name in an entry: one line, cut short with an ellipsis when it does not fit (the whole of it is the tooltip). */
+.op-menu-clip {
   overflow: hidden;
-  padding-left: 24px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.op-menu-option {
+  padding-left: 24px;
 }
 
 .op-menu-pop[aria-busy="true"] .op-menu-option {
