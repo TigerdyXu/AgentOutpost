@@ -90,7 +90,7 @@ describe('middle column', () => {
       'GET tracks/:id/candidates': {
         batchId: 'b1', running: true, status: 'running', error: null, elapsedSec: 30,
         candidates: [candidate('a'), candidate('b'), candidate('c', { tier: 'consider', selected: false }), candidate('d', { tier: 'excluded', selected: true })]
-          .map(c => ({ ...c, product: product(c.productId, c.id) })),
+          .map(c => ({ ...c, product: product(c.productId, c.id), trackedIn: [] })),
       },
     })
     await mount(<App t={t} />)
@@ -127,7 +127,7 @@ describe('middle column', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     let running = true
     const api = stubApi({
-      'GET tracks/:id/candidates': () => ({ batchId: 'b1', running, status: running ? 'running' : 'done', error: null, elapsedSec: 5, candidates: [{ ...candidate('a'), product: product('p-a', 'a') }] }),
+      'GET tracks/:id/candidates': () => ({ batchId: 'b1', running, status: running ? 'running' : 'done', error: null, elapsedSec: 5, candidates: [{ ...candidate('a'), product: product('p-a', 'a'), trackedIn: [] }] }),
     })
     await mount(<MiddleColumn />, { state: state({ tracks: [track('t1', 'Personal Agent', [], { status: 'picking' })] }) })
     const reads = () => api.requests.filter(r => r.path === 'tracks/t1/candidates').length

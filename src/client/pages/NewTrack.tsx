@@ -284,6 +284,7 @@ function PickCard({ candidate, picked, tracked, compact, onToggle }: {
       </span>
     </span>
     {tracked && <span className="op-pick-tracked">{t('pick.tracked')}</span>}
+    {candidate.trackedIn.length > 0 && <span className="op-pick-tracked">{t('pick.trackedElsewhere', { tracks: candidate.trackedIn.join('、') })}</span>}
     {!compact && candidate.oneLiner && <span className="op-pick-one">{candidate.oneLiner}</span>}
     {!compact && <HeatLine heat={candidate.heat} />}
     {candidate.reason && <span className="op-pick-why"><b>{t(compact ? 'pick.whyShort' : 'pick.why')}</b>{candidate.reason}</span>}
@@ -384,10 +385,14 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
     : candidates.length === 0 ? t('pick.none') : null
   const canRetry = data !== undefined && !data.running && (data.status === 'failed' || data.status === 'skipped' || data.batchId === null)
 
-  const fresh = chosen.filter(c => c.product.status === 'candidate' || c.product.status === 'archived').length
+  // A product another track already follows runs once a day whatever its tracks (and a row that is only its twin is not
+  // profiled again: it joins the tracked one), so it is neither a new day's cost nor a new profile.
+  const added = chosen.filter(c => c.trackedIn.length === 0)
+  const fresh = added.filter(c => c.product.status === 'candidate' || c.product.status === 'archived').length
   const minutes = fresh === 0 ? null : Math.ceil(fresh / BASELINE_PARALLEL) * BASELINE_MINUTES
-  const [low, high] = dayCost === null ? [FALLBACK_YUAN[0] * count, FALLBACK_YUAN[1] * count] : [dayCost * count * (1 - SPREAD), dayCost * count * (1 + SPREAD)]
-  const cost = [t('pick.estimate', { low: yuan(low), high: yuan(high) }), ...minutes === null ? [] : [t('pick.build', { minutes })]].join(' · ')
+  const daily = added.length
+  const [low, high] = dayCost === null ? [FALLBACK_YUAN[0] * daily, FALLBACK_YUAN[1] * daily] : [dayCost * daily * (1 - SPREAD), dayCost * daily * (1 + SPREAD)]
+  const cost = [...daily === 0 ? [] : [t('pick.estimate', { low: yuan(low), high: yuan(high) })], ...minutes === null ? [] : [t('pick.build', { minutes })]].join(' · ')
 
   const grid = (group: Found[], compact: boolean) => <div className="op-pick-grid">
     {group.map(c => <PickCard key={c.id} candidate={c} picked={isPicked(c)} tracked={isTracked(c)} compact={compact}
@@ -445,7 +450,7 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
       {startProblem && <p className="op-pick-problem" role="alert">{startProblem}</p>}
       {running && <p className="op-pick-early">{t('pick.early')}</p>}
       <span className="op-pick-count">{t('pick.selected', { count })}</span>
-      {count > 0 && <span className="op-pick-cost">{cost}</span>}
+      {cost && <span className="op-pick-cost">{cost}</span>}
       <span className="op-pick-actions">
         <button type="button" className="op-button" onClick={() => { navigate({ page: 'today' }) }}>{t('pick.later')}</button>
         <button type="button" className="op-button" data-variant="primary" disabled={count === 0 || busy !== null} onClick={() => { void start() }}>

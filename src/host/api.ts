@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
-import { identityKey } from '../core/identity.ts'
+import { FOLLOWED, identityKey } from '../core/identity.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
@@ -78,7 +78,12 @@ export interface CandidatesView {
   error: string | null
   /** How long the recommendation has run, or ran, in whole seconds. */
   elapsedSec: number
-  candidates: (Candidate & { product: Product })[]
+  /**
+   * `trackedIn`: the names of the other tracks (archived ones aside) that Outpost already follows the candidate's product
+   * in, in the order the tracks are listed: the product itself, or another row that reads alike (`findSameProduct`), tracked,
+   * paused or in 建档中. Empty for a product no other track follows. A product runs once a day whatever its tracks.
+   */
+  candidates: (Candidate & { product: Product; trackedIn: string[] })[]
 }
 export interface ProductView {
   product: Product
@@ -256,6 +261,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    * asked for the dimensions it knew when it started; `topUpNow` asks for the rest once it is over).
    */
   const isWorkedOn = (p: Product) => p.status === 'tracking' || p.status === 'baselining'
+  /**
+   * The names of the tracks among `others` that follow the product: it, or another row that reads alike, tracked, paused or
+   * in 建档中, is one of their products. A candidate row of its own for a product tracked elsewhere (「千问Go」 beside
+   * 「千问Go!」) is told as that product is.
+   */
+  const trackedElsewhere = (p: Product, others: { name: string; products: Set<Id> }[]) => {
+    const followed = [p, repo.findSameProduct(p)].flatMap(row => row && FOLLOWED.includes(row.status) ? [row.id] : [])
+    return others.filter(other => followed.some(id => other.products.has(id))).map(other => other.name)
+  }
   /** Whether the product has no card yet for one of `keys`. */
   const lacksCard = (productId: Id, keys: DimensionKey[]) => {
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
@@ -449,6 +463,9 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const batchId = run?.id ?? repo.latestBatchId(t.id)
       const started = run?.startedAt ? Date.parse(run.startedAt) : NaN
       const ended = run?.endedAt ? Date.parse(run.endedAt) : rt.clock.now().getTime()
+      // The products of every other track that is still on (the scheduler skips an archived one), in the order they are listed.
+      const elsewhere = repo.listTracks().filter(other => other.id !== t.id && other.status !== 'archived')
+        .map(other => ({ name: other.name, products: new Set(repo.productsOfTrack(other.id).map(item => item.id)) }))
       return {
         batchId,
         running: run !== null && isActive(run),
@@ -457,7 +474,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         elapsedSec: Number.isNaN(started) ? 0 : Math.max(0, Math.floor((ended - started) / 1000)),
         candidates: batchId === null ? [] : repo.listCandidates(t.id, batchId).flatMap(c => {
           const p = repo.getProduct(c.productId)
-          return p ? [{ ...c, product: p }] : []
+          return p ? [{ ...c, product: p, trackedIn: trackedElsewhere(p, elsewhere) }] : []
         }),
       }
     },

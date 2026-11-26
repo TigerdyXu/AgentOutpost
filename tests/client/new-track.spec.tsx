@@ -14,13 +14,13 @@ import { all, click, fail, find, mount, product, settle, state, stubApi, submit,
 
 const TRACK = 't1'
 const heat = (extra: Partial<Heat> = {}): Heat => ({ foundCount: 41, datedWeekly: [5, 7, 6, 10, 14], trend: 'up', showBars: true, ...extra })
-type Found = Candidate & { product: Product }
+type Found = Candidate & { product: Product; trackedIn: string[] }
 /** A candidate of the track's batch `b1`: strong and picked by default unless `extra` says otherwise. */
-const cand = (id: string, name: string, extra: Partial<Candidate> & { product?: Partial<Product> } = {}): Found => {
+const cand = (id: string, name: string, extra: Partial<Candidate> & { product?: Partial<Product>; trackedIn?: string[] } = {}): Found => {
   const { product: productExtra, ...rest } = extra
   return {
     id, trackId: TRACK, batchId: 'b1', productId: `p-${id}`, tier: 'strong', oneLiner: `${name}是什么`, reason: `${name}为什么值得看`, heat: heat(), selected: true,
-    ...rest, product: product(`p-${id}`, name, { company: '某公司', status: 'candidate', form: 'App', ...productExtra }),
+    trackedIn: [], ...rest, product: product(`p-${id}`, name, { company: '某公司', status: 'candidate', form: 'App', ...productExtra }),
   }
 }
 const doubao = cand('c1', '豆包·小豆', { product: { company: '字节跳动', form: 'App 内代理' } })
@@ -391,6 +391,35 @@ describe('the footer', () => {
     await show(view([tracked1]))
     expect(footer()).toContain('已选 1 个')
     expect(footer()).not.toContain('首次建档')
+  })
+})
+
+describe('a candidate that other tracks already follow', () => {
+  it('marks a candidate tracked elsewhere and leaves it out of the daily estimate', async () => {
+    const elsewhere = cand('c1', '豆包·小豆', { product: { status: 'tracking' }, trackedIn: ['Personal Agent'] })
+    await show(view([elsewhere, muse]))
+    // Both are ticked and both will be started; only the product Outpost does not follow yet is a new day's work.
+    expect(picked()).toEqual(['豆包·小豆', 'Meta Muse'])
+    expect(card('豆包·小豆').textContent).toContain('已在Personal Agent跟踪 · 只补缺的维度')
+    expect(card('Meta Muse').textContent).not.toContain('跟踪')
+    expect(box('豆包·小豆').disabled).toBe(false)
+    expect(footer()).toContain('已选 2 个')
+    expect(footer()).toContain('预计每天 ¥0.5～1（估算）') // one product: ¥0.5～1
+    expect(find('开始跟踪 2 个')).toBeTruthy()
+  })
+
+  it('joins several track names with 、, and counts a twin tracked elsewhere neither in the estimate nor in the profile time', async () => {
+    // This candidate is a row of its own (a candidate) for a product that two other tracks follow.
+    const twin = cand('c1', '千问Go', { trackedIn: ['Personal Agent', '手机 AI 助理'] })
+    await show(view([twin, muse, dots, vivo]))
+    expect(card('千问Go').textContent).toContain('已在Personal Agent、手机 AI 助理跟踪 · 只补缺的维度')
+    await click(box('某手机厂商代理'))
+    // Four are ticked; three are new, which is what the estimate and the profile time (3 at a time) are about.
+    expect(footer()).toContain('已选 4 个')
+    expect(footer()).toContain('预计每天 ¥1.5～3（估算） · 首次建档约 5 分钟')
+    // With only the one that is tracked elsewhere ticked there is no day's cost and no profile to build.
+    for (const name of ['Meta Muse', 'OpenAI Dots', '某手机厂商代理']) await click(box(name))
+    expect(footer()).toBe('已选 1 个稍后再挑开始跟踪 1 个')
   })
 })
 

@@ -1301,6 +1301,8 @@ textarea.op-input {
 
 .op-pick-tracked {
   align-self: flex-start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 0 7px;
   border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-card-fill);

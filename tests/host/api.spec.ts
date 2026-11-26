@@ -509,6 +509,52 @@ describe('recommendations', () => {
   })
 })
 
+describe('the candidates of a track that other tracks already follow', () => {
+  const candidatesOf = async (trackId: Id) =>
+    ok(await host.call('GET', `tracks/${trackId}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>().candidates
+
+  it('lists the other tracks a candidate is already tracked in', async () => {
+    const a = addTrack({ name: 'Personal Agent' })
+    const c = addTrack({ name: 'AI 硬件' })
+    const old = addTrack({ name: '旧赛道', status: 'archived' })
+    const b = addTrack({ name: '手机 AI 助理', status: 'picking' })
+    // 小豆 is tracked in A, and paused in C: both are told, in the order the tracks are listed. B follows it too, but that is this track.
+    addProduct('xiaodou', '小豆', 'tracking', a.id)
+    repo.linkProduct(c.id, 'xiaodou')
+    repo.linkProduct(b.id, 'xiaodou')
+    // A product with a row of its own that reads alike: tracked in A as 「千问Go!」, a candidate here as 「千问Go」.
+    addAlike('qwen-tracked', '千问Go!', '阿里巴巴', 'tracking', a.id)
+    addAlike('qwen-copy', '千问Go', '阿里巴巴', 'candidate')
+    addProduct('cursor', 'Cursor', 'candidate')
+    // Followed only by a track that is archived, and a twin that is only a candidate elsewhere: nothing is being done for either.
+    addProduct('retired', '老产品', 'tracking', old.id)
+    addAlike('zed', 'Zed', 'Zed Inc', 'candidate', c.id)
+    addAlike('zed-copy', 'Zed!', 'Zed Inc', 'candidate')
+    for (const id of ['xiaodou', 'qwen-copy', 'cursor', 'retired', 'zed-copy']) addCandidate(b.id, id)
+
+    const found = await candidatesOf(b.id)
+
+    expect(found.map(f => [f.product.name, f.trackedIn])).toEqual([
+      ['小豆', ['Personal Agent', 'AI 硬件']],
+      ['千问Go', ['Personal Agent']],
+      ['Cursor', []],
+      ['老产品', []],
+      ['Zed!', []],
+    ])
+  })
+
+  it('counts a paused or baselining product as tracked, and an archived one as not', async () => {
+    const a = addTrack({ name: '赛道A' })
+    const c = addTrack({ name: '赛道C' })
+    const b = addTrack({ name: '赛道B', status: 'picking' })
+    addProduct('paused', '暂停的', 'paused', a.id)
+    addProduct('baselining', '建档中的', 'baselining', c.id)
+    addProduct('archived-row', '归档的', 'archived', a.id)
+    for (const id of ['paused', 'baselining', 'archived-row']) addCandidate(b.id, id)
+    expect((await candidatesOf(b.id)).map(f => [f.product.name, f.trackedIn])).toEqual([['暂停的', ['赛道A']], ['建档中的', ['赛道C']], ['归档的', []]])
+  })
+})
+
 describe('a recommendation that could not run', () => {
   it('says why its batch is empty: the run\'s status and error', async () => {
     await rt.stop()
