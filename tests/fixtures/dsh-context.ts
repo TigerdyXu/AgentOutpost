@@ -4,6 +4,9 @@
  * and `agents`, and fake agents with their own `agent.ctx.tools`. Like DSH, creating or resuming a session runs the creator's
  * setup and then emits `agent/created` before it resolves; an agent made with `agents.create` belongs to its caller, whose
  * handle's `dispose` takes the live agent (and everything registered on it) away while the session stays stored;
+ * the creator's setup may install tool guards on the agent's scope (`agentCtx.tools.guard`), which DSH checks for every call the
+ * agent makes; a creation can be made to stall where DSH starts the browser (`stallCreation`), and, like DSH, it gives up on
+ * the caller's `signal` and rolls back (it also fails a creation whose signal aborted by the time setup is over);
  * a message sent to an idle agent starts a turn at once (`turn/start`; the step takes the message out of the inbox,
  * `agent/inbox/claimed`; then records it, `user/message`), and one sent while a turn runs waits for that turn to end. The test plays the model: `assistant(...)` and `turnEnd(...)` emit what
  * DSH would.
@@ -41,8 +44,16 @@ export interface CreateOptions {
   sessionId: string
   agentOptions?: { provider?: string; model?: string; reasoningEffort?: string }
   meta?: { cwd?: string; agentPreset?: string }
+  /** DSH's creation-only cancel: an abort before the handle is returned rolls the creation back. */
+  signal?: AbortSignal
   setup?: (agentCtx: Context, agent: FakeAgent) => unknown
 }
+
+/** A tool guard as `agentCtx.tools.guard` takes it (`ToolGuard` in `@deepseek-ai/dsh-tools`): a reason denies the call. */
+export type Guard = (exec: { name: string; arguments: unknown }) => string | { reason: string } | undefined
+
+/** A creation held where DSH starts the session's browser (`agent/created`, before any other listener). */
+interface Stall { held: true }
 
 /** A model chunk, as `ctx.llm.stream` yields them. */
 export type Chunk = Record<string, unknown> & { type: string }
@@ -53,6 +64,10 @@ export function dshHost() {
   /** Sessions stored on disk, live or not. */
   const stored = new Set<string>()
   const tools = new Map<string, Map<string, RegisteredTool>>()
+  /** The guards installed on each session's current agent. */
+  const guards = new Map<string, Guard[]>()
+  /** Creations to hold, oldest first: the next `agents.create` takes the first. */
+  const stalls: Stall[] = []
   const sent = new Map<string, SentMessage[]>()
   /** Sessions whose next turns take their message and then fail before recording it (no `user/message`). */
   const unrecorded = new Set<string>()
@@ -78,15 +93,21 @@ export function dshHost() {
   }
 
   /** A new agent instance for `sessionId` (a fresh one on every create or resume, as DSH does), announced with `agent/created`. */
-  const spawn = async (sessionId: string, kind: 'new' | 'resume', setup?: (agentCtx: Context, agent: FakeAgent) => unknown) => {
+  const spawn = async (sessionId: string, kind: 'new' | 'resume', setup?: (agentCtx: Context, agent: FakeAgent) => unknown, creation?: { signal?: AbortSignal; stall?: Stall }) => {
     const agentCtx = new Context()
     const own = new Map<string, RegisteredTool>()
+    const guarded: Guard[] = []
     tools.set(sessionId, own)
+    guards.set(sessionId, guarded)
     agentCtx.reflect.provide('tools', {
       register: vi.fn((tool: RegisteredTool) => {
         if (own.has(tool.name)) throw new Error(`tool "${tool.name}" is already registered`)
         own.set(tool.name, tool)
         return () => { if (own.get(tool.name) === tool) own.delete(tool.name) }
+      }),
+      guard: vi.fn((guard: Guard) => {
+        guarded.push(guard)
+        return () => { const at = guarded.indexOf(guard); if (at >= 0) guarded.splice(at, 1) }
       }),
     })
     const agent: FakeAgent = {
@@ -104,15 +125,28 @@ export function dshHost() {
     stored.add(sessionId)
     try {
       await setup?.(agentCtx, agent)
+      // DSH's browser provider listens first on `agent/created` and waits there for its Playwright MCP server to start,
+      // giving up only on the creation's signal (it has no startup timeout).
+      if (creation?.stall) await held(creation.signal)
+      creation?.signal?.throwIfAborted() // as DSH checks after setup and after the announcement (`assertLive`)
       await ctx.serial('agent/created', { agent, source: { kind: kind === 'new' ? 'startup' : 'resume' } } as never)
     } catch (error) {
-      // As in DSH, a listener that throws fails the creation: the agent is gone again.
+      // As in DSH, a listener that throws, or the creation's signal, fails the creation: the agent is gone again, and what
+      // was registered on its scope with it.
       agents.delete(sessionId)
+      own.clear()
+      guarded.splice(0)
       if (!wasStored) stored.delete(sessionId)
       throw error
     }
     return agent
   }
+  /** Never resolves; rejects when `signal` aborts, as DSH's browser provider gives up its wait (`SessionResources.get`). */
+  const held = (signal: AbortSignal | undefined) => new Promise<void>((_resolve, reject) => {
+    if (!signal) return
+    if (signal.aborted) { reject(signal.reason); return }
+    signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+  })
 
   const sessionController = {
     resolveAgent: vi.fn(async (sessionId: string) => {
@@ -156,11 +190,13 @@ export function dshHost() {
     get: vi.fn((sessionId: string) => agents.get(sessionId)),
     /** Makes a new session and its agent for the caller, who owns it: disposing the handle ends the live agent. */
     create: vi.fn(async (options: CreateOptions) => {
-      const agent = await spawn(options.sessionId, 'new', options.setup)
+      options.signal?.throwIfAborted()
+      const agent = await spawn(options.sessionId, 'new', options.setup, { signal: options.signal, stall: stalls.shift() })
       const dispose = vi.fn(async () => {
         if (agents.get(agent.id) !== agent) return
         agents.delete(agent.id)
         tools.get(agent.id)?.clear() // what was registered on the agent goes with its scope
+        guards.get(agent.id)?.splice(0)
       })
       const handle = { agent, dispose }
       created.push({ options, handle })
@@ -195,6 +231,24 @@ export function dshHost() {
     workspace: (path: string) => workspaces.get(path),
     /** The tools registered on the session's current agent, by name. */
     tools: (sessionId: string) => tools.get(sessionId) ?? new Map<string, RegisteredTool>(),
+    /** The guards installed on the session's current agent. */
+    guards: (sessionId: string) => [...guards.get(sessionId) ?? []],
+    /**
+     * What DSH's guard check (`checkGuards`, after approval) says of a call of `name` by the session's current agent: the
+     * first denial, as `{ reason }`, or undefined when no guard denies it.
+     */
+    denial: (sessionId: string, name: string, args: unknown = {}) => {
+      for (const guard of guards.get(sessionId) ?? []) {
+        const denied = guard({ name, arguments: args })
+        if (denied !== undefined) return typeof denied === 'string' ? { reason: denied } : denied
+      }
+      return undefined
+    },
+    /**
+     * Holds the next `agents.create` where DSH starts the session's browser, as a Playwright MCP server that never comes up;
+     * it gives up when the creation's signal aborts and rolls the creation back, as DSH does.
+     */
+    stallCreation: () => { stalls.push({ held: true }) },
     /** The messages sent to the session, oldest first. */
     sent: (sessionId: string) => sent.get(sessionId) ?? [],
     /** A session that exists on disk with no live agent, as after a restart of DSH. */

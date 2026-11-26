@@ -30,9 +30,10 @@
           # Xiaohongshu, Zhihu) is opened in a headless Chrome. It lives in this preset, so only research sessions get it,
           # never a session of the user's own; the browser-use service is isolated to the group, as DSH requires of a
           # service inside a preset. What it costs:
-          # - Every research session gets the `mcp__playwright-mcp__*` tools, `browser_run_code_unsafe` among them
-          #   (arbitrary JavaScript in the Playwright process, by Playwright's own description), and they run without
-          #   approval, while the session reads pages nobody vetted.
+          # - Every research session gets the `mcp__playwright-mcp__*` tools, and they run without approval while the
+          #   session reads pages nobody vetted. Outpost refuses it `browser_run_code_unsafe` (arbitrary JavaScript in the
+          #   Playwright process, by Playwright's own description) with a guard on the session's agent; opening, reading
+          #   and clicking through pages stay.
           # - Every live research session runs a Playwright MCP server (about 125 MB), and one that opened a page a headless
           #   Chrome (0.7 GB on a blank page, more on real ones). Outpost ends a research session's live agent when its run
           #   is over, which closes both, so only the sessions running now hold one; a research session opened later in DSH

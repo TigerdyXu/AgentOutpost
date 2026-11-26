@@ -111,7 +111,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
      grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml
      ```
 
-   - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着。之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，调用不经确认，而调研会话读的是不可信网页。
+   - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着。之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，调用不经确认，而调研会话读的是不可信网页；其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，前哨在调研会话里把它拦下了（模型调它只会收到「前哨的调研会话不能用这个工具」），打开、读取、点击网页的工具照常能用。
    - **侧栏**（这一条是读 dsh 代码得出的，还没在桌面版里亲眼看到）：调研会话结束后会从 dsh 侧栏「前哨」工作区里暂时消失，会话列表刷新后（重开桌面版或断线重连）才回来，会话记录一直在；从前哨「运行记录」点那一行（「在 DSH 里打开这次运行的会话」）照样能打开。
    - **关掉或换浏览器**：在 profile 补丁里覆盖 `outpost-researcher-preset` 这一行。覆盖会整段替换 `config`，所以要把包里 `cordis.patch.yml` 的这一行整段抄过来，去掉 `browser` 那一组（关掉），或改 `executablePath`（换成别的 Chromium 内核浏览器；删掉这一行则让 Playwright 自己找）。关掉后打不开的原文按「待确认」处理。
 

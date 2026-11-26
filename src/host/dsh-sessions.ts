@@ -6,8 +6,10 @@
  * turn that took its message; what it cost is the usage of that turn's assistant messages.
  *
  * Outpost makes a research session's agent itself (`ctx.agents.create`) and keeps its handle, so that `release` can end
- * the live agent once the run is over: that closes the browser the preset launched for it. A 追问 chat is made by DSH's
- * session controller, as any chat of the user's, and stays.
+ * the live agent once the run is over: that closes the browser the preset launched for it. While it composes that agent it
+ * refuses it the one browser tool that runs arbitrary code (`UNSAFE_BROWSER_TOOL`), and it gives up on a creation that
+ * outlasts the run's time limit (a browser that never starts). A 追问 chat is made by DSH's session controller, as any
+ * chat of the user's, and stays.
  *
  * Every DSH value comes through `ctx` (session controller, workspace registry, persistence, agents, presets); this file
  * imports only DSH types.
@@ -54,6 +56,14 @@ export const RESEARCH_PRESET_BROKEN = '前哨的调研预设加载不了：浏�
 export const PLAYWRIGHT_MODULE = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
 /** The name that provider registers with browser use, which is also the MCP server name its tools are reached by. */
 export const PLAYWRIGHT_PROVIDER = 'playwright-mcp'
+/**
+ * The Playwright MCP tool that runs arbitrary JavaScript in the Playwright server process (「RCE-equivalent」, in
+ * Playwright's own README). A research session reads pages nobody vetted, and its tool calls run without approval, so it
+ * is refused there; opening, reading and clicking through pages (`browser_navigate`, `browser_snapshot`, …) stay.
+ */
+export const UNSAFE_BROWSER_TOOL = `mcp__${PLAYWRIGHT_PROVIDER}__browser_run_code_unsafe`
+/** What a research session's model is told when it calls `UNSAFE_BROWSER_TOOL`. */
+export const RESEARCH_TOOL_REFUSED = '前哨的调研会话不能用这个工具'
 
 /**
  * What Outpost uses of DSH's preset registry (`ctx.agentPresets`, package `@deepseek-ai/dsh-agent-preset-registry`):
@@ -132,6 +142,23 @@ export function addUsage(total: Usage, usage: TokenUsage | undefined): void {
 const noUsage = (): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 })
 
 /**
+ * `work`, or a rejection with `signal`'s reason as soon as it aborts, whichever comes first; without a signal, `work` itself.
+ * A value `work` yields after the abort is handed to `late` (to let it go), and a failure then is dropped.
+ */
+function abortable<T>(work: Promise<T>, signal: AbortSignal | undefined, late?: (value: T) => void): Promise<T> {
+  if (!signal) return work
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => { reject(signal.reason instanceof Error ? signal.reason : new Error('aborted', { cause: signal.reason })) }
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+    work.then(
+      value => { signal.removeEventListener('abort', onAbort); if (signal.aborted) late?.(value); else resolve(value) },
+      (error: unknown) => { signal.removeEventListener('abort', onAbort); reject(error) },
+    )
+  })
+}
+
+/**
  * `value` as a plain JSON object: DSH refuses a tool value that does not survive JSON intact (an `undefined` property, a
  * `Date`, an object without the plain prototype), and checks it against the declared object schema.
  */
@@ -188,9 +215,21 @@ export class DshSessionDriver implements SessionDriver {
     })
   }
 
+  /**
+   * The time limit (`signal`) covers making the session too: a creation that outlasts it (DSH waits for the preset's
+   * Playwright MCP server, with no startup timeout of its own) is given up, the round reports `timeout`, and nothing of the
+   * session is left bound or held (`open`).
+   */
   async run(spec: SessionSpec, signal: AbortSignal): Promise<SessionOutcome> {
     if (signal.aborted) return { reason: 'timeout', usage: noUsage() }
-    const agent = await this.open(spec)
+    let agent: Agent
+    try {
+      agent = await this.open(spec, AGENT_PRESET, signal)
+    } catch (error) {
+      if (!signal.aborted) throw error
+      this.ctx.logger.warn('dsh-outpost: session %s was still being made (its browser starting, say) when its time limit ran out or Outpost stopped; given up', spec.sessionId)
+      return { reason: 'timeout', usage: noUsage() }
+    }
     this.select(agent, spec)
     return this.round(agent, spec.prompt, signal)
   }
@@ -278,39 +317,55 @@ export class DshSessionDriver implements SessionDriver {
   /**
    * The live agent of the session, created (and titled) first, on `preset`, when it does not exist; its tools registered.
    * A research session is made by this driver (`createOwned`), a 追问 chat by DSH's session controller.
+   *
+   * `signal` (a research run's time limit) bounds the waits of making a research session: finding it, checking its preset,
+   * and DSH creating its agent. When it aborts first, or the research session cannot be made, the session's tools are taken
+   * back before this throws, so that no agent made for it later (a creation finishing late, the user opening it) gets them.
    */
-  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, preset = AGENT_PRESET): Promise<Agent> {
+  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, preset: string, signal?: AbortSignal): Promise<Agent> {
     const id = spec.sessionId
     if (!id.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${id}" must start with "${SESSION_PREFIX}"`)
+    const research = preset === AGENT_PRESET
     // Bound before the agent exists, so that `agent/created` finds the tools.
     this.bound.set(id, spec.tools)
-    if (preset !== AGENT_PRESET) this.chats.add(id)
-    let agent = await this.resolve(id)
-    if (!agent) {
-      if (preset === AGENT_PRESET) {
-        // Before anything is written: a preset that cannot compose would fail every research session, each after DSH had
-        // already written an empty one.
-        const problem = await researchPresetProblem(this.ctx)
-        if (problem !== null) {
-          this.bound.delete(id)
-          this.ctx.logger.warn('dsh-outpost: the research preset %s cannot compose a session: %s', AGENT_PRESET, problem)
-          throw new Error(RESEARCH_PRESET_BROKEN)
+    if (!research) this.chats.add(id)
+    let agent: Agent | undefined
+    try {
+      agent = await abortable(this.resolve(id), signal)
+      if (!agent) {
+        if (research) {
+          // Before anything is written: a preset that cannot compose would fail every research session, each after DSH had
+          // already written an empty one.
+          const problem = await abortable(researchPresetProblem(this.ctx), signal)
+          if (problem !== null) {
+            this.ctx.logger.warn('dsh-outpost: the research preset %s cannot compose a session: %s', AGENT_PRESET, problem)
+            throw new Error(RESEARCH_PRESET_BROKEN)
+          }
         }
+        await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
+        const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
+        if (research) {
+          agent = await this.createOwned(id, workspace, signal)
+        } else {
+          const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
+          if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
+          agent = await this.resolve(id)
+          if (!agent) throw new Error(`dsh-outpost: session "${id}" vanished right after it was created`)
+        }
+        await this.ctx.sessionController.rename({ sessionId: id as SessionId, title: spec.title })
       }
-      await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
-      const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
-      if (preset === AGENT_PRESET) {
-        agent = await this.createOwned(id, workspace)
-      } else {
-        const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
-        if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
-        agent = await this.resolve(id)
-        if (!agent) throw new Error(`dsh-outpost: session "${id}" vanished right after it was created`)
-      }
-      await this.ctx.sessionController.rename({ sessionId: id as SessionId, title: spec.title })
+    } catch (error) {
+      // A research session that was never made (or that this driver does not hold) has no run left to serve.
+      if (research && !this.owned.has(id)) this.abandon(id)
+      throw error
     }
     this.attach(agent)
     return agent
+  }
+
+  /** Takes back the tools bound for a session whose making failed or was given up, even from an agent that is gone. */
+  private abandon(sessionId: string): void {
+    try { this.forget(sessionId) } catch { /* the agent is gone, and its tools with it */ }
   }
 
   /**
@@ -319,8 +374,13 @@ export class DshSessionDriver implements SessionDriver {
    * selects one, the session put into the workspace), but through `ctx.agents.create`, which hands the caller the
    * agent's handle: disposing it is the one way DSH has to end a session's live agent without archiving it. The session
    * controller's own create keeps that handle until DSH stops, and with it the browser the preset launched.
+   *
+   * During setup the agent is refused `UNSAFE_BROWSER_TOOL`: a guard on its own scope, which DSH checks for every call the
+   * agent makes, after approval (`tools.guard`). `signal` is DSH's creation-only cancel (`CreateAgentOptions.signal`): DSH
+   * rolls the creation back when it aborts. Should a creation finish all the same after the abort, its handle is disposed
+   * at once.
    */
-  private async createOwned(id: string, workspace: Workspace): Promise<Agent> {
+  private async createOwned(id: string, workspace: Workspace, signal?: AbortSignal): Promise<Agent> {
     const presets = this.ctx.get('agentPresets') as AgentPresets | undefined
     if (!presets) throw new Error(`dsh-outpost: DSH has no agent presets here, so the research preset "${AGENT_PRESET}" cannot compose a session`)
     const defaults = this.ctx.agentDefaultModel
@@ -329,11 +389,21 @@ export class DshSessionDriver implements SessionDriver {
       get model() { return defaults.currentSelection().model },
       get reasoningEffort() { return defaults.currentSelection().reasoningEffort },
     }
-    const handle = await this.ctx.agents.create({
+    const creation = this.ctx.agents.create({
       sessionId: id as SessionId,
       agentOptions,
       meta: { cwd: workspace.path, agentPreset: AGENT_PRESET },
-      setup: async agentCtx => { await presets.mount(agentCtx, AGENT_PRESET) },
+      ...signal ? { signal } : {},
+      setup: async agentCtx => {
+        agentCtx.tools.guard(exec => exec.name === UNSAFE_BROWSER_TOOL ? RESEARCH_TOOL_REFUSED : undefined)
+        await presets.mount(agentCtx, AGENT_PRESET)
+      },
+    })
+    const handle = await abortable(creation, signal, late => {
+      this.abandon(id)
+      late.dispose().catch((error: unknown) => {
+        this.ctx.logger.warn('dsh-outpost: could not end session %s, made after its run gave up on it: %s', id, error instanceof Error ? error.message : String(error))
+      })
     })
     this.owned.set(id, handle)
     await workspace.attachSession(id as SessionId)

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { DshSessionDriver, RESEARCH_PRESET_BROKEN, toolParameters } from '../../src/host/dsh-sessions.ts'
+import { DshSessionDriver, RESEARCH_PRESET_BROKEN, RESEARCH_TOOL_REFUSED, UNSAFE_BROWSER_TOOL, toolParameters } from '../../src/host/dsh-sessions.ts'
 import type { SessionSpec, ToolSpec } from '../../src/host/ports.ts'
 import { researchTools } from '../../src/host/tools.ts'
 import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
@@ -321,6 +321,82 @@ describe('DshSessionDriver.run', () => {
     }
   })
 
+  it('gives up on a session whose browser never starts once its time is up, and leaves nothing behind', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      // DSH waits for the preset's Playwright MCP server while it creates the session, with no startup timeout of its own.
+      host.stallCreation()
+      const limit = new AbortController()
+      setTimeout(() => { limit.abort(new DOMException('The operation timed out.', 'TimeoutError')) }, 30 * 60_000)
+      let outcome: unknown
+      const p = driver.run(specOf(), limit.signal).then(value => { outcome = value; return value })
+      await vi.waitFor(() => { expect(host.agents.create).toHaveBeenCalledOnce() })
+      // The run's own signal goes to DSH as the creation's cancel (`CreateAgentOptions.signal`).
+      expect(host.agents.create.mock.calls[0]![0].signal).toBe(limit.signal)
+      await vi.advanceTimersByTimeAsync(29 * 60_000)
+      expect(outcome).toBeUndefined() // still waiting for the browser, within its time
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(await p).toEqual({ reason: 'timeout', usage: zero })
+      // DSH rolled the creation back: no live agent, no handle for Outpost to hold, nothing said to anyone.
+      expect(host.created).toEqual([])
+      expect(host.agents.get('outpost-daily-p1')).toBeUndefined()
+      expect(host.sent('outpost-daily-p1')).toEqual([])
+      expect(host.sessionController.rename).not.toHaveBeenCalled()
+      expect(host.sessionController.cancel).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-p1')
+      // No tools wait for the session: an agent DSH makes for it later (the user opening it, say) gets none.
+      await host.spawn('outpost-daily-p1')
+      expect(host.tools('outpost-daily-p1').size).toBe(0)
+      await expect(driver.release('outpost-daily-p1')).resolves.toBeUndefined()
+    } finally {
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets go of a session DSH hands over just as its time runs out', async () => {
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      // DSH is done and returns the handle; the time limit fires before Outpost takes it.
+      const limit = new AbortController()
+      const create = host.agents.create.getMockImplementation()!
+      host.agents.create.mockImplementationOnce(async options => { const handle = await create(options); limit.abort(); return handle })
+      expect(await driver.run(specOf(), limit.signal)).toEqual({ reason: 'timeout', usage: zero })
+      // The handle that came too late is disposed at once: no live agent (and no browser), no tools, nothing sent or titled.
+      expect(host.created).toHaveLength(1)
+      await vi.waitFor(() => { expect(host.created[0]!.handle.dispose).toHaveBeenCalledOnce() })
+      expect(host.agents.get('outpost-daily-p1')).toBeUndefined()
+      expect(host.tools('outpost-daily-p1').size).toBe(0)
+      expect(host.sent('outpost-daily-p1')).toEqual([])
+      expect(host.sessionController.rename).not.toHaveBeenCalled()
+      await host.spawn('outpost-daily-p1')
+      expect(host.tools('outpost-daily-p1').size).toBe(0)
+      // A release afterwards has nothing left to end.
+      await driver.release('outpost-daily-p1')
+      expect(host.created[0]!.handle.dispose).toHaveBeenCalledOnce()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('gives up on the preset check once its time is up, before any session is made', async () => {
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      host.agentPresets.resolve.mockReturnValueOnce(new Promise(() => {})) // DSH's preset activation hangs
+      const limit = new AbortController()
+      const p = driver.run(specOf(), limit.signal)
+      await vi.waitFor(() => { expect(host.agentPresets.resolve).toHaveBeenCalledOnce() })
+      limit.abort()
+      expect(await p).toEqual({ reason: 'timeout', usage: zero })
+      expect(host.agents.create).not.toHaveBeenCalled()
+      await host.spawn('outpost-daily-p1')
+      expect(host.tools('outpost-daily-p1').size).toBe(0)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('reports timeout without sending anything when the signal has already aborted', async () => {
     const timer = new AbortController()
     timer.abort()
@@ -341,6 +417,33 @@ describe('DshSessionDriver.run', () => {
     expect(host.agent('outpost-b').model.select).toHaveBeenCalledWith({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
     host.turnEnd('outpost-b', { kind: 'completed' })
     await chosen
+  })
+})
+
+describe('the browser tool that runs arbitrary code', () => {
+  it('is refused in research sessions, while the other browser tools stay', async () => {
+    expect(UNSAFE_BROWSER_TOOL).toBe('mcp__playwright-mcp__browser_run_code_unsafe')
+    expect(RESEARCH_TOOL_REFUSED).toBe('前哨的调研会话不能用这个工具')
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    // Installed while the agent is composed (its setup), on its own scope: DSH checks it for every call after approval.
+    const agentTools = (host.agent('outpost-daily-p1').ctx as unknown as { tools: { guard: ReturnType<typeof vi.fn> } }).tools
+    expect(agentTools.guard).toHaveBeenCalledOnce()
+    expect(host.denial('outpost-daily-p1', 'mcp__playwright-mcp__browser_run_code_unsafe', { code: 'async page => process.exit()' }))
+      .toEqual({ reason: '前哨的调研会话不能用这个工具' })
+    for (const name of ['mcp__playwright-mcp__browser_navigate', 'mcp__playwright-mcp__browser_snapshot', 'mcp__playwright-mcp__browser_evaluate', 'web_fetch', 'web_search', 'outpost_done', 'browser_run_code_unsafe'])
+      expect(host.denial('outpost-daily-p1', name), name).toBeUndefined()
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    // It goes with the agent when the run lets the session go.
+    await driver.release('outpost-daily-p1')
+    expect(host.guards('outpost-daily-p1')).toEqual([])
+  })
+
+  it('is not Outpost\'s to refuse in a 追问 chat, which is the user\'s own', async () => {
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
+    expect(host.guards('outpost-followup-1')).toEqual([])
+    expect(host.denial('outpost-followup-1', 'mcp__playwright-mcp__browser_run_code_unsafe')).toBeUndefined()
   })
 })
 
