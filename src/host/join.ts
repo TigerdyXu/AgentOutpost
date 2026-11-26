@@ -51,11 +51,18 @@ const isWorkedOn = (p: Product) => p.status === 'tracking' || p.status === 'base
  *   card for a dimension this track adds, it gets those cards at once (`Scheduler.topUpNow`, which waits for its daily run
  *   or its baseline if one is in flight). A paused one is linked as it is: neither resumed nor topped up.
  *
- * The baselines and top-ups go on in the background.
+ * The baselines and top-ups go on in the background, once all the products have joined (and, for a move, left).
+ *
+ * With `leaving`, each product that joined is taken out of that track in the same step (a move): the joining comes first
+ * and both are one transaction, so a failure leaves the product where it was, and it is never in no track. What a product
+ * lacks is told as it joins, while it is still in the track it leaves. Its top-up starts after it has left, so it asks for
+ * what the tracks it is in now need.
+ *
+ * @param leaving - The track the products move out of; none: they are only added.
  * @returns One entry per product that joined (spellings left out are not), in the order given; unknown ids are skipped.
  * @throws When the track does not exist (nothing is linked then).
  */
-export function joinTrack(deps: JoinDeps, trackId: Id, productIds: Id[]): Joined[] {
+export function joinTrack(deps: JoinDeps, trackId: Id, productIds: Id[], leaving?: Id): Joined[] {
   const { repo, scheduler } = deps
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
@@ -63,20 +70,23 @@ export function joinTrack(deps: JoinDeps, trackId: Id, productIds: Id[]): Joined
   const linked = new Set(repo.productsOfTrack(trackId).map(p => p.id))
   const taken = new Set<string>()
   const joined: Joined[] = []
-  for (const id of productIds) {
-    const named = repo.getProduct(id)
-    if (!named) continue
-    const p = isNew(named) ? repo.findSameProduct(named) ?? named : named
-    const same = identityKey(p.name, p.company)
-    if (taken.has(same)) continue
-    taken.add(same)
-    const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
-    const carded = new Set(repo.latestCards(p.id).map(c => c.dimension))
-    const missing = linked.has(p.id) ? [] : keys.filter(key => !had.has(key) && !carded.has(key))
-    repo.linkProduct(trackId, p.id)
-    const work = isNew(p) ? 'baseline' : isWorkedOn(p) && missing.length ? 'top-up' : null
-    joined.push({ productId: p.id, status: p.status, work, missing })
-  }
+  repo.atomic(() => {
+    for (const id of productIds) {
+      const named = repo.getProduct(id)
+      if (!named) continue
+      const p = isNew(named) ? repo.findSameProduct(named) ?? named : named
+      const same = identityKey(p.name, p.company)
+      if (taken.has(same)) continue
+      taken.add(same)
+      const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
+      const carded = new Set(repo.latestCards(p.id).map(c => c.dimension))
+      const missing = linked.has(p.id) ? [] : keys.filter(key => !had.has(key) && !carded.has(key))
+      repo.linkProduct(trackId, p.id)
+      if (leaving !== undefined) repo.unlinkProduct(leaving, p.id)
+      const work = isNew(p) ? 'baseline' : isWorkedOn(p) && missing.length ? 'top-up' : null
+      joined.push({ productId: p.id, status: p.status, work, missing })
+    }
+  })
   const of = (work: Joined['work']) => joined.filter(j => j.work === work).map(j => j.productId)
   deps.background(scheduler.baseline(of('baseline')), `baseline of the products of track ${trackId}`)
   const lacking = of('top-up')

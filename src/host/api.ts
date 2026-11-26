@@ -23,7 +23,7 @@ import { ICON_TYPES } from './icons.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { startRecommendation } from './jobs/recommend.ts'
-import { joinTrack } from './join.ts'
+import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
 
 // ---- the contract ----
@@ -160,6 +160,26 @@ export interface Api {
    * one not given. 409 「这个赛道已归档」 for an archived track.
    */
   'POST tracks/:id/add-product': { body: { name: string; officialUrl?: string }; response: { linked: Id; status: FollowedStatus; already?: true } | { runId: Id } }
+  /**
+   * 「也加到其他赛道」: the product joins the track and stays in its others, as `POST tracks/:id/start` joins a product that
+   * is followed already (`joinTrack`): its dossier and history are kept and only the cards for what the track adds are
+   * asked for, at once, after its daily run or baseline if one is in flight. `toppedUp` is how many cards that is (0: none,
+   * and none for a paused product, which is linked as it is). The product runs once a day however many tracks it is in.
+   * 409 for a product that is not followed, a track that is unknown or archived, and a product that is in the track already.
+   */
+  'POST products/:id/link': { body: { trackId: Id }; response: { toppedUp: number } }
+  /**
+   * 「从X拿掉」: the product leaves the track; its cards and history are kept (those of a dimension only that track had no
+   * longer show). 409 「这是它唯一的赛道。不想跟了就用「暂停跟踪」。」 when no other track that is on (not archived) would keep it, and
+   * for a track the product is not in.
+   */
+  'POST products/:id/unlink': { body: { trackId: Id }; response: { ok: true } }
+  /**
+   * 「移到其他赛道」: `link` to `to` and `unlink` from `from`, in one transaction (the joining first, so that a failure
+   * leaves the product in `from`), with the same answer and the same 409s as `link`, and 409 too for a `from` the product is
+   * not in. A paused product stays paused.
+   */
+  'POST products/:id/move': { body: { from: Id; to: Id }; response: { toppedUp: number } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
   'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
@@ -220,6 +240,8 @@ const AddProduct = z.object({
     z.string().trim().max(MAX_URL).url({ protocol: /^https?$/, error: 'officialUrl must be an http:// or https:// address' }).optional()),
 })
 const ProductPatch = z.object({ status: z.enum(['tracking', 'paused']).optional(), dailyBudgetYuan: z.number().min(0).max(100_000).nullable().optional() })
+const TrackRef = z.object({ trackId: z.string().min(1) })
+const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
 
@@ -237,6 +259,8 @@ function shiftDate(date: string, days: number): string {
   return localDate(new Date(y!, m! - 1, d! + days))
 }
 
+/** Why a product cannot be taken out of its only track. */
+const ONLY_TRACK = '这是它唯一的赛道。不想跟了就用「暂停跟踪」。'
 const isShown = (f: Finding) => f.status === 'verified' || f.status === 'unconfirmed'
 const isActive = (r: Run) => r.status === 'queued' || r.status === 'running'
 /** Kinds of run that work on one product: what 「立即更新」 and a retry of them start, and wait for. */
@@ -326,6 +350,22 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     const status = joining && FOLLOWED.includes(joining.status) ? joining.status as FollowedStatus : null
     return { trackedIn, trackedStatus: trackedIn.length ? status : null }
   }
+  /** The tracks the product is in, in the order they are listed. */
+  const tracksOf = (productId: Id) => repo.listTracks().filter(t => repo.productsOfTrack(t.id).some(p => p.id === productId))
+  /**
+   * The track that `p` may join (`link`, `move`).
+   * @throws 409 when the product is not one Outpost follows, or the track is unknown or archived or has the product already.
+   */
+  const joinableTrack = (p: Product, trackId: Id): Track => {
+    if (!FOLLOWED.includes(p.status)) throw new ApiError(409, '这个产品没有在跟踪')
+    const target = repo.listTracks().find(t => t.id === trackId)
+    if (!target) throw new ApiError(409, '找不到这个赛道')
+    if (target.status === 'archived') throw new ApiError(409, '这个赛道已归档')
+    if (repo.productsOfTrack(target.id).some(here => here.id === p.id)) throw new ApiError(409, '它已经在这个赛道里了')
+    return target
+  }
+  /** How many cards a product that joined a track is asked for at once: those it lacks, if it is worked on (not paused). */
+  const toppedUp = (joined: Joined | undefined) => joined?.work === 'top-up' ? joined.missing.length : 0
   /** Whether the product has no card yet for one of `keys`. */
   const lacksCard = (productId: Id, keys: DimensionKey[]) => {
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
@@ -574,6 +614,32 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const confirming = repo.activeRuns().find(r => r.kind === 'identify' && r.trackId === t.id && r.subject !== null && nameKey(r.subject) === key)
       if (confirming) return { runId: confirming.id }
       return { runId: await startIdentify({ ...rt.jobs, scheduler: rt.scheduler }, t.id, { name, officialUrl: officialUrl ?? null }) }
+    },
+
+    'POST products/:id/link': async req => {
+      const p = product(req.params.id!)
+      const { trackId } = TrackRef.parse(await req.body())
+      const target = joinableTrack(p, trackId)
+      return { toppedUp: toppedUp(joinTrack(rt, target.id, [p.id])[0]) }
+    },
+
+    'POST products/:id/unlink': async req => {
+      const p = product(req.params.id!)
+      const { trackId } = TrackRef.parse(await req.body())
+      const tracks = tracksOf(p.id)
+      if (!tracks.some(t => t.id === trackId)) throw new ApiError(409, '它不在这个赛道里')
+      // A track that is archived keeps nothing running: leaving the product there alone is leaving it in none.
+      if (!tracks.some(t => t.id !== trackId && t.status !== 'archived')) throw new ApiError(409, ONLY_TRACK)
+      repo.unlinkProduct(trackId, p.id)
+      return { ok: true }
+    },
+
+    'POST products/:id/move': async req => {
+      const p = product(req.params.id!)
+      const { from, to } = Move.parse(await req.body())
+      const target = joinableTrack(p, to)
+      if (!tracksOf(p.id).some(t => t.id === from)) throw new ApiError(409, '它不在这个赛道里')
+      return { toppedUp: toppedUp(joinTrack(rt, target.id, [p.id], from)[0]) }
     },
 
     'GET products/:id': ({ params }) => {

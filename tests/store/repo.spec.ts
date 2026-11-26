@@ -266,6 +266,30 @@ describe('Repo: tracks and products', () => {
     expect(repo.productsOfTrack(t.id)).toHaveLength(1)
   })
 
+  it('unlinking takes the product out of that track only, and keeps the product and its cards', () => {
+    const repo = newRepo()
+    const a = repo.createTrack(spec({ name: 'A', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'only-a', label: '只有 A 有' }] }))
+    const b = repo.createTrack(spec({ name: 'B', dimensions: [{ key: 'positioning', label: '定位' }] }))
+    const cursor = repo.upsertProduct(product())
+    const zed = repo.upsertProduct(product({ name: 'Zed', company: 'Zed Industries' }))
+    for (const t of [a, b]) repo.linkProduct(t.id, cursor.id)
+    repo.linkProduct(a.id, zed.id)
+    repo.addCardVersion(cardAt(1, { productId: cursor.id, dimension: 'only-a' }))
+
+    repo.unlinkProduct(a.id, cursor.id)
+
+    expect(repo.productsOfTrack(a.id).map(p => p.name)).toEqual(['Zed']) // the other product stays
+    expect(repo.productsOfTrack(b.id).map(p => p.name)).toEqual(['Cursor']) // and the other track
+    expect(repo.dimensionsOfProduct(cursor.id)).toEqual([{ key: 'positioning', label: '定位' }]) // A's own dimension no longer shows
+    expect(repo.getProduct(cursor.id)).not.toBeNull()
+    expect(repo.latestCards(cursor.id).map(c => c.dimension)).toEqual(['only-a']) // its card is kept
+    repo.unlinkProduct(a.id, cursor.id) // already out: harmless
+    repo.unlinkProduct('nobody', cursor.id)
+    expect(repo.productsOfTrack(b.id).map(p => p.name)).toEqual(['Cursor'])
+    repo.linkProduct(a.id, cursor.id) // and it can join again
+    expect(repo.productsOfTrack(a.id).map(p => p.name)).toEqual(['Zed', 'Cursor'])
+  })
+
   it('createTrack fills id and createdAt; updateTrack patches only the named fields and persists them', () => {
     const repo = newRepo()
     const t = repo.createTrack(spec())

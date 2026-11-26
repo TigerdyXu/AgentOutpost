@@ -166,6 +166,17 @@ export class Repo {
     this.db.prepare('INSERT OR IGNORE INTO track_products (track_id, product_id) VALUES (?, ?)').run(trackId, productId)
   }
 
+  /**
+   * Takes the product out of the track's tracked list, and nothing else: the product, its cards and its history stay (the
+   * cards of a dimension only that track had are kept, they just no longer show). Not linked: nothing happens.
+   */
+  unlinkProduct(trackId: Id, productId: Id): void {
+    this.db.prepare('DELETE FROM track_products WHERE track_id = ? AND product_id = ?').run(trackId, productId)
+  }
+
+  /** Runs `fn` as one: all of its writes, or none if it throws (`Db.atomic`). `fn` must be synchronous. */
+  atomic<T>(fn: () => T): T { return this.db.atomic(fn) }
+
   addCandidate(c: Omit<Candidate, 'id'>): Candidate {
     const candidate: Candidate = { ...c, id: randomUUID() }
     this.insert(CANDIDATE, candidate)

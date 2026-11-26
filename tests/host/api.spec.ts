@@ -992,6 +992,249 @@ describe('POST tracks/:id/add-product', () => {
   })
 })
 
+describe('moving products between tracks', () => {
+  const PRICING: Dimension = { key: 'pricing-model', label: '定价模式' }
+  const PRIVACY: Dimension = { key: 'privacy', label: '隐私' }
+  /** A tracked product with a card for every dimension of `dims`. */
+  const followed = (id: Id, name: string, trackId: Id, dims: Dimension[] = DEFAULT_DIMENSIONS, status: ProductStatus = 'tracking') => {
+    addProduct(id, name, status, trackId)
+    if (status === 'tracking') for (const dim of dims) card(id, dim.key, 1, [])
+  }
+  const inTracks = (productId: Id) => repo.listTracks().filter(t => repo.productsOfTrack(t.id).some(p => p.id === productId)).map(t => t.name)
+  /** The kinds of the sessions started so far, in order: `daily`, `baseline`, `verify`. */
+  const sessions = () => host.driver.runs.map(r => /^outpost-(\w+)-/.exec(r.sessionId)?.[1])
+  let baseline: ReturnType<typeof vi.spyOn>
+  let topUpNow: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+  })
+  const untouched = async () => {
+    await flush()
+    expect(topUpNow).not.toHaveBeenCalled()
+    expect(baseline.mock.calls.flat(2)).toEqual([])
+    expect(repo.listRuns('')).toEqual([])
+  }
+
+  it('link adds the track and tops up only the missing cards', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    card('p1', PRIVACY.key, 1, []) // a card it has already, for a dimension B will ask for too
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING, PRIVACY] })
+
+    const reply = ok(await host.call('POST', 'products/p1/link', { trackId: b.id }))
+
+    expect(reply.json()).toEqual({ toppedUp: 1 }) // 定价模式 only: 隐私 has its card, the six defaults are the same
+    expect(inTracks('p1')).toEqual(['赛道A', '赛道B'])
+    expect(repo.dimensionsOfProduct('p1').map(d => d.key)).toContain(PRICING.key)
+    await flush()
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['p1'])
+    expect(baseline.mock.calls.flat(2)).toEqual([]) // a followed product is not baselined again
+    expect(repo.getProduct('p1')!.status).toBe('tracking')
+    expect(repo.latestCards('p1')).toHaveLength(DEFAULT_DIMENSIONS.length + 1) // its dossier is as it was
+  })
+
+  it('link into a track that adds nothing joins it and fills in nothing', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    const b = addTrack({ name: '赛道B' })
+    expect(ok(await host.call('POST', 'products/p1/link', { trackId: b.id })).json()).toEqual({ toppedUp: 0 })
+    expect(inTracks('p1')).toEqual(['赛道A', '赛道B'])
+    await untouched()
+  })
+
+  it('move swaps tracks in one step and reports the cards to fill', async () => {
+    const a = addTrack({ name: '赛道A', dimensions: [...DEFAULT_DIMENSIONS, { key: 'only-a', label: '只有 A' }] })
+    followed('p1', 'Cursor', a.id, [...DEFAULT_DIMENSIONS, { key: 'only-a', label: '只有 A' }])
+    addProduct('p2', 'Windsurf', 'tracking', a.id)
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING, PRIVACY] })
+    const history = repo.cardHistory('p1', 'positioning')
+
+    const reply = ok(await host.call('POST', 'products/p1/move', { from: a.id, to: b.id }))
+
+    expect(reply.json()).toEqual({ toppedUp: 2 }) // 定价模式 and 隐私
+    expect(inTracks('p1')).toEqual(['赛道B'])
+    expect(repo.productsOfTrack(a.id).map(p => p.id)).toEqual(['p2']) // the other product stays where it was
+    // The dossier and its history are kept, the card of the dimension only A had too (it just no longer shows).
+    expect(repo.latestCards('p1').map(c => c.dimension).sort()).toEqual([...DEFAULT_DIMENSIONS.map(d => d.key), 'only-a'].sort())
+    expect(repo.cardHistory('p1', 'positioning')).toEqual(history)
+    expect(repo.dimensionsOfProduct('p1').map(d => d.key)).toEqual([...DEFAULT_DIMENSIONS, PRICING, PRIVACY].map(d => d.key))
+    await flush()
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['p1'])
+    expect(baseline.mock.calls.flat(2)).toEqual([])
+    expect(repo.getProduct('p1')!.status).toBe('tracking')
+  })
+
+  it('starts the top-up only once the product has left its old track, so it asks for what the new track needs', async () => {
+    const a = addTrack({ name: '赛道A', dimensions: [...DEFAULT_DIMENSIONS, { key: 'only-a', label: '只有 A' }] })
+    followed('p1', 'Cursor', a.id) // no card for only-a
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    const seen: string[][] = []
+    topUpNow.mockImplementation(async () => { seen.push(repo.dimensionsOfProduct('p1').map(d => d.key)) })
+
+    expect(ok(await host.call('POST', 'products/p1/move', { from: a.id, to: b.id })).json()).toEqual({ toppedUp: 1 })
+
+    await flush()
+    expect(seen).toEqual([[...DEFAULT_DIMENSIONS, PRICING].map(d => d.key)]) // B's dimensions only: A's is not a card to fill in
+  })
+
+  it('a move that fails half-way leaves the product in its old track', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    vi.spyOn(repo, 'unlinkProduct').mockImplementation(() => { throw new Error('disk full') })
+
+    expect((await host.call('POST', 'products/p1/move', { from: a.id, to: b.id })).status).toBe(500)
+
+    expect(inTracks('p1')).toEqual(['赛道A']) // not in B as well: the add was rolled back with the rest
+    await untouched()
+  })
+
+  it('unlink takes the product out of one track and keeps its dossier', async () => {
+    const a = addTrack({ name: '赛道A', dimensions: [...DEFAULT_DIMENSIONS, { key: 'only-a', label: '只有 A' }] })
+    const b = addTrack({ name: '赛道B' })
+    followed('p1', 'Cursor', a.id, [...DEFAULT_DIMENSIONS, { key: 'only-a', label: '只有 A' }])
+    repo.linkProduct(b.id, 'p1')
+    addProduct('p2', 'Windsurf', 'tracking', a.id)
+
+    expect(ok(await host.call('POST', 'products/p1/unlink', { trackId: a.id })).json()).toEqual({ ok: true })
+
+    expect(inTracks('p1')).toEqual(['赛道B'])
+    expect(repo.productsOfTrack(a.id).map(p => p.id)).toEqual(['p2'])
+    expect(repo.latestCards('p1').map(c => c.dimension)).toContain('only-a') // kept, no longer shown
+    expect(repo.getProduct('p1')!.status).toBe('tracking')
+    await untouched()
+  })
+
+  it('unlink refuses the last track', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    const reply = await host.call('POST', 'products/p1/unlink', { trackId: a.id })
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」。' })
+    expect(inTracks('p1')).toEqual(['赛道A'])
+
+    // An archived track is no track to keep a product in: nothing runs there.
+    const old = addTrack({ name: '旧赛道', status: 'archived' })
+    repo.linkProduct(old.id, 'p1')
+    const again = await host.call('POST', 'products/p1/unlink', { trackId: a.id })
+    expect(again.status).toBe(409)
+    expect(again.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」。' })
+    expect(inTracks('p1')).toEqual(['赛道A', '旧赛道'])
+    // Leaving the archived one is fine: it stays in the track that runs.
+    ok(await host.call('POST', 'products/p1/unlink', { trackId: old.id }))
+    expect(inTracks('p1')).toEqual(['赛道A'])
+    await untouched()
+  })
+
+  it('refuses an archived, unknown or already-joined target, and a track the product is not in', async () => {
+    const a = addTrack({ name: '赛道A' })
+    const b = addTrack({ name: '赛道B' })
+    const old = addTrack({ name: '旧赛道', status: 'archived' })
+    followed('p1', 'Cursor', a.id)
+    repo.linkProduct(b.id, 'p1')
+    const refused = async (route: string, body: object, error: string) => {
+      const reply = await host.call('POST', route, body)
+      expect(reply.status, `${route} ${JSON.stringify(body)}`).toBe(409)
+      expect(reply.json()).toEqual({ error })
+    }
+    for (const [route, body] of [['link', (to: Id) => ({ trackId: to })], ['move', (to: Id) => ({ from: a.id, to })]] as const) {
+      await refused(`products/p1/${route}`, body(old.id), '这个赛道已归档')
+      await refused(`products/p1/${route}`, body('nope'), '找不到这个赛道')
+      await refused(`products/p1/${route}`, body(b.id), '它已经在这个赛道里了') // in it already
+    }
+    await refused('products/p1/move', { from: a.id, to: a.id }, '它已经在这个赛道里了')
+    const c = addTrack({ name: '赛道C' })
+    await refused('products/p1/move', { from: c.id, to: old.id }, '这个赛道已归档')
+    await refused('products/p1/move', { from: c.id, to: addTrack({ name: '赛道D' }).id }, '它不在这个赛道里') // not where it is
+    await refused('products/p1/unlink', { trackId: c.id }, '它不在这个赛道里')
+    await refused('products/p1/unlink', { trackId: 'nope' }, '它不在这个赛道里')
+    // A product Outpost does not follow is not moved around either.
+    addProduct('c1', '豆包', 'candidate')
+    await refused('products/c1/link', { trackId: c.id }, '这个产品没有在跟踪')
+    await refused('products/c1/move', { from: a.id, to: c.id }, '这个产品没有在跟踪')
+    expect(inTracks('p1')).toEqual(['赛道A', '赛道B'])
+    expect(inTracks('c1')).toEqual([])
+    await untouched()
+  })
+
+  it('answers 404 for an unknown product and 400 for a body that does not say which tracks', async () => {
+    const a = addTrack({ name: '赛道A' })
+    const b = addTrack({ name: '赛道B' })
+    followed('p1', 'Cursor', a.id)
+    for (const route of ['link', 'unlink', 'move']) {
+      const reply = await host.call('POST', `products/nope/${route}`, { trackId: a.id, from: a.id, to: b.id })
+      expect(reply.status, route).toBe(404)
+      expect(reply.json()).toEqual({ error: '找不到这个产品' })
+    }
+    for (const [route, body] of [['link', {}], ['link', { trackId: '' }], ['link', { trackId: 3 }], ['unlink', {}], ['move', { to: b.id }], ['move', { from: a.id }], ['move', { from: '', to: b.id }]] as const) {
+      expect((await host.call('POST', `products/p1/${route}`, body)).status, `${route} ${JSON.stringify(body)}`).toBe(400)
+    }
+    expect(inTracks('p1')).toEqual(['赛道A'])
+    // Changes are JSON, as everywhere (415 comes before anything else).
+    for (const route of ['link', 'unlink', 'move']) {
+      expect((await host.call('POST', `products/p1/${route}`, JSON.stringify({ trackId: b.id, from: a.id, to: b.id }), { 'content-type': 'text/plain' })).status, route).toBe(415)
+    }
+    expect(inTracks('p1')).toEqual(['赛道A'])
+    await untouched()
+  })
+
+  it('move of a product whose daily run is in flight waits for it before topping up', async () => {
+    topUpNow.mockRestore()
+    const toppedUp = vi.spyOn(rt.scheduler, 'topUpNow') // the real one, watched
+    const held = gate()
+    host.driver.script[DAILY] = holds(held.promise)
+    host.driver.script[BASELINE] = baselines([PRICING.key])
+    host.driver.script['outpost-verify-'] = checksAll
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    const { runId } = ok(await host.call('POST', 'products/p1/update-now')).json<ApiResponse<'POST products/:id/update-now'>>()
+    await vi.waitFor(() => { expect(sessions()).toEqual(['daily']) })
+
+    expect(ok(await host.call('POST', 'products/p1/move', { from: a.id, to: b.id })).json()).toEqual({ toppedUp: 1 })
+
+    expect(toppedUp).toHaveBeenCalledWith(['p1'])
+    await flush()
+    expect(sessions()).toEqual(['daily']) // the cards wait: no second session beside the daily run
+    expect(repo.getRun(runId)!.status).toBe('running') // and the daily run is not interrupted
+    held.open()
+    await vi.waitFor(() => { expect(repo.getRun(runId)!.status).toBe('done') })
+    await vi.waitFor(() => { expect(repo.latestCards('p1').map(c => c.dimension)).toContain(PRICING.key) })
+    expect(sessions()).toEqual(['daily', 'baseline', 'verify']) // then the cards, after it
+    expect(askedFor(host.driver.runs[1]!.prompt, [...DEFAULT_DIMENSIONS, PRICING].map(d => d.key))).toEqual([PRICING.key]) // only what B adds
+    expect(repo.getRun(runId)).toMatchObject({ status: 'done', error: null })
+    expect(inTracks('p1')).toEqual(['赛道B'])
+  })
+
+  it('a paused product stays paused after a move, and is not topped up', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Muse', a.id, DEFAULT_DIMENSIONS, 'paused')
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    const c = addTrack({ name: '赛道C', dimensions: [...DEFAULT_DIMENSIONS, PRIVACY] })
+
+    expect(ok(await host.call('POST', 'products/p1/move', { from: a.id, to: b.id })).json()).toEqual({ toppedUp: 0 })
+    expect(ok(await host.call('POST', 'products/p1/link', { trackId: c.id })).json()).toEqual({ toppedUp: 0 })
+
+    expect(inTracks('p1')).toEqual(['赛道B', '赛道C'])
+    expect(repo.getProduct('p1')!.status).toBe('paused')
+    await untouched()
+  })
+
+  it('a product in 建档中 keeps its baseline and gets the new cards after it', async () => {
+    const a = addTrack({ name: '赛道A' })
+    addProduct('p1', 'Cursor', 'baselining', a.id)
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    expect(ok(await host.call('POST', 'products/p1/move', { from: a.id, to: b.id })).json()).toEqual({ toppedUp: 1 })
+    await flush()
+    expect(repo.getProduct('p1')!.status).toBe('baselining')
+    expect(topUpNow).toHaveBeenCalledWith(['p1']) // it joins the baseline in flight, then asks for what is still missing
+    expect(baseline.mock.calls.flat(2)).toEqual([])
+  })
+})
+
 describe('products', () => {
   it('returns the dossier: latest cards, each dimension\'s history, the cards\' sources, facts and dimensions', async () => {
     const track = addTrack({ dimensions: [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }] })
