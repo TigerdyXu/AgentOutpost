@@ -247,7 +247,10 @@ function useDayCost(): number | null {
   return cost
 }
 
-/** The heat evidence of a candidate: a small chart of the last five weeks when there are enough dated articles, and the count. */
+/**
+ * The heat evidence of a candidate: a small chart of the last five weeks when there are enough dated articles, and the
+ * count of every article found (dated or not, of any age: so it says 「找到」, not 「近 30 天」).
+ */
 function HeatLine({ heat }: { heat: Heat }): ReactNode {
   const { t } = useShell()
   // Bars that are all empty (every article older than five weeks) say nothing, and a trend over them is no trend.
@@ -258,7 +261,7 @@ function HeatLine({ heat }: { heat: Heat }): ReactNode {
     {bars && <span className="op-heat-bars" role="img" aria-label={t('pick.heatWeeks', { counts: heat.datedWeekly.join('、') })}>
       {heat.datedWeekly.map((count, i) => <i key={i} data-empty={count === 0 ? '' : undefined} style={{ '--op-bar': count / top } as CSSProperties} />)}
     </span>}
-    <span>{bars ? t('pick.heatRecent', { count: heat.foundCount }) : t('pick.heatFound', { count: heat.foundCount })}</span>
+    <span>{t('pick.heatFound', { count: heat.foundCount })}</span>
     {trend && <>{' · '}<span className="op-heat-trend">{trend}</span></>}
   </span>
 }

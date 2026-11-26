@@ -164,17 +164,18 @@ describe('step 2: picking products', () => {
       cand('c5', '平稳的', { heat: heat({ foundCount: 22, datedWeekly: [9, 7, 6, 6, 7], trend: 'flat' }) }),
     ]))
     const heatOf = (name: string) => card(name).querySelector('.op-heat')!
-    expect(heatOf('有柱状图').textContent).toBe('近 30 天找到 41 篇相关报道 · 热度上升')
+    // The count is every article found, dated or not, old or new: it says no more than 「找到」.
+    expect(heatOf('有柱状图').textContent).toBe('找到 41 篇相关报道 · 热度上升')
     expect(heatOf('有柱状图').querySelectorAll('.op-heat-bars i')).toHaveLength(5)
-    expect(heatOf('回落的').textContent).toBe('近 30 天找到 19 篇相关报道 · 回落')
-    expect(heatOf('平稳的').textContent).toBe('近 30 天找到 22 篇相关报道 · 平稳')
+    expect(heatOf('回落的').textContent).toBe('找到 19 篇相关报道 · 回落')
+    expect(heatOf('平稳的').textContent).toBe('找到 22 篇相关报道 · 平稳')
     // Without enough dates: just the number, and no chart.
     expect(heatOf('日期太少').textContent).toBe('找到 12 篇相关报道')
     expect(heatOf('日期太少').querySelector('.op-heat-bars')).toBeNull()
     // The bars are there only when they say something.
     expect(heatOf('都太旧').textContent).toBe('找到 9 篇相关报道')
     expect(heatOf('都太旧').querySelector('.op-heat-bars')).toBeNull()
-    expect(text()).not.toContain('近 30 天找到 9 篇')
+    expect(text()).not.toContain('近 30 天')
   })
 
   it('shows what each candidate is: icon, name, company, form, one sentence and why', async () => {

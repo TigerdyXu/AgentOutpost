@@ -144,7 +144,6 @@ const TEXT = {
   'pick.region.overseas': ['海外', 'Overseas'],
   'pick.tracked': ['已在跟踪', 'Already tracked'],
   'pick.heatFound': ['找到 {count} 篇相关报道', 'Found {count} related articles'],
-  'pick.heatRecent': ['近 30 天找到 {count} 篇相关报道', 'Found {count} related articles in the last 30 days'],
   'pick.trend.up': ['热度上升', 'heating up'],
   'pick.trend.flat': ['平稳', 'steady'],
   'pick.trend.down': ['回落', 'cooling down'],

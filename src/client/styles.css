@@ -2206,8 +2206,8 @@ button.op-run-open {
 .op-run-note {
   margin: -4px 12px 11px calc(var(--op-run-pad) + 76px);
   color: var(--dsw-alias-label-secondary);
-  font-size: 14px;
-  line-height: 22px;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 

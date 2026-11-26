@@ -139,6 +139,13 @@ describe('what each state says', () => {
     expect(inside(row!, '重试')).toBeDefined()
   })
 
+  it('sets what a run says of itself in the reading size', async () => {
+    const css = (await import('../../src/client/styles.css?raw')).default
+    const rule = /\.op-run-note\s*\{([^}]*)\}/.exec(css)![1]!
+    expect(rule).toMatch(/font-size:\s*max\(15px,\s*var\(--dsh-content-font-size\)\)/)
+    expect(rule).toMatch(/line-height:\s*1\.5\b/) // grows with the text, not a fixed 22px
+  })
+
   it('keeps the host’s word for its stop', () => {
     // The panel must not import the host's modules; its copy equals the source (the budget note's copy is kept by today.spec.tsx).
     expect(STOPPED).toBe(STOPPED_ERROR)
@@ -264,6 +271,27 @@ describe('retrying', () => {
     // Trying again clears the message first.
     await click(inside(rows()[0]!, '重试')!)
     expect(rows()[0]!.querySelectorAll('.op-run-problem')).toHaveLength(1)
+  })
+
+  it('offers no 重试 for a run whose work ran again later that day, nor for a recommendation with a newer batch', async () => {
+    await show([
+      run('r6', 'p1', 'done', { productName: '豆包·小豆' }), // the scheduler's own second try went through
+      run('r5', 'p1', 'failed', { error: '会话出错', productName: '豆包·小豆' }),
+      run('r4', 'p2', 'failed', { kind: 'verify', error: STOPPED_ERROR, productName: 'Meta Muse' }), // the latest check: this one is to retry
+      run('r3', 'p2', 'failed', { kind: 'verify', error: '模型出错', productName: 'Meta Muse' }),
+      run('r2', null, 'done', { kind: 'recommend', trackId: 't1' }),
+      run('r1', null, 'failed', { kind: 'recommend', trackId: 't1', error: '模型出错' }),
+      run('r0', 'p1', 'failed', { date: '2026-11-24', error: '会话出错', productName: '豆包·小豆' }), // nothing ran it again that day
+    ])
+    expect(rows().map(row => inside(row, '重试') !== undefined)).toEqual([false, false, true, false, false, false, true])
+    // It still says why it failed.
+    expect(cells(rows()[1]!).note).toBe('会话出错')
+  })
+
+  it('shows the host\'s word when the work was already done again', async () => {
+    await show([run('r1', 'p1', 'failed', { error: '会话出错', productName: '豆包·小豆' })], {}, { 'POST runs/:id/retry': fail(409, '已经重新跑过了') })
+    await click(inside(rows()[0]!, '重试')!)
+    expect(rows()[0]!.querySelector('.op-run-problem')?.textContent).toBe('已经重新跑过了')
   })
 
   it('does not open the session when 重试 is pressed', async () => {

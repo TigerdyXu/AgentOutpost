@@ -1,8 +1,9 @@
 /**
  * 运行记录 (design §5.7): every research session of the last 7 days, grouped by day (newest first, the day's cost on its
  * header). A row says the kind, the subject, how it stands, how long it took and what it cost (an estimate). A row with a
- * session opens it in DSH; a failed one says why and can be retried. The list is read every 5 s, every 2 s while a run is
- * queued or running, and a running run's time counts up on its own every second.
+ * session opens it in DSH; a failed one says why and can be retried, unless its work ran again later (`redoneRuns`). The
+ * list is read every 5 s, every 2 s while a run is queued or running, and a running run's time counts up on its own every
+ * second.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -23,6 +24,30 @@ const BUSY_MS = 2000
 const WINDOW_DAYS = 7
 
 const isActive = (run: RunRow) => run.status === 'queued' || run.status === 'running'
+
+/** What a run did, for telling whether it was done again: a daily update or check of one product on one day, or a track's recommendation. */
+function workOf(run: RunRow): string | null {
+  if (run.kind === 'recommend') return run.trackId === null ? null : `recommend ${run.trackId}`
+  if ((run.kind === 'daily' || run.kind === 'verify') && run.productId !== null) return `${run.kind} ${run.productId} ${run.date}`
+  return null
+}
+
+/**
+ * The runs whose work ran again later, so that 重试 would pay for it twice: a later run of the same kind for the same
+ * product on the same day (the host tries a failed product once more and resumes an interrupted one), or a newer batch of
+ * the same track. `runs` come newest first, as the host lists them. The host refuses such a retry too (「已经重新跑过了」).
+ */
+function redoneRuns(runs: readonly RunRow[]): Set<string> {
+  const seen = new Set<string>()
+  const redone = new Set<string>()
+  for (const run of runs) {
+    const work = workOf(run)
+    if (work === null) continue
+    if (seen.has(work)) redone.add(run.id)
+    else seen.add(work)
+  }
+  return redone
+}
 const errorOf = (error: unknown) => error instanceof Error ? error : new Error(String(error))
 
 /** How a run stands in the reader's words: a run that failed only because Outpost quit is 被中断, not a failure. */
@@ -57,8 +82,8 @@ function dayLabel(t: T, date: string, today: string): string {
 
 const costText = (t: T, cost: number) => t('runs.cost', { amount: yuan(Math.max(cost, 0.01)) })
 
-function RunItem({ run, now, trackName, product, reload }: {
-  run: RunRow; now: number; trackName: string | undefined; product: Product | undefined; reload: () => Promise<void>
+function RunItem({ run, now, trackName, product, redone, reload }: {
+  run: RunRow; now: number; trackName: string | undefined; product: Product | undefined; redone: boolean; reload: () => Promise<void>
 }): ReactNode {
   const { t, sessions, refresh } = useShell()
   const [problem, setProblem] = useState<string | null>(null)
@@ -128,7 +153,7 @@ function RunItem({ run, now, trackName, product, reload }: {
         : <div className="op-run-open">{cells}</div>}
       <div className="op-run-act">
         {retryable && (retried ? <span className="op-run-retried">{t('runs.retried')}</span>
-          : <button type="button" className="op-button" data-size="small" disabled={busy === 'retry'} aria-busy={busy === 'retry' || undefined}
+          : !redone && <button type="button" className="op-button" data-size="small" disabled={busy === 'retry'} aria-busy={busy === 'retry' || undefined}
             onClick={() => { void retry() }}>{t(busy === 'retry' ? 'runs.retrying' : 'runs.retry')}</button>)}
       </div>
     </div>
@@ -149,6 +174,7 @@ export function Runs(): ReactNode {
     for (const run of runs ?? []) byDay.set(run.date, [...byDay.get(run.date) ?? [], run])
     return [...byDay].sort(([a], [b]) => a < b ? 1 : a > b ? -1 : 0)
   }, [runs])
+  const redone = useMemo(() => redoneRuns(runs ?? []), [runs])
   const today = state?.todayDate ?? localDay(new Date(now)) ?? ''
   const tracks = new Map(state?.tracks.map(view => [view.track.id, view.track.name] as const))
   const products = new Map(state?.tracks.flatMap(view => view.products.map(item => [item.product.id, item.product] as const)))
@@ -171,7 +197,7 @@ export function Runs(): ReactNode {
           {cost > 0 && <span className="op-run-day-cost">{costText(t, cost)}</span>}
         </header>
         <ul className="op-run-list" aria-label={t('runs.list')}>
-          {dayRuns.map(run => <RunItem key={run.id} run={run} now={now} reload={reload}
+          {dayRuns.map(run => <RunItem key={run.id} run={run} now={now} reload={reload} redone={redone.has(run.id)}
             trackName={run.trackId ? tracks.get(run.trackId) : undefined} product={run.productId ? products.get(run.productId) : undefined} />)}
         </ul>
       </section>
