@@ -565,7 +565,8 @@ describe('the candidates of a track that other tracks already follow', () => {
     const c = addTrack({ name: 'AI 硬件' })
     const old = addTrack({ name: '旧赛道', status: 'archived' })
     const b = addTrack({ name: '手机 AI 助理', status: 'picking' })
-    // 小豆 is tracked in A, and paused in C: both are told, in the order the tracks are listed. B follows it too, but that is this track.
+    // 小豆, one tracked product, is linked into A and into C: both are told, in the order the tracks are listed. B follows it
+    // too, but that is this track.
     addProduct('xiaodou', '小豆', 'tracking', a.id)
     repo.linkProduct(c.id, 'xiaodou')
     repo.linkProduct(b.id, 'xiaodou')

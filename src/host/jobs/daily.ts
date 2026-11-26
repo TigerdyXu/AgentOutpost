@@ -23,7 +23,9 @@ export const CHECK_NOT_DONE = '核查没有完成：'
 /**
  * Runs the daily session for the product, counted toward `date` (`YYYY-MM-DD`: its findings belong to that day's brief,
  * its cost to that day's budget), then the check for the same day. Resolves with the daily run as stored at the end:
- * - `skipped` by the budget: no check either (the budget would refuse it too);
+ * - `skipped` by the budget: no check either, even when the check's model is one the budget lets run (local or
+ *   subscription, which cost nothing): there is nothing new of the day's to check, and findings still 待确认 wait for the
+ *   next day's check;
  * - `failed` because Outpost was stopping (`STOPPED_ERROR`): no check; the product runs again on the next start;
  * - `done`, but the budget did not allow the check: still `done` (the day's work for it is over), with the note
  *   `VERIFY_BUDGET_NOTE`; its findings stay pending, unshown, and the next check takes them;
