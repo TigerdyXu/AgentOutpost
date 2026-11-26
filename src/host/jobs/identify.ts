@@ -5,9 +5,15 @@
  * `consider`) joins the track as a product picked under 候选推荐 does (`joinTrack`: baselined, or for a product followed
  * elsewhere only topped up); an `excluded` one, or none, joins nothing and the run says why. Its candidate is no batch of
  * recommendations (`Repo.latestBatchId`), so the batch the user is picking from stays.
+ *
+ * A product Outpost follows must not come back as a second one under a name or company written a little differently: the
+ * agent is shown every followed product as it is written and told to copy it, and a product handed in that is new to
+ * Outpost but has the name of exactly one followed product is that product (the rule `POST tracks/:id/add-product` uses
+ * before any run).
  */
 import { localDate } from '../../core/calendar.ts'
-import type { Id, Run } from '../../core/types.ts'
+import { FOLLOWED } from '../../core/identity.ts'
+import type { Id, Product, Run } from '../../core/types.ts'
 import { joinTrack, type JoinDeps } from '../join.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
@@ -20,6 +26,8 @@ export interface IdentifyDeps extends JobDeps {
 
 /** The `error` of a confirmation that ended without a candidate. */
 export const NOT_FOUND = '没有找到这个产品'
+/** The `error` of a confirmation whose outcome could not be acted on (the store failed, say); nothing joined. */
+export const SETTLE_FAILED = '处理结果时出错'
 
 /**
  * Starts confirming the product named `ask.name` (with the official site the user gave, if any) for the track, and
@@ -34,12 +42,16 @@ export async function startIdentify(deps: IdentifyDeps, trackId: Id, ask: { name
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
   const name = ask.name.trim()
+  // Every product followed, in any track, written as it is kept: what the agent copies when it is one of them.
+  const followed = new Map(repo.listTracks().flatMap(t => repo.productsOfTrack(t.id))
+    .filter(p => FOLLOWED.includes(p.status)).map(p => [p.id, `${p.name}（${p.company}）`]))
   const prompt = renderPrompt('identify', {
     trackName: track.name,
     trackBrief: track.brief || '（没有写）',
     today: localDate(clock.now()),
     name,
     officialUrl: ask.officialUrl?.trim() || '（没有给）',
+    elsewhere: followed.size ? [...followed.values()].join('、') : '（没有）',
   })
 
   const { run, finished } = runner.start('identify', { trackId, subject: name }, runId => ({
@@ -54,20 +66,41 @@ export async function startIdentify(deps: IdentifyDeps, trackId: Id, ask: { name
 
 /**
  * What a confirmation that is over comes to, in the step that stores it as over: its product joins the track, or the run
- * says why not. (A run the budget skipped never had a session, nor this.)
+ * says why not. (A run the budget skipped never had a session, nor this.) When that fails, the run says
+ * 「处理结果时出错」 (`SETTLE_FAILED`) and the failure goes on to the runner, which logs it.
  */
 function settle(deps: IdentifyDeps, run: Run): void {
   const { repo, runner } = deps
   const trackId = run.trackId!
-  // The one candidate the agent may hand in (`outpost_submit_candidate` refuses a second).
-  const [candidate] = repo.listCandidates(trackId, run.id)
-  if (candidate && candidate.tier !== 'excluded') {
-    // It passed: whatever happened after it was handed in (no outpost_done, say), the agent's check stands.
-    const join: JoinDeps = { repo, scheduler: deps.scheduler, background: (work, label) => { runner.track(work, label) } }
-    const [joined] = joinTrack(join, trackId, [candidate.productId])
-    if (joined) repo.updateRun(run.id, { productId: joined.productId })
-    return
+  try {
+    // The one candidate the agent may hand in (`outpost_submit_candidate` refuses a second).
+    const [candidate] = repo.listCandidates(trackId, run.id)
+    if (candidate && candidate.tier !== 'excluded') {
+      // It passed: whatever happened after it was handed in (no outpost_done, say), the agent's check stands.
+      const join: JoinDeps = { repo, scheduler: deps.scheduler, background: (work, label) => { runner.track(work, label) } }
+      const [joined] = joinTrack(join, trackId, [followedByName(repo, candidate.productId)])
+      if (joined) repo.updateRun(run.id, { productId: joined.productId })
+      return
+    }
+    if (candidate) repo.updateRun(run.id, { error: candidate.reason })
+    else if (run.status === 'done') repo.updateRun(run.id, { error: NOT_FOUND })
+  } catch (error) {
+    repo.updateRun(run.id, { error: SETTLE_FAILED })
+    throw error
   }
-  if (candidate) repo.updateRun(run.id, { error: candidate.reason })
-  else if (run.status === 'done') repo.updateRun(run.id, { error: NOT_FOUND })
 }
+
+/**
+ * The product to join for the row the agent handed in: the row itself, unless it is new to Outpost (a candidate or
+ * archived row), reads as no followed product by name and company (`findSameProduct`, which `joinTrack` applies), and
+ * has the name of exactly one product Outpost follows (`findFollowedByName`): then that one, whatever company the agent
+ * wrote. Two followed products of that name leave it to the company, so the row stands.
+ */
+function followedByName(repo: IdentifyDeps['repo'], productId: Id): Id {
+  const handedIn = repo.getProduct(productId)
+  if (!handedIn || !isNew(handedIn) || repo.findSameProduct(handedIn)) return productId
+  const named = repo.findFollowedByName(handedIn.name)
+  return named.length === 1 ? named[0]!.id : productId
+}
+
+const isNew = (p: Product) => p.status === 'candidate' || p.status === 'archived'

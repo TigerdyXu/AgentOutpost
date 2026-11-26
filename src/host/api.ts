@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
-import { FOLLOWED } from '../core/identity.ts'
+import { FOLLOWED, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
@@ -153,11 +153,13 @@ export interface Api {
    * Adds a product to the track by its name (and official site, if known). When exactly one product Outpost follows has
    * that name (`findFollowedByName`: width, case, spaces and punctuation aside), it joins at once, as 开始跟踪 joins it,
    * without a run: `linked` is its id and `status` how it stands (a tracked one gets the cards of the dimensions this track
-   * adds; a paused one stays paused, with nothing filled in). Otherwise a confirmation starts (`identify`, see
-   * `startIdentify`), and `runId` is its run: once over, the run names the product that joined (`productId`), or says
-   * why none did (`error`). A blank official site is one not given.
+   * adds; a paused one stays paused, with nothing filled in); `already` says it was in the track before, and nothing
+   * changed. Otherwise a confirmation starts (`identify`, see `startIdentify`), and `runId` is its run: once over, the run
+   * names the product that joined (`productId`), or says why none did (`error`). While a confirmation of the same name
+   * (by `nameKey`) for the track is queued or running, `runId` is that one and nothing new starts. A blank official site is
+   * one not given. 409 「这个赛道已归档」 for an archived track.
    */
-  'POST tracks/:id/add-product': { body: { name: string; officialUrl?: string }; response: { linked: Id; status: FollowedStatus } | { runId: Id } }
+  'POST tracks/:id/add-product': { body: { name: string; officialUrl?: string }; response: { linked: Id; status: FollowedStatus; already?: true } | { runId: Id } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
   'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
@@ -558,12 +560,19 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST tracks/:id/add-product': async req => {
       const t = track(req.params.id!)
       const { name, officialUrl } = AddProduct.parse(await req.body())
+      if (t.status === 'archived') throw new ApiError(409, '这个赛道已归档')
       const followed = repo.findFollowedByName(name)
       if (followed.length === 1) {
-        const [joined] = joinTrack(rt, t.id, [followed[0]!.id])
+        const p = followed[0]!
+        if (repo.productsOfTrack(t.id).some(here => here.id === p.id)) return { linked: p.id, status: p.status as FollowedStatus, already: true as const }
+        const [joined] = joinTrack(rt, t.id, [p.id])
         return { linked: joined!.productId, status: joined!.status as FollowedStatus }
       }
-      // Not followed, or the name alone cannot say which (the same name at two companies): confirm it first.
+      // Not followed, or the name alone cannot say which (the same name at two companies): confirm it first, unless that
+      // is already being done (a second click).
+      const key = nameKey(name)
+      const confirming = repo.activeRuns().find(r => r.kind === 'identify' && r.trackId === t.id && r.subject !== null && nameKey(r.subject) === key)
+      if (confirming) return { runId: confirming.id }
       return { runId: await startIdentify({ ...rt.jobs, scheduler: rt.scheduler }, t.id, { name, officialUrl: officialUrl ?? null }) }
     },
 

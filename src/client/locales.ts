@@ -160,6 +160,7 @@ const TEXT = {
 
   // 「＋ 添加产品」 (M1.2): a product added by name that Outpost already follows, paused, joins as it is.
   'add.pausedElsewhere': ['已在「{tracks}」暂停，加进来了 · 仍是暂停', 'Paused in 「{tracks}」; added here · still paused'],
+  'add.already': ['已经在「{track}」里了', 'Already in 「{track}」'],
 
   // 产品档案 (design §5.4): the header, the tabs, the dossier, the feed and the sources.
   'product.status.tracking': ['跟踪中', 'Tracking'],

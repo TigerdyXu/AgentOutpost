@@ -61,7 +61,8 @@ export interface SessionPlan {
   /**
    * Acts on what the session handed in, given the run as it ended (status and error stored): called in the same
    * synchronous step that stores them, so nobody reads the run as over before it is settled (letting go of the session,
-   * which comes after, can take a while). It may amend the run. A failure is logged and leaves the run as it ended.
+   * which comes after, can take a while). It may amend the run. A failure is logged; the run is left as it is then (as it
+   * ended, unless `settle` changed it before failing).
    */
   settle?(run: Run): void
 }

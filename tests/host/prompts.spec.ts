@@ -7,7 +7,7 @@ const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程
 const BASELINE_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', dimensions: '- positioning：定位' }
 const VERIFY_VARS = { productName: 'Cursor', company: 'Anysphere', officialDomains: 'cursor.com', today: '2026-11-25' }
 const DAILY_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', lastRun: '2026-11-24' }
-const IDENTIFY_VARS = { trackName: '个人 Agent', trackBrief: '能替人办事的 Agent', today: '2026-11-26', name: 'Gemini Agent', officialUrl: 'https://gemini.google/agent/' }
+const IDENTIFY_VARS = { trackName: '个人 Agent', trackBrief: '能替人办事的 Agent', today: '2026-11-26', name: 'Gemini Agent', officialUrl: 'https://gemini.google/agent/', elsewhere: '千问Go!（阿里巴巴）、小豆（字节跳动）' }
 /** Characters of the prompt text itself, without whitespace and the filled-in values. */
 const ownLength = (name: 'recommend' | 'baseline' | 'verify' | 'daily' | 'identify') => readFileSync(join(packageRoot(), 'prompts', `${name}.md`), 'utf8').replace(/\{\{\w+\}\}/g, '').replace(/\s/g, '').length
 
@@ -42,6 +42,10 @@ describe('renderPrompt', () => {
     for (const said of ['个人 Agent', '能替人办事的 Agent', '2026-11-26', 'Gemini Agent', 'https://gemini.google/agent/',
       'outpost_submit_candidate', 'outpost_done', '只核实这一个', 'strong', 'consider', 'excluded', 'reason', '停', '不属于这个赛道', '不要编'])
       expect(identify, said).toContain(said)
+    // The products already followed, with the rule to copy their spelling, on one line: a product named a little
+    // differently must not become a second one.
+    expect(identify).toMatch(/千问Go!（阿里巴巴）、小豆（字节跳动）[^\n]*name 和 company 照抄/)
+    expect(identify).not.toContain('可纠正用户的写法')
     expect(identify).not.toMatch(/\{\{|\}\}/)
   })
 

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_DIMENSIONS } from '../../src/core/dimensions.ts'
 import type { CandidateTier, Id, Track } from '../../src/core/types.ts'
-import { NOT_FOUND, startIdentify, type IdentifyDeps } from '../../src/host/jobs/identify.ts'
+import { NOT_FOUND, SETTLE_FAILED, startIdentify, type IdentifyDeps } from '../../src/host/jobs/identify.ts'
 import { startRecommendation } from '../../src/host/jobs/recommend.ts'
 import { JobRunner, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { researchTools } from '../../src/host/tools.ts'
@@ -24,6 +24,7 @@ let scheduler: { baseline: ReturnType<typeof vi.fn<(ids: Id[]) => Promise<void>>
 let deps: IdentifyDeps
 let track: Track
 let now: () => Date
+let log: ReturnType<typeof vi.fn<(message: string) => void>>
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'outpost-identify-'))
@@ -33,7 +34,8 @@ beforeEach(() => {
   repo = new Repo(db, now)
   driver = new FakeDriver()
   settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
-  runner = new JobRunner({ repo, driver, clock, settings: () => settings, log: vi.fn() })
+  log = vi.fn<(message: string) => void>()
+  runner = new JobRunner({ repo, driver, clock, settings: () => settings, log })
   scheduler = { baseline: vi.fn(async (_ids: Id[]) => {}), topUpNow: vi.fn(async (_ids: Id[]) => {}) }
   deps = { repo, runner, clock, icons: { fetch: vi.fn(async () => null) }, scheduler }
   track = repo.createTrack({ name: '个人 Agent', brief: '能替人办事的 Agent', dimensions: [...DEFAULT_DIMENSIONS, { key: 'pricing-model', label: '定价模式' }], status: 'active' })
@@ -49,6 +51,15 @@ const submission = (name: string, company: string, tier: CandidateTier, reason =
   name, company, region: 'overseas', form: '网页', oneLiner: `${name}：能替你办事的 Agent`, tier, reason,
   officialUrl: 'https://gemini.google/agent/', articles: [{ url: `https://news.example/${encodeURIComponent(name)}`, title: `${name} 上线`, publishedAt: '2026-11-20' }],
 })
+/** A product Outpost follows in `trackId`, with a card for each default dimension. */
+const followed = (trackId: Id, name: string, company: string) => {
+  const p = repo.upsertProduct({ name, company, region: 'domestic', form: 'App', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: null })
+  repo.linkProduct(trackId, p.id)
+  for (const dim of DEFAULT_DIMENSIONS) {
+    repo.addCardVersion({ productId: p.id, dimension: dim.key, version: 1, summary: dim.label, bullets: ['一条'], body: '正文', sourceIds: [], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: '2026-11-20T00:00:00.000Z' })
+  }
+  return p
+}
 /** An agent that confirms this one product, then finishes. */
 const confirms = (name: string, company: string, tier: CandidateTier = 'strong'): Play => async round => {
   await round.call('outpost_submit_candidate', submission(name, company, tier))
@@ -112,6 +123,67 @@ describe('startIdentify', () => {
     expect(scheduler.baseline.mock.calls.flat(2)).toEqual([]) // no baseline beside its daily run
     expect(repo.getRun(runId)).toMatchObject({ status: 'done', error: null, productId: tracked.id, subject: 'Qwen Go' })
     expect(driver.runs[0]!.prompt).not.toMatch(/\{\{|\}\}/)
+  })
+
+  it('a product handed in under another company joins the one followed under that name, not a second row', async () => {
+    const other = repo.createTrack({ name: '大模型助手', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'active' })
+    const muse = followed(other.id, 'Muse', 'Meta')
+    // The agent writes the company its own way: by name and company it would be another product, baselined and run twice.
+    driver.script[IDENTIFY] = confirms('Muse', 'Meta Platforms')
+
+    const runId = await startIdentify(deps, track.id, { name: 'Meta Muse', officialUrl: null })
+    await runner.idle()
+
+    expect(repo.productsOfTrack(track.id).map(p => p.id)).toEqual([muse.id])
+    expect(repo.getRun(runId)).toMatchObject({ status: 'done', error: null, productId: muse.id })
+    expect(scheduler.baseline.mock.calls.flat(2)).toEqual([]) // nothing baselined
+    expect(scheduler.topUpNow).toHaveBeenCalledWith([muse.id]) // only what this track adds
+    const handedIn = repo.getProduct(repo.listCandidates(track.id, runId)[0]!.productId)!
+    expect(handedIn).toMatchObject({ name: 'Muse', company: 'Meta Platforms', status: 'candidate' }) // left as it is, in no track
+    expect(repo.findFollowedByName('Muse').map(p => p.id)).toEqual([muse.id])
+    // The agent was shown how the products followed are written, and told to copy them.
+    const line = driver.runs[0]!.prompt.split('\n').find(l => l.includes('Muse（Meta）'))!
+    expect(line).toContain('照抄')
+  })
+
+  it('a product handed in under another spelling of a followed name joins that product', async () => {
+    const other = repo.createTrack({ name: '大模型助手', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'active' })
+    const qwen = followed(other.id, '千问Go!', '阿里巴巴')
+    followed(other.id, 'Kimi', '月之暗面')
+    // The user typed only part of the name; the agent keeps a spelling of its own and shortens the company.
+    driver.script[IDENTIFY] = confirms('千问 GO', '阿里')
+
+    const runId = await startIdentify(deps, track.id, { name: '千问', officialUrl: null })
+    await runner.idle()
+
+    expect(driver.runs[0]!.prompt).toContain('千问Go!（阿里巴巴）、Kimi（月之暗面）')
+    expect(repo.productsOfTrack(track.id).map(p => p.id)).toEqual([qwen.id])
+    expect(repo.getRun(runId)).toMatchObject({ status: 'done', productId: qwen.id })
+    expect(scheduler.baseline.mock.calls.flat(2)).toEqual([])
+
+    // Two products followed under that name (at two companies): the name alone cannot say which, so the agent's own
+    // product stands, new to Outpost.
+    const elsewhere = repo.createTrack({ name: '第三个', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'active' })
+    followed(elsewhere.id, '千问Go', '别家')
+    const second = await startIdentify(deps, elsewhere.id, { name: '千问', officialUrl: null })
+    await runner.idle()
+    const own = repo.getProduct(repo.listCandidates(elsewhere.id, second)[0]!.productId)!
+    expect(own).toMatchObject({ name: '千问 GO', company: '阿里' })
+    expect(repo.getRun(second)).toMatchObject({ productId: own.id })
+    expect(scheduler.baseline).toHaveBeenLastCalledWith([own.id])
+  })
+
+  it('says 处理结果时出错 when what the agent handed in cannot be acted on', async () => {
+    driver.script[IDENTIFY] = confirms('Gemini Agent', 'Google')
+    vi.spyOn(repo, 'linkProduct').mockImplementation(() => { throw new Error('database is locked') })
+
+    const runId = await startIdentify(deps, track.id, { name: 'Gemini Agent', officialUrl: null })
+    await runner.idle()
+
+    expect(repo.getRun(runId)).toMatchObject({ status: 'done', error: SETTLE_FAILED, productId: null })
+    expect(SETTLE_FAILED).toBe('处理结果时出错')
+    expect(repo.productsOfTrack(track.id)).toEqual([])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('database is locked'))
   })
 
   it('an excluded or missing candidate adds nothing and records the reason', async () => {

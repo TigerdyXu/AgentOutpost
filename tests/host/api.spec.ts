@@ -922,6 +922,58 @@ describe('POST tracks/:id/add-product', () => {
     expect(repo.listRuns('').filter(r => r.kind === 'identify').map(r => r.subject)).toEqual(['nova', 'Gemini Agent'])
   })
 
+  it('answers a second click on the same name with the confirmation already running, and starts nothing new', async () => {
+    const held = gate()
+    host.driver.script[IDENTIFY] = async round => { await held.promise; await round.done('没有找到'); return completed() }
+    const t = addTrack({ name: '个人 Agent' })
+    const other = addTrack({ name: '别的赛道' })
+    const add = async (trackId: Id, name: string) => ok(await host.call('POST', `tracks/${trackId}/add-product`, { name })).json<{ runId: Id }>().runId
+
+    const first = await add(t.id, 'Gemini Agent')
+    expect(await add(t.id, ' gemini  agent! ')).toBe(first) // the same name, as `identityKey` reads names
+    await vi.waitFor(() => { expect(host.driver.runs).toHaveLength(1) })
+    expect(await add(t.id, 'Gemini Agent')).toBe(first) // running now, still the same
+    // Another name, or the same name for another track, is another confirmation.
+    const another = await add(t.id, 'Gemini Agent Pro')
+    const elsewhere = await add(other.id, 'Gemini Agent')
+    expect(new Set([first, another, elsewhere]).size).toBe(3)
+    expect(repo.listRuns('').filter(r => r.kind === 'identify')).toHaveLength(3)
+
+    held.open()
+    await vi.waitFor(() => { expect(repo.getRun(first)!.status).toBe('done') })
+    expect(await add(t.id, 'Gemini Agent')).not.toBe(first) // over: asking again confirms again
+  })
+
+  it('says a product is already in the track and changes nothing', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const t = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+    addAlike('here', '千问Go!', '阿里巴巴', 'tracking', t.id)
+    const paused = addAlike('paused-here', 'Muse', 'Meta', 'paused', t.id)
+
+    expect(ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: '千问 go' })).json()).toEqual({ linked: 'here', status: 'tracking', already: true })
+    expect(ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: 'MUSE' })).json()).toEqual({ linked: paused.id, status: 'paused', already: true })
+
+    await flush()
+    expect(repo.productsOfTrack(t.id).map(p => p.id)).toEqual(['here', 'paused-here'])
+    expect(topUpNow).not.toHaveBeenCalled()
+    expect(baseline).not.toHaveBeenCalled()
+    expect(repo.listRuns('')).toEqual([])
+    expect(repo.getProduct('paused-here')!.status).toBe('paused')
+  })
+
+  it('refuses to add to an archived track', async () => {
+    const t = addTrack({ name: '旧赛道', status: 'archived' })
+    addProduct('p1', 'Cursor', 'tracking')
+    const reply = await host.call('POST', `tracks/${t.id}/add-product`, { name: 'Cursor' })
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '这个赛道已归档' })
+    expect((await host.call('POST', `tracks/${t.id}/add-product`, { name: 'Gemini Agent' })).status).toBe(409)
+    await flush()
+    expect(repo.productsOfTrack(t.id)).toEqual([])
+    expect(repo.listRuns('')).toEqual([])
+  })
+
   it('rejects an empty name and a non-http official url', async () => {
     vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
     vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
