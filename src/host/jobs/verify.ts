@@ -38,8 +38,9 @@ export class VerifyNotRun extends Error {
  * - every `pending` and `unconfirmed` finding gets `judge`'s verdict (the 7-day window counts from its `createdAt`;
  *   one that was 「待确认」 and is now verified gets the note 「已证实」). A finding found verified gets `verifiedOn` =
  *   the day being processed (`date`), unless it already has one, so a promotion shows in that day's brief;
- * - a card edit is written only with its void sources and their `[n]` removed (the rest renumbered), and only if a
- *   valid source remains; otherwise it is rejected (a dimension without a card shows 「暂无可核实的信息」);
+ * - a card edit is written only without what its void sources said (`withoutVoidClaims`: each sentence resting on one
+ *   goes, with any bullet that repeats it), and only if a valid source remains and so do its summary and a bullet;
+ *   otherwise it is rejected (the dimension keeps its card, or shows 「暂无可核实的信息」 without one);
  * - a daily card edit (one resting on findings) is written that way once all its findings are verified, is rejected
  *   once any of them is withdrawn or unproven, and otherwise waits for the next check;
  * - a baseline card edit (resting on no finding) is written that way, normally as version 1;
@@ -124,31 +125,32 @@ function mergeDailyEdit(repo: Repo, edit: CardEdit, findings: Map<Id, Finding>, 
   else if (statuses.every(s => s === 'verified')) writeIfBacked(repo, edit, now)
 }
 
-/** Writes the edit without its void sources if a valid source remains; rejects it otherwise. */
+/** Writes the edit without what its void sources said if a valid source and enough of it remain; rejects it otherwise. */
 function writeIfBacked(repo: Repo, edit: CardEdit, now: Date): void {
   const { removed, valid } = sourceCheck(repo, edit)
-  if (valid === 0) repo.setCardEditStatus(edit.id, 'rejected')
-  else write(repo, edit, removed, now)
+  const kept = valid.length ? withoutVoidClaims(edit, removed, valid) : null
+  if (!kept) repo.setCardEditStatus(edit.id, 'rejected')
+  else write(repo, edit, kept, now)
 }
 
-/** The edit's sources that the check found void (1-based, as `[n]` counts them), and how many are valid. */
-function sourceCheck(repo: Repo, edit: CardEdit): { removed: number[]; valid: number } {
+/** The edit's sources that the check found void, and those it found valid (1-based, as `[n]` counts them). */
+function sourceCheck(repo: Repo, edit: CardEdit): { removed: number[]; valid: number[] } {
   const byId = new Map(repo.getSources(edit.sourceIds).map(s => [s.id, s]))
   const removed: number[] = []
-  let valid = 0
+  const valid: number[] = []
   edit.sourceIds.forEach((id, i) => {
     const source = byId.get(id)
     const evidence = source && evidenceOf(source)
     if (!evidence || isVoidEvidence(evidence)) removed.push(i + 1)
-    else if (isValidEvidence(evidence)) valid++
+    else if (isValidEvidence(evidence)) valid.push(i + 1)
   })
   return { removed, valid }
 }
 
-/** Writes the edit, without the `removed` sources, as the dimension's next card version and marks it applied. */
-function write(repo: Repo, edit: CardEdit, removed: number[], now: Date): void {
+/** Writes the edit, as `kept` left it, as the dimension's next card version and marks it applied. */
+function write(repo: Repo, edit: CardEdit, kept: CardText, now: Date): void {
   const previous = repo.latestCards(edit.productId).find(c => c.dimension === edit.dimension) ?? null
-  repo.addCardVersion(applyCardEdit(previous, { ...edit, ...withoutSources(edit, removed) }, now))
+  repo.addCardVersion(applyCardEdit(previous, { ...edit, ...kept }, now))
   repo.setCardEditStatus(edit.id, 'applied')
 }
 
@@ -165,21 +167,49 @@ function evidenceOf(s: Source): Evidence {
 /** A citation in a card body: `[n]`, n counting the card's sources from 1 (the tools allow no other bracketed number). */
 const CITATION = /\[(\d+)\]/g
 
+/**
+ * Where a sentence of a card body ends: after 。！？ or ；, with any citations written right after the mark, or after a
+ * line break (a line without a full stop, such as a list item).
+ */
+const SENTENCE_END = /[。！？；](?:\[\d+\])*|\n/g
+
+/** How many characters in a row a bullet or the summary must share with a dropped sentence to count as repeating it. */
+export const ECHO_CHARS = 8
+
+/** The text of a card edit that the check may cut. */
+export type CardText = Pick<CardEdit, 'summary' | 'bullets' | 'body' | 'sourceIds' | 'inferenceSpans'>
+
 interface Replacement { from: number; to: number; text: string }
+interface Range { from: number; to: number }
+
+const within = (inner: Range, outer: Range) => inner.from >= outer.from && inner.to <= outer.to
 
 /** Every citation of `body` with what it becomes once the sources numbered `removed` are gone. */
-function citationEdits(body: string, removed: readonly number[]): Replacement[] {
+function citationEdits(body: string, removed: readonly number[]): (Replacement & { n: number })[] {
   const gone = [...new Set(removed)]
   return [...body.matchAll(CITATION)].map(m => {
     const n = Number(m[1])
     const from = m.index
-    return { from, to: from + m[0].length, text: gone.includes(n) ? '' : `[${n - gone.filter(r => r < n).length}]` }
+    return { from, to: from + m[0].length, n, text: gone.includes(n) ? '' : `[${n - gone.filter(r => r < n).length}]` }
   })
 }
 
+/** The sentences of `body`, in order and covering all of it (see `SENTENCE_END`). */
+function sentences(body: string): Range[] {
+  const out: Range[] = []
+  let from = 0
+  for (const m of body.matchAll(SENTENCE_END)) {
+    out.push({ from, to: m.index + m[0].length })
+    from = m.index + m[0].length
+  }
+  if (from < body.length) out.push({ from, to: body.length })
+  return out
+}
+
 /**
- * Where a position of the old body lies in the new one. A position inside a citation moves to the start of what replaced
- * it (`side` start) or to its end (`side` end), so a span never ends up holding part of a marker.
+ * Where a position of the old body lies in the new one. A position inside a replaced stretch (a citation, a dropped
+ * sentence) moves to the start of what replaced it (`side` start) or to its end (`side` end), so a span never ends up
+ * holding part of a marker.
  */
 function moveOffset(edits: Replacement[], pos: number, side: 'start' | 'end'): number {
   let shift = 0
@@ -191,14 +221,11 @@ function moveOffset(edits: Replacement[], pos: number, side: 'start' | 'end'): n
   return pos + shift
 }
 
-/**
- * `body` without the citations of the sources numbered `removed`, the rest renumbered to close the gaps:
- * `renumberCitations('甲[1]乙[2]丙[3]', [2])` is `'甲[1]乙丙[2]'`.
- */
-export function renumberCitations(body: string, removed: number[]): string {
+/** `body` with the `edits` (in order, not overlapping) made. */
+function applyEdits(body: string, edits: Replacement[]): string {
   let out = ''
   let last = 0
-  for (const e of citationEdits(body, removed)) {
+  for (const e of edits) {
     out += body.slice(last, e.from) + e.text
     last = e.to
   }
@@ -206,18 +233,63 @@ export function renumberCitations(body: string, removed: number[]): string {
 }
 
 /**
- * A card without the sources numbered `removed` (1-based): those leave `sourceIds`, their `[n]` leave the body, the
- * other citations are renumbered, and the 推论 marks (`inferenceSpans`, UTF-16 offsets into the body) move with the text
- * they cover. A mark left covering nothing is dropped.
+ * `body` without the citations of the sources numbered `removed`, the rest renumbered to close the gaps:
+ * `renumberCitations('甲[1]乙[2]丙[3]', [2])` is `'甲[1]乙丙[2]'`.
  */
-export function withoutSources(card: Pick<CardEdit, 'body' | 'sourceIds' | 'inferenceSpans'>, removed: number[]): Pick<CardEdit, 'body' | 'sourceIds' | 'inferenceSpans'> {
-  const edits = citationEdits(card.body, removed)
+export function renumberCitations(body: string, removed: number[]): string {
+  return applyEdits(body, citationEdits(body, removed))
+}
+
+/** A text as the echo test compares it: full-width forms folded, citations, whitespace and punctuation gone, as characters. */
+const echoText = (text: string) => [...text.replace(CITATION, '').normalize('NFKC').replace(/[\s\p{P}]/gu, '')]
+
+/** Whether `line` shares `ECHO_CHARS` or more characters in a row with `sentence` (both compared as `echoText`). */
+function echoes(line: string, sentence: string): boolean {
+  const said = echoText(sentence).join('')
+  const chars = echoText(line)
+  for (let i = 0; i + ECHO_CHARS <= chars.length; i++) if (said.includes(chars.slice(i, i + ECHO_CHARS).join(''))) return true
+  return false
+}
+
+/**
+ * A card without what its void sources said (design §2, §8.1: nothing goes into the dossier without a source that backs
+ * it). `removed` are the void sources, `valid` the valid ones (1-based); any other source was not seen either way.
+ * - Each sentence (split after 。！？； or a line break, see `SENTENCE_END`) citing a void source goes, unless it also cites
+ *   a valid one; there only the void citation goes.
+ * - The void sources leave `sourceIds`, and so does any source whose every citation went with a dropped sentence; the
+ *   remaining citations are renumbered to close the gaps. The 推论 marks (`inferenceSpans`, UTF-16 offsets into the
+ *   body) move with the text they cover; one left covering nothing is dropped.
+ * - A bullet sharing `ECHO_CHARS` or more characters in a row with a dropped sentence (compared without width, spaces,
+ *   punctuation and citations) goes too.
+ * Null, so that the edit is rejected, when the summary repeats a dropped sentence that way, or no bullet or no text is left.
+ */
+export function withoutVoidClaims(card: CardText, removed: number[], valid: number[]): CardText | null {
+  const citations = citationEdits(card.body, [])
+  const isVoid = (n: number) => removed.includes(n)
+  const backs = (n: number) => valid.includes(n) && !isVoid(n)
+  const cut = sentences(card.body).filter(s => {
+    const cited = citations.filter(c => within(c, s)).map(c => c.n)
+    return cited.some(isVoid) && !cited.some(backs)
+  })
+  const kept = citations.filter(c => !cut.some(s => within(c, s)))
+  const uncited = [...new Set(citations.map(c => c.n))].filter(n => !kept.some(c => c.n === n))
+  const drop = [...new Set([...removed, ...uncited])]
+  const edits: Replacement[] = [
+    ...cut.map(s => ({ ...s, text: '' })),
+    ...citationEdits(card.body, drop).filter(c => !cut.some(s => within(c, s))),
+  ].sort((a, b) => a.from - b.from)
+
+  const spaced = applyEdits(card.body, edits)
+  const lead = spaced.length - spaced.trimStart().length
+  const body = spaced.trim()
   const inferenceSpans: Span[] = card.inferenceSpans
-    .map(s => ({ start: moveOffset(edits, s.start, 'start'), end: moveOffset(edits, s.end, 'end') }))
+    .map(s => ({ start: moveOffset(edits, s.start, 'start') - lead, end: moveOffset(edits, s.end, 'end') - lead }))
+    .map(s => ({ start: Math.max(0, s.start), end: Math.min(body.length, s.end) }))
     .filter(s => s.end > s.start)
-  return {
-    body: renumberCitations(card.body, removed),
-    sourceIds: card.sourceIds.filter((_, i) => !removed.includes(i + 1)),
-    inferenceSpans,
-  }
+
+  const said = cut.map(s => card.body.slice(s.from, s.to))
+  const repeats = (line: string) => said.some(sentence => echoes(line, sentence))
+  const bullets = card.bullets.filter(b => !repeats(b))
+  if (!body || !bullets.length || repeats(card.summary)) return null
+  return { summary: card.summary, bullets, body, sourceIds: card.sourceIds.filter((_, i) => !drop.includes(i + 1)), inferenceSpans }
 }

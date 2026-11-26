@@ -8,7 +8,7 @@ import { DEFAULT_DIMENSIONS } from '../../src/core/dimensions.ts'
 import type { CardEdit, Finding, OpenedVia, Source, Span } from '../../src/core/types.ts'
 import { startBaseline, type VerifyProduct } from '../../src/host/jobs/baseline.ts'
 import { JobRunner, type JobDeps, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
-import { VerifyNotRun, renumberCitations, verifyProduct, withoutSources } from '../../src/host/jobs/verify.ts'
+import { VerifyNotRun, renumberCitations, verifyProduct, withoutVoidClaims } from '../../src/host/jobs/verify.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
 import { FakeDriver, completed, failure, instantClock, type Play, type Round } from '../fixtures/fake-driver.ts'
@@ -230,7 +230,7 @@ describe('verifyProduct', () => {
     expect(card('positioning')).toBeUndefined()
   })
 
-  it('strips a withdrawn source and renumbers citations in a baseline card', async () => {
+  it('drops the sentence of a void source and renumbers the citations left in a baseline card', async () => {
     expect(renumberCitations('甲[1]乙[2]丙[3]', [2])).toBe('甲[1]乙丙[2]')
 
     const body = 'Cursor 是基于 VS Code 的编辑器[1]。有评测说它比同类快一倍[2]。估计它会继续走企业路线[3]。'
@@ -244,13 +244,61 @@ describe('verifyProduct', () => {
 
     const v1 = card('positioning')!
     expect(v1).toMatchObject({
-      version: 1, body: 'Cursor 是基于 VS Code 的编辑器[1]。有评测说它比同类快一倍。估计它会继续走企业路线[2]。',
+      // The claim the review page does not back goes with its citation: no unsourced sentence is left behind.
+      version: 1, body: 'Cursor 是基于 VS Code 的编辑器[1]。估计它会继续走企业路线[2]。',
       sourceIds: [sources[0]!.id, sources[2]!.id], addedSpans: [], changeNote: '建档', findingIds: [],
     })
     expect(spanText(v1.body, v1.inferenceSpans)).toEqual(['估计它会继续走企业路线[2]']) // the 推论 mark still covers the same words
     expect(repo.pendingCardEdits('p1')).toEqual([])
     expect(repo.cardHistory('p1', 'positioning')).toHaveLength(1)
     expect(edit.sourceIds).toHaveLength(3) // the edit itself is kept as it was handed in
+  })
+
+  it('keeps a sentence that still has a valid source beside the void one, and drops one that has none', async () => {
+    const f = addFinding([official('https://cursor.com/changelog/2-0')])
+    const sources = [official('https://cursor.com/changelog/2-0'), addSource('https://blog.example/guess')]
+    addEdit({ body: '团队版每人每月 40 美元[1][2]。据说下个月还会降价[2]。', sourceIds: sources.map(s => s.id), findingIds: [f.id] })
+    driver.script[VERIFY] = reportCheck(s => s.sourceId === sources[1]!.id ? NOT_THERE : SEEN)
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(card('business')).toMatchObject({ version: 1, body: '团队版每人每月 40 美元[1]。', sourceIds: [sources[0]!.id], bullets: ['团队版 40 美元'] })
+  })
+
+  it('drops a bullet that repeats a dropped sentence, keeping the others', async () => {
+    const sources = [official('https://cursor.com/'), addSource('https://blog.example/review')]
+    addEdit({
+      dimension: 'positioning', summary: '面向专业开发者的 AI 编辑器', bullets: ['基于 VS Code', '评测说它比同类快一倍'], changeNote: '建档',
+      body: 'Cursor 是基于 VS Code 的编辑器[1]。有评测说它比同类快一倍[2]。', sourceIds: sources.map(s => s.id),
+    })
+    driver.script[VERIFY] = reportCheck(s => s.sourceId === sources[1]!.id ? NOT_THERE : SEEN)
+
+    await verifyProduct(deps, 'p1', 'baseline')
+
+    expect(card('positioning')).toMatchObject({ version: 1, body: 'Cursor 是基于 VS Code 的编辑器[1]。', bullets: ['基于 VS Code'], summary: '面向专业开发者的 AI 编辑器', sourceIds: [sources[0]!.id] })
+  })
+
+  it('rejects an edit whose every bullet, or whose summary, repeats a dropped sentence: the dimension keeps what it had', async () => {
+    time.set(daysAfterStart(-10))
+    repo.addCardVersion({ productId: 'p1', dimension: 'business', version: 1, summary: '个人版免费', bullets: ['个人版免费'], body: '个人版免费[1]。', sourceIds: [official('https://cursor.com/pricing').id], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: time.clock.now().toISOString() })
+    time.set(START)
+    const f = addFinding([official('https://cursor.com/changelog/2-0')])
+    const pricing = official('https://cursor.com/pricing')
+    const rumor = addSource('https://blog.example/price-cut')
+    addEdit({ body: '个人版免费[1]。团队版下月降到每人 20 美元[2]。', summary: '个人免费，团队版将降价', bullets: ['团队版下月降到每人 20 美元'], sourceIds: [pricing.id, rumor.id], findingIds: [f.id] })
+    const reviewed = addSource('https://blog.example/review')
+    addEdit({
+      dimension: 'positioning', summary: '评测说它比同类快一倍', bullets: ['基于 VS Code'], changeNote: '建档',
+      body: 'Cursor 是基于 VS Code 的编辑器[1]。有评测说它比同类快一倍[2]。', sourceIds: [official('https://cursor.com/').id, reviewed.id],
+    })
+    driver.script[VERIFY] = reportCheck(s => s.sourceId === rumor.id || s.sourceId === reviewed.id ? NOT_THERE : SEEN)
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(finding(f.id).status).toBe('verified')
+    expect(repo.cardHistory('p1', 'business').map(c => c.version)).toEqual([1]) // its only point was the refuted claim
+    expect(card('positioning')).toBeUndefined() // its summary was: 「暂无可核实的信息」
+    expect(repo.pendingCardEdits('p1')).toEqual([])
   })
 
   it('rejects a baseline card with no valid source', async () => {
@@ -487,24 +535,59 @@ describe('renumberCitations', () => {
   })
 })
 
-describe('withoutSources', () => {
-  it('drops the sources, renumbers the body and keeps the 推论 marks on the same words', () => {
-    const ids = Array.from({ length: 11 }, (_, i) => `s${i + 1}`)
+describe('withoutVoidClaims', () => {
+  const text = (body: string, inferenceSpans: Span[] = []) => ({ summary: '总结', bullets: ['要点'], body, sourceIds: Array.from({ length: 11 }, (_, i) => `s${i + 1}`), inferenceSpans })
+  const all = (except: number[]) => Array.from({ length: 11 }, (_, i) => i + 1).filter(n => !except.includes(n))
+
+  it('drops the sentences resting only on void sources, renumbers the rest and keeps the 推论 marks on the same words', () => {
     const body = '一[1]。推论甲[10]。二[2]，推论乙[11]。'
-    const mark = (text: string) => { const start = body.indexOf(text); return { start, end: start + text.length } }
-    const out = withoutSources({ body, sourceIds: ids, inferenceSpans: [mark('推论甲[10]'), mark('推论乙[11]。')] }, [1, 2])
-    expect(out.body).toBe('一。推论甲[8]。二，推论乙[9]。')
-    expect(out.sourceIds).toEqual(ids.slice(2))
+    const mark = (part: string) => { const start = body.indexOf(part); return { start, end: start + part.length } }
+    const out = withoutVoidClaims(text(body, [mark('推论甲[10]'), mark('推论乙[11]。')]), [1, 2], all([1, 2]))!
+    expect(out.body).toBe('推论甲[8]。二，推论乙[9]。') // 一 rested on [1] alone; 二 keeps [11] beside the void [2]
+    expect(out.sourceIds).toEqual(text(body).sourceIds.slice(2))
     expect(spanText(out.body, out.inferenceSpans)).toEqual(['推论甲[8]', '推论乙[9]。'])
+  })
+
+  it('splits sentences on 。！？； and line breaks, a citation written after the mark staying with its sentence', () => {
+    const body = '甲是编辑器[1]！乙说它快。[2]\n\n丙会涨价[3]；丁[1]？\n- 戊[2]\n己[1]。'
+    const out = withoutVoidClaims({ ...text(body), sourceIds: ['a', 'b', 'c'] }, [2], [1])!
+    // 乙 and 戊 rest on the void [2]; 丙 rests on [3], which was never seen (not valid, not void) and stays.
+    expect(out.body).toBe('甲是编辑器[1]！\n\n丙会涨价[2]；丁[1]？\n己[1]。')
+    expect(out.sourceIds).toEqual(['a', 'c'])
+  })
+
+  it('drops a sentence whose other source was never seen, and that source with it when it is cited nowhere else', () => {
+    const out = withoutVoidClaims({ ...text('甲[1]。乙[2][3]。丙[4]。'), sourceIds: ['a', 'b', 'c', 'd'] }, [2], [1, 4])!
+    expect(out.body).toBe('甲[1]。丙[2]。')
+    expect(out.sourceIds).toEqual(['a', 'd'])
+  })
+
+  it('moves a mark that began in a dropped sentence to where the text after it starts, and drops one inside it', () => {
+    const body = '甲[1]。乙[2]。丙[1]。'
+    const out = withoutVoidClaims({ ...text(body), sourceIds: ['a', 'b'], inferenceSpans: [{ start: 7, end: 14 }, { start: 6, end: 9 }] }, [2], [1])!
+    // [7, 14) was 「2]。丙[1]」: it began inside the dropped 「乙[2]。」, so it now starts where 丙 does. [6, 9) was 「[2]」, inside it: gone.
+    expect(out.body).toBe('甲[1]。丙[1]。')
+    expect(spanText(out.body, out.inferenceSpans)).toEqual(['丙[1]'])
   })
 
   it('keeps a mark that begins or ends inside a marker on the marker, and drops one that covered only a removed marker', () => {
     const body = '甲[1]乙[2]丙'
-    const out = withoutSources({ body, sourceIds: ['a', 'b'], inferenceSpans: [{ start: 2, end: 6 }, { start: 4, end: 7 }] }, [2])
-    // [2, 6) was "1]乙[": it began inside [1], so it takes all of it, and ended inside the removed [2]; [4, 7) was "乙[2", of which 乙 stays.
+    const out = withoutVoidClaims({ ...text(body), sourceIds: ['a', 'b'], inferenceSpans: [{ start: 2, end: 6 }, { start: 4, end: 7 }] }, [2], [1])!
+    // One sentence, still backed by [1]: only the marker [2] goes. [2, 6) was "1]乙[": it began inside [1], so it takes all
+    // of it, and ended inside the removed [2]; [4, 7) was "乙[2", of which 乙 stays.
     expect(out.body).toBe('甲[1]乙丙')
     expect(spanText(out.body, out.inferenceSpans)).toEqual(['[1]乙', '乙'])
-    const gone = withoutSources({ body, sourceIds: ['a', 'b'], inferenceSpans: [{ start: 5, end: 8 }] }, [2])
+    const gone = withoutVoidClaims({ ...text(body), sourceIds: ['a', 'b'], inferenceSpans: [{ start: 5, end: 8 }] }, [2], [1])!
     expect(gone.inferenceSpans).toEqual([])
+  })
+
+  it('drops a bullet sharing 8 or more characters with a dropped sentence, ignoring width, spaces and punctuation', () => {
+    const card = { summary: 'AI 编辑器', bullets: ['基于 VS Code', '比同类快一倍，评测说', '说它比同类　快一倍！'], body: '基于 VS Code[1]。有评测说它比同类快一倍[2]。', sourceIds: ['a', 'b'], inferenceSpans: [] }
+    // 「比同类快一倍评测说」 shares only 6 characters in a row with 「有评测说它比同类快一倍」; 「说它比同类快一倍」 shares 8.
+    expect(withoutVoidClaims(card, [2], [1])!.bullets).toEqual(['基于 VS Code', '比同类快一倍，评测说'])
+    expect(withoutVoidClaims({ ...card, bullets: ['评测说它比同类快一倍'] }, [2], [1])).toBeNull()
+    expect(withoutVoidClaims({ ...card, summary: '有评测说它比同类快一倍' }, [2], [1])).toBeNull()
+    // Nothing dropped, nothing compared.
+    expect(withoutVoidClaims({ ...card, bullets: ['评测说它比同类快一倍'] }, [], [1, 2])!.bullets).toEqual(['评测说它比同类快一倍'])
   })
 })
