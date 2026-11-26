@@ -57,12 +57,15 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 ```
 
 1. **确认桌面版空闲，再退出。** 没有会话在跑、没有排队的消息、前哨的运行记录里没有「运行中」（前哨自己的日更也算）。然后 ⌘Q 正常退出；它若弹「退出 DeepSeek Harness？」说有任务会被中断，先取消，等任务跑完再退。
-2. **备份桌面版 profile 的几个文件**（`cordis.patch.yml` 还不存在就不用备份它；`pnpm-lock.yaml` 会被安装改写，一起备份）：
+2. **备份桌面版 profile 的几个文件**（`pnpm-lock.yaml` 会被安装改写，一起备份；哪个文件还不存在就跳过它）：
 
    ```sh
    BACKUP=~/Projects/AgentOutpost-data/backup/$(date +%Y%m%d-%H%M%S)
    mkdir -p "$BACKUP" && chmod 700 "$BACKUP"
-   cd ~/.dsh/profiles/desktop && cp -p package.json cordis.patch.yml pnpm-lock.yaml "$BACKUP"/ && chmod 600 "$BACKUP"/*
+   for f in package.json cordis.patch.yml cordis.yml pnpm-lock.yaml; do
+     [ -f ~/.dsh/profiles/desktop/$f ] && cp -p ~/.dsh/profiles/desktop/$f "$BACKUP"/
+   done
+   chmod 600 "$BACKUP"/*
    ```
 
 3. **检查并打包**，得到 `dsh-outpost-<version>.tgz`（版本号取自 `package.json`）：

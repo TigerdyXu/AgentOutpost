@@ -618,8 +618,10 @@ describe('withoutVoidClaims', () => {
     // A bracketed aside, closed after its stop, goes whole.
     expect(withoutVoidClaims(ab('团队版免费[1]。（据说下月降价。）[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
     expect(withoutVoidClaims(ab('团队版免费[1]。(据说下月降价。)[2]【传闻。】[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
-    // A straight quote opening the next sentence is not taken for the close of this one.
+    // A straight quote, double or single, opening the next sentence is not taken for the close of this one.
     expect(withoutVoidClaims(ab('团队版免费[1]。"据说下月降价。"[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
+    expect(withoutVoidClaims(ab("团队版免费[1]。'据说下月降价。'[2]"), [2], [1])!.body).toBe('团队版免费[1]。')
+    expect(withoutVoidClaims(ab("有人说：'它比同类快一倍。'[2]团队版免费[1]。"), [2], [1])!.body).toBe('团队版免费[1]。')
   })
 
   it('renumbers the citations in the bullets like the body, and drops a bullet whose every citation is void', () => {
@@ -640,18 +642,33 @@ describe('withoutVoidClaims', () => {
     expect(withoutVoidClaims({ ...lone, bullets: ['个人版免费[1]'] }, [2], [1])).toMatchObject({ body: '个人版免费[1]。', sourceIds: ['a'] })
   })
 
+  it('drops a source cited only by bullets that went, and keeps one the summary cites', () => {
+    const card = {
+      summary: '个人免费', bullets: ['个人版免费[1]', '下个月团队版会降价到二十美元[3]'], body: '个人版免费[1]。据说下个月团队版会降价到二十美元[2]。',
+      sourceIds: ['a', 'b', 'c'], inferenceSpans: [],
+    }
+    // The second bullet repeats the dropped sentence and goes; [3] was cited by it alone.
+    expect(withoutVoidClaims(card, [2], [1])).toMatchObject({ bullets: ['个人版免费[1]'], sourceIds: ['a'] })
+    expect(withoutVoidClaims({ ...card, summary: '个人免费，团队另算[3]' }, [2], [1])).toMatchObject({ summary: '个人免费，团队另算[2]', bullets: ['个人版免费[1]'], sourceIds: ['a', 'c'] })
+    // A source cited nowhere at all stays, as before.
+    expect(withoutVoidClaims({ ...card, bullets: ['个人版免费[1]'], sourceIds: ['a', 'b', 'c', 'd'] }, [2], [1])!.sourceIds).toEqual(['a', 'c', 'd'])
+  })
+
   it('rejects the edit when every bullet rests only on void sources', () => {
     const card = { summary: '个人免费', bullets: ['传闻会降价[2]', '还会再降[2]'], body: '个人版免费[1]。据说下月降价[2]。', sourceIds: ['a', 'b'], inferenceSpans: [] }
     expect(withoutVoidClaims(card, [2], [1])).toBeNull()
   })
 
-  it('does not count the product\'s name or company, nor a run of Latin letters and digits as more than one, toward an echo', () => {
+  it('does not count the product\'s name or company toward an echo, and counts a Latin word or number as one unit', () => {
     const names = ['Perplexity', 'Perplexity AI']
     const card = { summary: 'Perplexity 主打答案引擎', bullets: ['PERPLEXITY AI 的 Pro 版 20 美元'], body: '它主打答案引擎[1]。Perplexity 的月活过亿[2]。PerplexityAI 的 Pro 版 20 美元[2]。', sourceIds: ['a', 'b'], inferenceSpans: [] }
     expect(withoutVoidClaims(card, [2], [1], names)).toMatchObject({ summary: 'Perplexity 主打答案引擎', body: '它主打答案引擎[1]。' })
-    // A run of Latin letters or digits is one unit: 「支持 GPT-4o 和 Claude 3.5」 is not eight in a row.
-    const models = { ...card, summary: '答案引擎', bullets: ['支持 GPT-4o 和 Claude 3.5 Sonnet'], body: '它主打答案引擎[1]。据说支持 GPT-4o 和 Claude 3.5 Sonnet[2]。' }
-    expect(withoutVoidClaims(models, [2], [1], names)!.bullets).toEqual(['支持 GPT-4o 和 Claude 3.5 Sonnet'])
+    // A Latin word or number as written is one unit (not one per letter, nor one per stretch of words): a bullet that says
+    // 「支持 GPT-4o 和 Claude 3.5 Sonnet」 again word for word repeats the dropped sentence (9 units in a row) and goes.
+    const models = { ...card, summary: '答案引擎', bullets: ['支持 GPT-4o 和 Claude 3.5 Sonnet', '它主打答案引擎'], body: '它主打答案引擎[1]。据说支持 GPT-4o 和 Claude 3.5 Sonnet[2]。' }
+    expect(withoutVoidClaims(models, [2], [1], names)!.bullets).toEqual(['它主打答案引擎'])
+    // …while a bullet sharing only a few long words with it (5 units here) does not.
+    expect(withoutVoidClaims({ ...models, bullets: ['兼容 Claude 3.5 Sonnet 接口'] }, [2], [1], names)!.bullets).toEqual(['兼容 Claude 3.5 Sonnet 接口'])
     // A real echo is still one, the names left out of the count or not.
     const echo = { ...card, summary: '答案引擎', bullets: ['Perplexity 月活过亿，增速第一', '它主打答案引擎'], body: '它主打答案引擎[1]。据说 Perplexity 月活过亿，增速第一[2]。' }
     expect(withoutVoidClaims(echo, [2], [1], names)!.bullets).toEqual(['它主打答案引擎'])

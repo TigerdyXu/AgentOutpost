@@ -175,13 +175,13 @@ const CITATION = /\[(\d+)\]/g
  */
 const STOP = /[。！？；]|\n/g
 /** Marks that only ever close: after a stop they belong to the sentence the stop ends (「…。」[2]). */
-const CLOSERS = new Set('」』”’）)】》〉\'')
-/** A straight double quote both opens and closes: after a stop it closes the sentence only if one is open in it. */
-const STRAIGHT_QUOTE = '"'
+const CLOSERS = new Set('」』”’）)】》〉')
+/** Straight quotes both open and close: after a stop one closes the sentence only if one of its kind is open in it. */
+const STRAIGHT_QUOTES = new Set(['"', "'"])
 /** Citations written right after a sentence's end (and its closing marks). */
 const TRAILING_CITATIONS = /(?:\[\d+\])*/y
 
-/** How many characters in a row a bullet or the summary must share with a dropped sentence to count as repeating it. */
+/** How many units in a row (`echoUnits`: a character, or a Latin word) a bullet or the summary must share with a dropped sentence to count as repeating it. */
 export const ECHO_CHARS = 8
 
 /** The text of a card edit that the check may cut. */
@@ -215,7 +215,7 @@ function sentences(body: string): Range[] {
     if (m[0] !== '\n') {
       for (;;) {
         const c = body[to]
-        const closesQuote = c === STRAIGHT_QUOTE && countOf(body.slice(from, to), STRAIGHT_QUOTE) % 2 === 1
+        const closesQuote = c !== undefined && STRAIGHT_QUOTES.has(c) && countOf(body.slice(from, to), c) % 2 === 1
         if (c === undefined || !(CLOSERS.has(c) || closesQuote)) break
         to++
       }
@@ -265,18 +265,35 @@ export function renumberCitations(body: string, removed: number[]): string {
   return applyEdits(body, citationEdits(body, removed))
 }
 
-/** A text folded for the echo test: citations gone, full-width forms folded, lower case, whitespace and punctuation gone. */
-const fold = (text: string) => text.replace(CITATION, '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
+/**
+ * A text in the units the echo test counts: citations gone, full-width forms folded and lower case, then each Latin
+ * word or number as written (a run of letters and digits between spaces or marks: 「GPT-4o」 is `gpt` and `4o`) one unit,
+ * and any other character one unit; spaces, punctuation and symbols are no units.
+ */
+const tokens = (text: string): string[] =>
+  (text.replace(CITATION, '').normalize('NFKC').toLowerCase().match(/[a-z0-9]+|\S/gu) ?? []).filter(t => !/^[\p{P}\p{S}]$/u.test(t))
+
+/** Where `part` (at least one unit) occurs in `units`, as a run of whole units. */
+const runAt = (units: readonly string[], part: readonly string[], from: number) => part.every((t, j) => units[from + j] === t)
 
 /**
- * A text as the echo test compares it, in units: `fold`ed, without the product's names (`names`, folded likewise, so
- * that case and spaces do not matter), then each run of Latin letters and digits as one unit and anything else one
- * character a unit. A Latin name or model number shared with a dropped sentence is not a repeat of it.
+ * A text as the echo test compares it, in units (`tokens`), without the product's names (`names`): each name is taken
+ * out as whole units, whatever its case, and also written without its spaces (「Perplexity AI」 and 「PerplexityAI」).
+ * A name shared with a dropped sentence is no repeat of it.
  */
 function echoUnits(text: string, names: readonly string[]): string[] {
-  let folded = fold(text)
-  for (const name of names.map(fold).filter(Boolean).sort((a, b) => b.length - a.length)) folded = folded.split(name).join('')
-  return folded.match(/[a-z0-9]+|./gsu) ?? []
+  const forms = names.flatMap(name => {
+    const units = tokens(name)
+    return units.length > 1 ? [units, tokens(units.join(''))] : [units]
+  }).filter(units => units.length > 0).sort((a, b) => b.length - a.length)
+  const units = tokens(text)
+  const out: string[] = []
+  for (let i = 0; i < units.length;) {
+    const name = forms.find(form => runAt(units, form, i))
+    if (name) i += name.length
+    else out.push(units[i++]!)
+  }
+  return out
 }
 
 /** Units joined so that a run of them is found only at unit boundaries. */
@@ -300,8 +317,8 @@ const citedIn = (line: string) => [...line.matchAll(CITATION)].map(m => Number(m
  * - Each sentence (split after 。！？； or a line break, with the closing marks and citations right after, see
  *   `sentences`) citing a void source goes, unless it also cites a valid one; there only the void citation goes.
  * - A bullet sharing `ECHO_CHARS` or more units in a row with a dropped sentence (compared without width, case, spaces,
- *   punctuation, citations and the product's names, a run of Latin letters and digits counting as one unit) goes too,
- *   and so does a bullet whose every citation is of a void source.
+ *   punctuation, citations and the product's names, a Latin word or number counting as one unit, see `echoUnits`) goes
+ *   too, and so does a bullet whose every citation is of a void source.
  * - The void sources leave `sourceIds`, and so does any source whose every citation went with a dropped sentence or
  *   bullet; the remaining citations, in the body, the bullets and the summary, are renumbered to close the gaps. The
  *   推论 marks (`inferenceSpans`, UTF-16 offsets into the body) move with the text they cover; one left covering nothing
@@ -323,8 +340,10 @@ export function withoutVoidClaims(card: CardText, removed: number[], valid: numb
     return !repeats(b) && !(cited.length && cited.every(isVoid))
   })
 
-  const kept = [...citations.filter(c => !cut.some(s => within(c, s))).map(c => c.n), ...keptBullets.flatMap(citedIn)]
-  const uncited = [...new Set(citations.map(c => c.n))].filter(n => !kept.includes(n))
+  // A source still cited by the body, a bullet that stays or the summary stays; one cited only by what went leaves.
+  const kept = [...citations.filter(c => !cut.some(s => within(c, s))).map(c => c.n), ...keptBullets.flatMap(citedIn), ...citedIn(card.summary)]
+  const everCited = new Set([...citations.map(c => c.n), ...card.bullets.flatMap(citedIn)])
+  const uncited = [...everCited].filter(n => !kept.includes(n))
   const drop = [...new Set([...removed, ...uncited])]
   const edits: Replacement[] = [
     ...cut.map(s => ({ ...s, text: '' })),
