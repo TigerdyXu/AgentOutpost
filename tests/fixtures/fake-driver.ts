@@ -34,7 +34,7 @@ export class FakeDriver implements SessionDriver {
   readonly runs: SessionSpec[] = []
   readonly nudges: { sessionId: string; text: string }[] = []
   readonly archived: string[] = []
-  readonly interactive: Omit<SessionSpec, 'model'>[] = []
+  readonly interactive: SessionSpec[] = []
   /** Sessions given their tools again (`rebind`), in order. */
   readonly rebound: { sessionId: string; tools: ToolSpec[] }[] = []
   closed = false
@@ -57,7 +57,7 @@ export class FakeDriver implements SessionDriver {
     return this.play('nudge', sessionId, text, signal)
   }
 
-  async startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void> {
+  async startInteractive(spec: SessionSpec): Promise<void> {
     this.interactive.push(spec)
   }
 

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ModelSettings } from '../../src/core/models.ts'
 import type { Finding, Source } from '../../src/core/types.ts'
 import { startFollowup, type FollowupDeps } from '../../src/host/followup.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
@@ -15,6 +16,7 @@ let db: Db
 let repo: Repo
 let driver: FakeDriver
 let deps: FollowupDeps
+let models: ModelSettings
 let finding: Finding
 let official: Source
 
@@ -24,7 +26,8 @@ beforeEach(() => {
   const { clock } = instantClock(new Date(2026, 10, 25, 9, 30, 0))
   repo = new Repo(db, () => clock.now())
   driver = new FakeDriver()
-  deps = { repo, driver, clock, icons: { fetch: vi.fn(async () => null) } }
+  models = { model: null, verifyModel: null, briefModel: null, followupModel: null }
+  deps = { repo, driver, clock, icons: { fetch: vi.fn(async () => null) }, settings: () => models }
   const track = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }], status: 'active' })
   repo.upsertProduct({ id: 'p1', name: 'Cursor', company: 'Anysphere', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: ['cursor.com'], status: 'tracking', dailyBudgetYuan: null })
   repo.linkProduct(track.id, 'p1')
@@ -60,6 +63,22 @@ describe('startFollowup', () => {
     const read = await spec.tools[0]!.execute({}) as { product: { name: string }; cards: { dimension: string; body: string }[] }
     expect(read.product.name).toBe('Cursor')
     expect(read.cards.map(c => c.dimension)).toEqual(['positioning', 'business'])
+  })
+
+  it('opens the follow-up on the follow-up model, else the research model', async () => {
+    const research = { provider: 'deepseek-official', model: 'deepseek-flash' }
+    const claude = { provider: 'anthropic', model: 'claude-sonnet-4-5' }
+
+    // Nothing chosen: DSH's default model (the session is opened without choosing one).
+    await startFollowup(deps, finding.id)
+    // Only the research model chosen: the follow-up takes it, not DSH's default (a local model may be too slow for a chat).
+    models = { ...models, model: research, verifyModel: claude, briefModel: claude }
+    await startFollowup(deps, finding.id)
+    // A model of its own.
+    models = { ...models, followupModel: claude }
+    await startFollowup(deps, finding.id)
+
+    expect(driver.interactive.map(spec => spec.model)).toEqual([null, research, claude])
   })
 
   it('puts the finding, its sources and every card\'s summary and bullets in the first message', async () => {

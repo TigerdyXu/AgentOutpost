@@ -1,10 +1,12 @@
 /**
  * 追问 (design §5.2, §7.7): a DSH chat for the user about one finding, on DSH's standard preset (the driver's
- * `startInteractive`), not the research one. The session 「追问 · <产品> <标题>」 starts with a
+ * `startInteractive`), not the research one, and on the follow-up model (`modelFor('followup')`: its own, else the
+ * research model, else DSH's default). The session 「追问 · <产品> <标题>」 starts with a
  * message (`prompts/followup.md`) holding the finding, its sources with their quotes, and the summary and points of each
  * of the product's cards; its one Outpost tool is `outpost_read`, for the full dossier. The panel then opens the session.
  */
 import { localDate } from '../core/calendar.ts'
+import { modelFor, type ModelSettings } from '../core/models.ts'
 import type { Finding, FindingStatus, Id, Product } from '../core/types.ts'
 import type { Repo } from '../store/repo.ts'
 import type { Clock, IconFetcher, SessionDriver } from './ports.ts'
@@ -16,6 +18,8 @@ export interface FollowupDeps {
   driver: SessionDriver
   clock: Clock
   icons: IconFetcher
+  /** The configured models, read when a chat opens. */
+  settings: () => ModelSettings
 }
 
 const STATUS: Record<FindingStatus, string> = { pending: '待核查', verified: '已核实', unconfirmed: '待确认', unproven: '未证实', withdrawn: '已撤回' }
@@ -28,7 +32,7 @@ const IMPORTANCE: Record<Finding['importance'], string> = { major: '重要', not
  * @throws When the finding or its product does not exist (nothing is opened), or when the session cannot be opened.
  */
 export async function startFollowup(deps: FollowupDeps, findingId: Id): Promise<{ sessionId: string }> {
-  const { repo, driver, clock, icons } = deps
+  const { repo, driver, clock, icons, settings } = deps
   const finding = repo.getFinding(findingId)
   if (!finding) throw new Error(`Unknown finding ${findingId}`)
   const product = repo.getProduct(finding.productId)
@@ -44,6 +48,7 @@ export async function startFollowup(deps: FollowupDeps, findingId: Id): Promise<
       title: `追问 · ${product.name} ${finding.headline}`,
       prompt,
       tools: researchTools('followup', { repo, runId: run.id, trackId: null, productId: product.id, now: () => clock.now(), icons, onDone: () => {} }),
+      model: modelFor('followup', settings()),
     })
   } catch (error) {
     repo.updateRun(run.id, { status: 'failed', error: error instanceof Error ? error.message : String(error), endedAt: clock.now().toISOString() })

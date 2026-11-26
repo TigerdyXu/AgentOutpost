@@ -47,7 +47,7 @@ beforeEach(() => {
   db = openDb(join(dir, 'outpost.sqlite'))
   clock = manualClock('2026-11-25T07:00')
   repo = new Repo(db, () => clock.clock.now())
-  settings = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }, model: null }
+  settings = { runTime: '08:00', maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   complete = vi.fn<ModelClient['complete']>(async () => ({ text: '今天 Cursor 有一条重要更新。', usage: usage({ inputTokens: 1000 }) }))
   log = vi.fn<(message: string) => void>()
   plays = {}

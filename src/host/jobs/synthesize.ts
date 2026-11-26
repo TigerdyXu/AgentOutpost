@@ -18,6 +18,7 @@
  */
 import { composeBrief, NO_NEWS_GIST } from '../../core/brief.ts'
 import { costOf } from '../../core/cost.ts'
+import { modelFor, type ModelSettings } from '../../core/models.ts'
 import type { Brief, Finding, Id, Run } from '../../core/types.ts'
 import type { Repo } from '../../store/repo.ts'
 import type { Clock, ModelClient } from '../ports.ts'
@@ -28,10 +29,14 @@ import { PROMOTED_NOTE } from './verify.ts'
 
 export interface BriefDeps {
   repo: Repo
+  /** Writes with the brief's model (`modelFor('brief')`, as the runtime builds it). */
   model: ModelClient
   clock: Clock
-  /** Read on each use: the day's budget (the gist is not written once it is spent) and the prices of its tokens. */
-  settings: () => Pick<RuntimeSettings, 'dailyBudgetYuan' | 'prices'>
+  /**
+   * Read on each use: the day's budget (the gist is not written once it is spent), and the models and their prices: the
+   * gist's tokens are priced by the brief's model.
+   */
+  settings: () => Pick<RuntimeSettings, 'dailyBudgetYuan' | 'pricesOf'> & ModelSettings
   /** Aborts when Outpost stops (`JobRunner.lifetime`): a gist being written is given up at once, not after its 2 minutes. */
   stop?: AbortSignal
 }
@@ -155,12 +160,13 @@ async function writeGist(deps: BriefDeps, date: string, main: Finding[]): Promis
     return fallback
   }
   repo.updateRun(run.id, { status: 'running', startedAt: clock.now().toISOString() })
+  const writer = modelFor('brief', settings()) // the model the client writes with: the brief's, as configured now
   try {
     const user = [`日期：${date}`, '今天值得看的发现（按重要程度排）：', ...main.map((f, i) => describe(f, i + 1, name(f.productId), date))].join('\n')
     const timeout = AbortSignal.timeout(GIST_TIMEOUT_MS)
     const { text, usage } = await model.complete({ system: renderPrompt('synthesize', {}), user }, deps.stop ? AbortSignal.any([timeout, deps.stop]) : timeout)
     const gist = cleanGist(text)
-    end({ status: 'done', usage, costYuan: costOf(usage, settings().prices), error: gist === null ? UNUSABLE_GIST : null })
+    end({ status: 'done', usage, costYuan: costOf(usage, settings().pricesOf(writer)), error: gist === null ? UNUSABLE_GIST : null })
     return gist ?? fallback
   } catch (error) {
     // Cut short by a stop: interrupted, not broken (the brief is written again on the next start).

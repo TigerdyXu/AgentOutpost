@@ -12,6 +12,14 @@ import s from '@deepseek-ai/schemastery'
 export const DEFAULT_PRICES = { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 } as const
 
 const price = (value: number, description: string) => s.number().min(0).default(value).description(description)
+/**
+ * A model of DSH, or null. Absent or null means: research uses DSH's default model, and the other roles use the research
+ * model. Schemastery keeps an absent value absent (a null default is no default), so readers treat `undefined` like `null`.
+ */
+const modelRef = (description: string) => s.union([
+  s.const(null),
+  s.object({ provider: s.string().required(), model: s.string().required() }),
+]).description(description).volatile()
 
 export const Config = s.object({
   dataDir: s.string().pattern(/^\//).required()
@@ -24,12 +32,11 @@ export const Config = s.object({
     .description('Estimated spend per day, in yuan, after which remaining products wait for the next day.').volatile(),
   sessionTimeoutMin: s.number().min(1).default(30)
     .description('Time limit of one research session, in minutes.').volatile(),
-  // Absent or null: research sessions use the user's default model of DSH. Schemastery keeps an absent value absent (a null
-  // default is no default), so readers treat `undefined` like `null`.
-  model: s.union([
-    s.const(null),
-    s.object({ provider: s.string().required(), model: s.string().required() }),
-  ]).description('Model of research sessions; empty uses the default model of DSH.').volatile(),
+  // The models of the four roles (src/core/models.ts). `model` is research's, as before these roles existed.
+  model: modelRef('Model of research (recommendations, baselines, daily updates); empty uses the default model of DSH.'),
+  verifyModel: modelRef('Model of the check; empty uses the research model.'),
+  briefModel: modelRef('Model that writes the brief\'s one-sentence gist; empty uses the research model.'),
+  followupModel: modelRef('Model of a 追问 chat; empty uses the research model.'),
   prices: s.object({
     inputPerMTok: price(DEFAULT_PRICES.inputPerMTok, 'Input tokens (cache miss), yuan per million.'),
     outputPerMTok: price(DEFAULT_PRICES.outputPerMTok, 'Output tokens, yuan per million.'),

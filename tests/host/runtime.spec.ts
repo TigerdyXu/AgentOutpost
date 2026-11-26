@@ -2,9 +2,10 @@ import { chmodSync, mkdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Config, type OutpostConfig } from '../../src/config.ts'
+import { Config, DEFAULT_PRICES, type OutpostConfig } from '../../src/config.ts'
+import type { ModelRef } from '../../src/core/models.ts'
 import { STOPPED_ERROR } from '../../src/host/jobs/runner.ts'
-import { lockedMessage, type Runtime } from '../../src/host/runtime.ts'
+import { lockedMessage, Runtime } from '../../src/host/runtime.ts'
 import * as outpost from '../../src/index.ts'
 import { lockDataDir, openDb } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
@@ -310,5 +311,111 @@ describe('Runtime', () => {
     const batch = inspect(repo => repo.getRun(created.json<{ batchId: string }>().batchId))
     expect(batch).toMatchObject({ status: 'failed', error: STOPPED_ERROR })
     await rt.stop() // twice is harmless
+  })
+})
+
+describe('models', () => {
+  const A: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
+  const FREE = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+  /** A session plan with no tools: the agent ends without `outpost_done`, is nudged once, and the run is done. */
+  const plan = () => ({ title: '前哨 · 测试', prompt: '看看有什么新动态', tools: () => [] })
+  const kindOf = (sessionId: string) => sessionId.split('-')[1]
+
+  /**
+   * A runtime on `on` whose brief model call goes to DSH (`ctx.llm.stream`, answering one sentence), as when DSH loads
+   * the plugin, and its model call's mock.
+   */
+  function onDsh(on: ApiHost) {
+    const stream = vi.fn((_options: Record<string, unknown>) => (async function* () {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: '今天一条重要更新。' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })())
+    Object.assign(on.ctx.llm, { stream })
+    return { rt: new Runtime(on.ctx as never, on.config, { driver: on.driver, clock: on.clock.clock, icons: on.icons }), stream }
+  }
+  /** Asks for each of the four roles once: a daily run, a check, the brief's model call, and a 追问 chat. */
+  async function useEveryRole(on: ApiHost, rt: Runtime) {
+    await rt.runner.session('daily', {}, plan)
+    await rt.runner.session('verify', {}, plan)
+    await rt.model.complete({ system: '写一句话', user: '今天的发现' }, new AbortController().signal)
+    product(rt.repo, 'p1')
+    const run = rt.repo.createRun({ kind: 'daily', date: '2026-11-25', trackId: null, productId: 'p1' })
+    const finding = rt.repo.addFinding({
+      productId: 'p1', runId: run.id, headline: 'Cursor 后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [], status: 'verified',
+      statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: `k-${run.id}`, verifiedOn: '2026-11-25',
+    })
+    expect((await on.call('POST', 'followup', { findingId: finding.id })).status).toBe(200)
+  }
+
+  it('old configuration with only model uses it for all four roles', async () => {
+    const other = apiHost({ config: dataDir => Config({ dataDir, model: A }) })
+    const { rt, stream } = onDsh(other)
+    try {
+      rt.start()
+      expect(rt.settings()).toMatchObject({ model: A, verifyModel: null, briefModel: null, followupModel: null })
+
+      await useEveryRole(other, rt)
+
+      expect(other.driver.runs.map(s => [kindOf(s.sessionId), s.model])).toEqual([['daily', A], ['verify', A]])
+      expect(stream).toHaveBeenCalledOnce()
+      expect(stream).toHaveBeenCalledWith(expect.objectContaining({ provider: A.provider, model: A.model }))
+      expect(other.agentDefaultModel.currentSelection).not.toHaveBeenCalled() // the brief did not fall back on DSH's default
+      expect(other.driver.interactive.map(s => s.model)).toEqual([A])
+    } finally {
+      await rt.stop()
+      other.cleanup()
+    }
+  })
+
+  it('gives each role the model chosen for it, read anew on each use', async () => {
+    const models: Record<'model' | 'verifyModel' | 'briefModel' | 'followupModel', ModelRef | null | undefined> = {
+      model: A, verifyModel: undefined, briefModel: undefined, followupModel: undefined,
+    }
+    const config = Config({ dataDir: host.dataDir })
+    const live = { ...config, ...Object.fromEntries(Object.keys(models).map(key => [key, { get: () => models[key as keyof typeof models] }])) } as unknown as OutpostConfig
+    const other = apiHost({ config: () => live })
+    const { rt, stream } = onDsh(other)
+    try {
+      rt.start()
+      // Chosen while Outpost runs: the next use takes it, without a restart.
+      models.verifyModel = { provider: 'deepseek-official', model: 'deepseek-flash' }
+      models.briefModel = { provider: 'anthropic', model: 'claude-sonnet-4-5' }
+      models.followupModel = { provider: 'ollama', model: 'qwen3:8b' }
+
+      await useEveryRole(other, rt)
+
+      expect(other.driver.runs.map(s => [kindOf(s.sessionId), s.model])).toEqual([['daily', A], ['verify', models.verifyModel]])
+      expect(stream).toHaveBeenCalledWith(expect.objectContaining({ provider: 'anthropic', model: 'claude-sonnet-4-5' }))
+      expect(other.driver.interactive.map(s => s.model)).toEqual([models.followupModel])
+    } finally {
+      await rt.stop()
+      other.cleanup()
+    }
+  })
+
+  it('prices by the provider of the model, DSH\'s default model when none is chosen', async () => {
+    const other = apiHost({ config: dataDir => Config({ dataDir, prices: { inputPerMTok: 3 } }) })
+    other.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'box', name: 'Ollama (local)' }, { id: 'anthropic', name: 'Anthropic' }])
+    other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'box', model: 'qwen3:8b' })
+    const rt = other.create()
+    try {
+      const table = { ...DEFAULT_PRICES, inputPerMTok: 3 }
+      const { pricesOf } = rt.settings()
+      expect(pricesOf(null)).toEqual(FREE) // the default model is local, as its provider's name says
+      expect(pricesOf({ provider: 'deepseek-official', model: 'deepseek-flash' })).toEqual(table)
+      expect(pricesOf({ provider: 'anthropic', model: 'claude-sonnet-4-5' })).toEqual(FREE)
+      expect(pricesOf({ provider: 'box', model: 'qwen3:8b' })).toEqual(FREE)
+      expect(pricesOf({ provider: 'zai', model: 'glm-5' })).toEqual(table) // another metered provider: estimated with the table
+
+      other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'deepseek-official', model: 'deepseek-flash' })
+      expect(pricesOf(null)).toEqual(table) // the default is read on each use
+      // DSH cannot say which model is its default: estimated with the table, so the budget still holds.
+      other.agentDefaultModel.currentSelection.mockImplementation(() => { throw new Error('no default model') })
+      expect(pricesOf(null)).toEqual(table)
+    } finally {
+      await rt.stop()
+      other.cleanup()
+    }
   })
 })

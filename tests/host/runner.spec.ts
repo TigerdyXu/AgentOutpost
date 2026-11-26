@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { costOf } from '../../src/core/cost.ts'
+import type { ModelRef } from '../../src/core/models.ts'
 import type { Id, Product, Run } from '../../src/core/types.ts'
 import { JobRunner, NUDGE_TEXT, RETRY_DELAY_MS, isTransient, type RuntimeSettings, type SessionPlan } from '../../src/host/jobs/runner.ts'
 import { researchTools } from '../../src/host/tools.ts'
@@ -12,6 +13,7 @@ import { FakeDriver, completed, failure, flush, gate, instantClock, usage } from
 
 const TODAY = '2026-11-25'
 const PROMPT = '找 Cursor 近一天的新动态'
+const PRICES = { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }
 
 let dir: string
 let db: Db
@@ -34,7 +36,7 @@ beforeEach(() => {
   time = instantClock(new Date(2026, 10, 25, 8, 0, 0)) // local wall-clock, so TODAY is the same day in every time zone
   repo = new Repo(db, () => time.clock.now())
   driver = new FakeDriver()
-  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }, model: null }
+  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => PRICES }
   log = vi.fn<(message: string) => void>()
   runner = new JobRunner({ repo, driver, clock: time.clock, settings: () => settings, log })
   cursor = repo.upsertProduct({ id: 'p1', ...productSpec('Cursor', 'Anysphere') })
@@ -288,7 +290,7 @@ describe('sessions', () => {
 
     const total = { inputTokens: 1_100_000, outputTokens: 300_000, cacheReadTokens: 3_000_000 }
     expect(run.usage).toEqual(total)
-    expect(run.costYuan).toBe(costOf(total, settings.prices))
+    expect(run.costYuan).toBe(costOf(total, PRICES))
     expect(run.costYuan).toBe(4.72) // 1.1 × 2 + 0.3 × 8 + 3 × 0.04
     expect(repo.spentOn(TODAY, 'p1')).toBe(4.72)
   })
@@ -308,6 +310,81 @@ describe('sessions', () => {
     expect(await first.finished).toMatchObject({ status: 'failed', error: '前哨已停止' })
     expect(await second.finished).toMatchObject({ status: 'failed', error: '前哨已停止' })
     expect(driver.runs).toHaveLength(1)
+  })
+})
+
+describe('models', () => {
+  const A: ModelRef = { provider: 'deepseek-official', model: 'deepseek-flash' }
+  const B: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
+  const LOCAL: ModelRef = { provider: 'ollama', model: 'qwen3:8b' }
+  const FREE = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+  const kindOf = (sessionId: string) => sessionId.split('-')[1]
+
+  it('runs a check on the verify model and research on the research model', async () => {
+    settings.model = A
+    settings.verifyModel = B
+    driver.script['outpost-'] = finishes()
+    await runner.session('daily', { productId: 'p1' }, build)
+    await runner.session('verify', { productId: 'p1' }, build)
+    await runner.session('baseline', { productId: 'p2' }, daily('p2'))
+    await runner.session('recommend', { trackId: null }, build)
+    // Recommendations, baselines and daily updates are all research.
+    expect(driver.runs.map(s => [kindOf(s.sessionId), s.model])).toEqual([['daily', A], ['verify', B], ['baseline', A], ['recommend', A]])
+
+    // No model of its own: the check runs on the research model, and with none either, on DSH's default (null).
+    settings.verifyModel = null
+    await runner.session('verify', { productId: 'p1' }, build)
+    expect(driver.runs.at(-1)!.model).toEqual(A)
+    settings.model = null
+    await runner.session('verify', { productId: 'p1' }, build)
+    expect(driver.runs.at(-1)!.model).toBeNull()
+    // The other roles' models are not research's.
+    settings.briefModel = B
+    settings.followupModel = B
+    await runner.session('daily', { productId: 'p1' }, build)
+    expect(driver.runs.at(-1)!.model).toBeNull()
+  })
+
+  it('costs a run on a local model nothing and does not count it toward the budget', async () => {
+    const priced: (ModelRef | null)[] = []
+    settings.pricesOf = model => { priced.push(model); return model?.provider === 'ollama' ? FREE : PRICES }
+    settings.maxParallel = 1
+    settings.dailyBudgetYuan = 10
+    driver.script['outpost-daily-'] = finishes({ outputTokens: 1_000_000 }) // 8 yuan at DeepSeek's prices
+
+    settings.model = LOCAL
+    const local = await runner.session('daily', { productId: 'p1' }, build)
+    expect(local).toMatchObject({ status: 'done', usage: { inputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0 }, costYuan: 0 })
+    expect(priced.length).toBeGreaterThan(0)
+    expect(priced.every(model => model === LOCAL)).toBe(true) // priced by the model the session ran on
+    expect(repo.spentOn(TODAY)).toBe(0)
+
+    // Back on DeepSeek (DSH's default model): spending adds up, and the budget stops the work as before.
+    settings.model = null
+    const first = await runner.session('daily', { productId: 'p1' }, build)
+    const second = await runner.session('daily', { productId: 'p2' }, daily('p2')) // 8 < 10: the local run took none of it
+    const third = await runner.session('daily', { productId: 'p2' }, daily('p2'))
+    expect([first, second].map(r => [r.status, r.costYuan])).toEqual([['done', 8], ['done', 8]])
+    expect(priced.at(-1)).toBeNull()
+    expect(third).toMatchObject({ status: 'skipped', error: '今日总预算已用完' })
+    expect(repo.spentOn(TODAY)).toBe(16)
+  })
+
+  it('passes the configured model as is, even when DSH no longer offers it', async () => {
+    // Ollama is not running, say: DSH lists none of its models. The runner neither checks the model nor swaps it for the
+    // default; the session fails as DSH says, and the run with it.
+    settings.model = LOCAL
+    settings.verifyModel = { provider: 'lmstudio', model: 'removed-model' }
+    const refusal = 'model "qwen3:8b" is not available from provider "ollama"'
+    driver.script['outpost-daily-'] = () => failure(refusal)
+    driver.script['outpost-verify-'] = finishes()
+
+    const run = await runner.session('daily', { productId: 'p1' }, build)
+    const check = await runner.session('verify', { productId: 'p1' }, build)
+
+    expect(driver.runs.map(s => s.model)).toEqual([LOCAL, { provider: 'lmstudio', model: 'removed-model' }])
+    expect(run).toMatchObject({ status: 'failed', error: refusal })
+    expect(check).toMatchObject({ status: 'done' })
   })
 })
 

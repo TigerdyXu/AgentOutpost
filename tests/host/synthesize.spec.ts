@@ -4,14 +4,17 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NO_NEWS_GIST } from '../../src/core/brief.ts'
 import { costOf } from '../../src/core/cost.ts'
+import { modelFor } from '../../src/core/models.ts'
 import type { Finding, Id, Importance, Run, RunStatus } from '../../src/core/types.ts'
 import { VERIFY_BUDGET_NOTE } from '../../src/host/jobs/daily.ts'
-import { STOPPED_ERROR, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
+import { DshModelClient } from '../../src/host/dsh-model.ts'
+import { STOPPED_ERROR } from '../../src/host/jobs/runner.ts'
 import { GIST_MAX_CHARS, appendLate, cleanGist, synthesizeBrief, type BriefDeps } from '../../src/host/jobs/synthesize.ts'
 import { PROMOTED_NOTE } from '../../src/host/jobs/verify.ts'
 import type { ModelClient } from '../../src/host/ports.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
+import { dshHost } from '../fixtures/dsh-context.ts'
 import { gate, instantClock, usage } from '../fixtures/fake-driver.ts'
 
 const DAY = '2026-11-25'
@@ -23,7 +26,7 @@ let dir: string
 let db: Db
 let repo: Repo
 let time: ReturnType<typeof instantClock>
-let settings: Pick<RuntimeSettings, 'dailyBudgetYuan' | 'prices'>
+let settings: ReturnType<BriefDeps['settings']>
 let answer: string | Error
 let complete: ReturnType<typeof vi.fn<ModelClient['complete']>>
 let deps: BriefDeps
@@ -33,7 +36,7 @@ beforeEach(() => {
   db = openDb(join(dir, 'outpost.sqlite'))
   time = instantClock(new Date(2026, 10, 25, 9, 30, 0))
   repo = new Repo(db, () => time.clock.now())
-  settings = { dailyBudgetYuan: 20, prices: PRICES }
+  settings = { dailyBudgetYuan: 20, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => PRICES }
   answer = '今天 Cursor 后台 Agent 正式上线，Windsurf 降价仍待确认。'
   complete = vi.fn<ModelClient['complete']>(async () => {
     if (answer instanceof Error) throw answer
@@ -117,6 +120,36 @@ describe('synthesizeBrief', () => {
     const cost = costOf(USED, PRICES)
     expect(synthRuns()).toMatchObject([{ kind: 'synthesize', date: DAY, status: 'done', error: null, usage: USED, costYuan: cost }])
     expect(brief.costYuan).toBeCloseTo(0.5 + 0.25 + cost, 6) // the day's whole spending, the gist included
+  })
+
+  it('writes the gist with the brief model and prices it by that model', async () => {
+    const research = { provider: 'deepseek-official', model: 'deepseek-flash' }
+    const local = { provider: 'ollama', model: 'qwen3:8b' }
+    const free = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+    const host = dshHost()
+    host.respond([
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: answer } },
+      { type: 'usage', usage: { inputTokens: USED.inputTokens, outputTokens: USED.outputTokens } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ])
+    // The model client as the runtime builds it: on DSH, with the brief's model.
+    deps.model = new DshModelClient(host.ctx, () => modelFor('brief', settings))
+    settings = { ...settings, model: research, briefModel: local, pricesOf: model => model?.provider === 'ollama' ? free : PRICES }
+    found(daily('p1'), 'Cursor 后台 Agent 正式上线')
+
+    const brief = await synthesizeBrief(deps, DAY)
+
+    expect(brief.gist).toBe(answer)
+    expect(host.llm.stream).toHaveBeenCalledOnce()
+    expect(host.llm.stream).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'ollama', model: 'qwen3:8b' }))
+    expect(synthRuns()).toMatchObject([{ status: 'done', usage: USED, costYuan: 0 }]) // a local model costs nothing
+
+    // Without a model of its own, the gist is written with the research model, and priced by it.
+    settings = { ...settings, briefModel: null }
+    await synthesizeBrief(deps, DAY)
+    expect(host.llm.stream).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'deepseek-official', model: 'deepseek-flash' }))
+    expect(synthRuns()[1]).toMatchObject({ status: 'done', usage: USED, costYuan: costOf(USED, PRICES) })
   })
 
   it('falls back to a sentence from the top finding when the answer is empty, too long, or missing', async () => {

@@ -35,3 +35,15 @@ it('keeps a chosen model and rejects out-of-range values', () => {
   expect(() => Config({ dataDir: '/d', maxParallel: 9 })).toThrow()
   expect(() => Config({ dataDir: '/d', maxParallel: 0 })).toThrow()
 })
+
+it('keeps a model per role: absent until chosen, null, or a whole { provider, model }; half of one is refused', () => {
+  const config = Config({ dataDir: '/d', model: { provider: 'deepseek-official', model: 'deepseek-flash' } })
+  for (const key of ['verifyModel', 'briefModel', 'followupModel'] as const) {
+    // Absent or null: the same model as research.
+    expect(config[key].get(), key).toBeUndefined()
+    expect(Config({ dataDir: '/d', [key]: null })[key].get(), key).toBeNull()
+    expect(Config({ dataDir: '/d', [key]: { provider: 'ollama', model: 'qwen3:8b' } })[key].get(), key).toEqual({ provider: 'ollama', model: 'qwen3:8b' })
+    expect(() => Config({ dataDir: '/d', [key]: { provider: 'ollama' } } as never), key).toThrow()
+    expect(() => Config({ dataDir: '/d', [key]: { model: 'qwen3:8b' } } as never), key).toThrow()
+  }
+})

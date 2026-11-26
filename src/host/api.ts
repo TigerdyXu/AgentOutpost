@@ -12,9 +12,11 @@ import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, identityKey } from '../core/identity.ts'
+import type { Billing, ModelRef } from '../core/models.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
+import { listModelGroups } from './dsh-model.ts'
 import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
 import { ICON_TYPES } from './icons.ts'
@@ -98,6 +100,22 @@ export interface ProductView {
   progress: Run['progress']
 }
 export type RunRow = Run & { productName: string | null }
+/** The models DSH offers now, for the four model choices of 设置. */
+export interface ModelsView {
+  /** One group per provider, in DSH's order. */
+  groups: {
+    provider: string
+    /** DSH's name for the provider: the group's title. */
+    name: string
+    /** How its use is counted: by the price table (`metered`), or ¥0 (`local`, `subscription`). */
+    billing: Billing
+    models: { id: string; name: string }[]
+    /** 「读取失败」 when the provider did not list its models in time, or failed to; `models` is then empty. */
+    error: string | null
+  }[]
+  /** DSH's default model (what research runs on with no model chosen), or null when DSH cannot say. */
+  defaultModel: ModelRef | null
+}
 
 /** The API, route by route. A done run's `error` is a note (it finished, with that remark), not a failure. */
 export interface Api {
@@ -140,6 +158,11 @@ export interface Api {
    * update of the product that day, a newer batch of the track).
    */
   'POST runs/:id/retry': { response: { runId: Id } }
+  /**
+   * The providers of DSH with their models, asked anew each time (each within 5 seconds), and DSH's default model. A model
+   * saved in the configuration that is missing here is not changed; 设置 marks it 「当前不可用」.
+   */
+  'GET models': { response: ModelsView }
 }
 
 type Path<K> = K extends `${string} ${infer P}` ? P : never
@@ -578,8 +601,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST followup': async req => {
       const { findingId } = Followup.parse(await req.body())
       if (!repo.getFinding(findingId)) notFound('找不到这条发现')
-      return startFollowup({ repo, driver: rt.driver, clock: rt.clock, icons: rt.icons }, findingId)
+      return startFollowup({ repo, driver: rt.driver, clock: rt.clock, icons: rt.icons, settings: () => rt.settings() }, findingId)
     },
+
+    'GET models': async () => ({ groups: await listModelGroups(rt.ctx.llm), defaultModel: rt.defaultModel() }),
 
     'GET runs': ({ query }) => {
       const days = query.days === undefined ? 7 : Number(query.days)

@@ -119,7 +119,7 @@ export class DshSessionDriver implements SessionDriver {
   async run(spec: SessionSpec, signal: AbortSignal): Promise<SessionOutcome> {
     if (signal.aborted) return { reason: 'timeout', usage: noUsage() }
     const agent = await this.open(spec)
-    if (spec.model) agent.model.select({ provider: spec.model.provider, model: spec.model.model })
+    this.select(agent, spec)
     return this.round(agent, spec.prompt, signal)
   }
 
@@ -131,8 +131,9 @@ export class DshSessionDriver implements SessionDriver {
     return this.round(agent, text, signal)
   }
 
-  async startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void> {
+  async startInteractive(spec: SessionSpec): Promise<void> {
     const agent = await this.open(spec, FOLLOWUP_PRESET)
+    this.select(agent, spec)
     agent.followup(this.message(spec.prompt))
     await this.persist()
   }
@@ -195,6 +196,11 @@ export class DshSessionDriver implements SessionDriver {
     if (!('error' in result)) return result.agent
     if (result.error.code === 'session/not-found') return undefined
     throw result.error
+  }
+
+  /** Puts the session on the spec's model, before it is told anything; with none (null), DSH's choice stands. */
+  private select(agent: Agent, spec: Pick<SessionSpec, 'model'>): void {
+    if (spec.model) agent.model.select({ provider: spec.model.provider, model: spec.model.model })
   }
 
   /** Registers the session's tools on `agent`, replacing those of an earlier round; a session without tools is left alone. */

@@ -1,8 +1,9 @@
 /**
  * Outpost's runtime on a fake host, for the route tests: a temporary data directory, a Context whose `webServer.register`
- * captures the `/outpost` route and whose logger records what it is told, the scripted `FakeDriver`, a model answering
- * what the test says, a fake icon downloader and a manual clock (07:00 on 2026-11-25 by default, before the daily run,
- * so starting the runtime starts no day). `call` sends one request through the captured route, as the Web server would.
+ * captures the `/outpost` route and whose logger records what it is told, whose `llm` lists DSH's providers and models
+ * and whose `agentDefaultModel` names the default model (DeepSeek, metered, unless a test says otherwise), the scripted
+ * `FakeDriver`, a model answering what the test says, a fake icon downloader and a manual clock (07:00 on 2026-11-25 by
+ * default, before the daily run, so starting the runtime starts no day). `call` sends one request through the captured route, as the Web server would.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,10 +34,17 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   const logger = { info: line(), warn: line(), error: line(), debug: line() }
   /** Other DSH services `ctx.get` finds (`browserUse`, say). */
   const services: Record<string, unknown> = {}
+  const llm = {
+    listProviders: vi.fn(() => [{ id: 'deepseek-official', name: 'DeepSeek' }]),
+    listModels: vi.fn(async (provider: string) => [{ provider, id: 'deepseek-flash', name: 'DeepSeek Flash' }] as { provider: string; id: string; name: string }[]),
+  }
+  const agentDefaultModel = { currentSelection: vi.fn((): { provider: string; model: string; reasoningEffort?: string } => ({ provider: 'deepseek-official', model: 'deepseek-flash' })) }
   const ctx = {
     webServer: { register: vi.fn((route: CapturedRoute) => { routes.push(route); return () => { const i = routes.indexOf(route); if (i >= 0) routes.splice(i, 1) } }) },
     logger,
     get: vi.fn((name: string) => services[name]),
+    llm,
+    agentDefaultModel,
   }
   const clock = manualClock(options.now ?? '2026-11-25T07:00')
   const driver = new FakeDriver()
@@ -67,7 +75,7 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   }
 
   return {
-    dir, dataDir, ctx, routes, logger, services, clock, driver, complete, icons, config, create, call,
+    dir, dataDir, ctx, routes, logger, services, llm, agentDefaultModel, clock, driver, complete, icons, config, create, call,
     cleanup: () => { rmSync(dir, { recursive: true, force: true }) },
   }
 }

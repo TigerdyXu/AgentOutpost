@@ -250,6 +250,37 @@ describe('GET state', () => {
   })
 })
 
+describe('GET models', () => {
+  it('returns the groups and the default model', async () => {
+    host.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'ollama', name: 'Ollama' }, { id: 'anthropic', name: 'Anthropic' }])
+    host.ctx.llm.listModels.mockImplementation(async provider => {
+      if (provider === 'ollama') throw new Error('connect ECONNREFUSED 127.0.0.1:11434') // Ollama is not running
+      return provider === 'anthropic'
+        ? [{ provider, id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' }]
+        : [{ provider, id: 'deepseek-flash', name: 'DeepSeek Flash' }, { provider, id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }]
+    })
+    host.ctx.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'ollama', model: 'qwen3:8b', reasoningEffort: 'high' })
+
+    const view = ok(await host.call('GET', 'models')).json<ApiResponse<'GET models'>>()
+
+    expect(view).toEqual({
+      groups: [
+        { provider: 'deepseek-official', name: 'DeepSeek', billing: 'metered', models: [{ id: 'deepseek-flash', name: 'DeepSeek Flash' }, { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }], error: null },
+        { provider: 'ollama', name: 'Ollama', billing: 'local', models: [], error: '读取失败' },
+        { provider: 'anthropic', name: 'Anthropic', billing: 'subscription', models: [{ id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' }], error: null },
+      ],
+      // Only which model: the reasoning effort is DSH's business.
+      defaultModel: { provider: 'ollama', model: 'qwen3:8b' },
+    })
+
+    // DSH cannot say what its default model is: none is named, and the list still comes.
+    host.ctx.agentDefaultModel.currentSelection.mockImplementation(() => { throw new Error('no default model') })
+    const without = ok(await host.call('GET', 'models')).json<ApiResponse<'GET models'>>()
+    expect(without.defaultModel).toBeNull()
+    expect(without.groups).toHaveLength(3)
+  })
+})
+
 describe('GET brief', () => {
   let ids: Record<string, Id>
   let sources: Source[]

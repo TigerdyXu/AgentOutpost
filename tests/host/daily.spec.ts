@@ -26,7 +26,7 @@ beforeEach(() => {
   const { clock } = instantClock(new Date(2026, 10, 25, 0, 30, 0))
   repo = new Repo(db, () => clock.now())
   driver = new FakeDriver()
-  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }, model: null }
+  settings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   const runner = new JobRunner({ repo, driver, clock, settings: () => settings, log: vi.fn() })
   deps = { repo, runner, clock, icons: { fetch: vi.fn(async () => null) } }
   const track = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: DEFAULT_DIMENSIONS, status: 'active' })

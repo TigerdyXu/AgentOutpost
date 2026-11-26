@@ -1,21 +1,53 @@
 /**
- * `ModelClient` on DSH: one model call through `ctx.llm.stream`, for writing that needs no tools or session. The model is
- * the one Outpost is configured with, else the user's default model of DSH. Only DSH types are imported; the text is
- * collected from the stream's chunks here rather than with dsh-llm's `BlockAssembler`, a value import.
+ * The models of DSH: `ModelClient` on DSH, one model call through `ctx.llm.stream` for writing that needs no tools or
+ * session, on the model Outpost is configured with (the brief's), else the user's default model of DSH; and
+ * `listModelGroups`, the providers and models DSH offers, for 设置. Only DSH types are imported; the text is collected
+ * from the stream's chunks here rather than with dsh-llm's `BlockAssembler`, a value import.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type { FinishReason, TokenUsage } from '@deepseek-ai/dsh-llm'
+import { billingOf, type ModelRef } from '../core/models.ts'
 import type { Usage } from '../core/types.ts'
+import type { ModelsView } from './api.ts'
 import { addUsage } from './dsh-sessions.ts'
 import type { ModelClient } from './ports.ts'
+
+/** What a provider's group says when it did not list its models in time, or failed to (Ollama not running, say). */
+export const UNREADABLE_MODELS = '读取失败'
+
+/**
+ * Every provider DSH has (`ctx.llm.listProviders()`, in its order) with its models (`listModels`), as 设置 offers them.
+ * The providers are asked at the same time, each within `timeoutMs`: one that fails or does not answer in time is still
+ * listed, with no models and `error` 「读取失败」, and holds up the answer no longer than that.
+ * @param llm - DSH's model service, `ctx.llm`.
+ * @param timeoutMs - how long one provider may take; default 5 seconds.
+ */
+export async function listModelGroups(llm: Pick<Context['llm'], 'listProviders' | 'listModels'>, timeoutMs = 5000): Promise<ModelsView['groups']> {
+  return Promise.all(llm.listProviders().map(async ({ id, name }) => {
+    const group = { provider: id, name, billing: billingOf(id, name) }
+    try {
+      const models = await within(llm.listModels(id), timeoutMs)
+      return { ...group, models: models.map(m => ({ id: m.id, name: m.name })), error: null }
+    } catch {
+      return { ...group, models: [], error: UNREADABLE_MODELS }
+    }
+  }))
+}
+
+/** What `work` answers, or a rejection once `ms` have passed without an answer. */
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const limit = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`no answer within ${ms} ms`)) }, ms) })
+  return Promise.race([work, limit]).finally(() => { clearTimeout(timer) })
+}
 
 export class DshModelClient implements ModelClient {
   /**
    * @param ctx - the plugin's Context, which provides `llm` and `agentDefaultModel`.
-   * @param pick - the configured model, read on each call; null uses DSH's default model.
+   * @param pick - the configured model (the brief's, `modelFor('brief')`), read on each call; null uses DSH's default model.
    */
-  constructor(private readonly ctx: Context, private readonly pick: () => { provider: string; model: string } | null) {}
+  constructor(private readonly ctx: Context, private readonly pick: () => ModelRef | null) {}
 
   /**
    * @throws When the call failed, or `signal` aborted. The signal goes to DSH, and the stream is also given up on here the

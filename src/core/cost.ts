@@ -1,7 +1,15 @@
+import type { Billing } from './models.ts'
 import type { Usage } from './types.ts'
 
 /** Yuan per million tokens. */
 export interface PriceTable { inputPerMTok: number; outputPerMTok: number; cacheReadPerMTok: number }
+
+const FREE: PriceTable = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+
+/** The prices of a model billed as `billing`: `table` for a metered one, nothing for a local or subscription one. */
+export function pricesFor(billing: Billing, table: PriceTable): PriceTable {
+  return billing === 'metered' ? table : { ...FREE }
+}
 
 /** Cost in yuan of one usage record, rounded to 4 decimals. `inputTokens` is the input that missed the cache. */
 export function costOf(u: Usage, p: PriceTable): number {

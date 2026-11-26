@@ -46,7 +46,7 @@ beforeEach(() => {
   repo = new Repo(db, () => clock.clock.now())
   driver = new FakeDriver()
   // One product at a time, so that the order in which the budget runs out is the tracking order.
-  settings = { runTime: '08:00', maxParallel: 1, dailyBudgetYuan: 20, sessionTimeoutMin: 30, prices: { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }, model: null }
+  settings = { runTime: '08:00', maxParallel: 1, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   log = vi.fn<(message: string) => void>()
   runner = new JobRunner({ repo, driver, clock: clock.clock, settings: () => settings, log })
   complete = vi.fn<ModelClient['complete']>(async () => ({ text: 'Cursor 后台 Agent 正式上线。', usage: usage({ inputTokens: 1000, outputTokens: 20 }) }))

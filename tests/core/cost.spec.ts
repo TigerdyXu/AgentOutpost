@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canSpend, costOf, type PriceTable } from '../../src/core/cost.ts'
+import { canSpend, costOf, pricesFor, type PriceTable } from '../../src/core/cost.ts'
 
 // Yuan per million tokens.
 const prices: PriceTable = { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.5 }
@@ -75,5 +75,15 @@ describe('canSpend', () => {
   it('a budget of 0 allows nothing', () => {
     expect(canSpend({ ...base, spentToday: 0, dailyBudget: 0 })).toEqual({ ok: false, reason: '今日总预算已用完' })
     expect(canSpend({ ...base, productSpentToday: 0, productBudget: 0 })).toEqual({ ok: false, reason: '该产品今日预算已用完' })
+  })
+})
+
+describe('pricesFor', () => {
+  it('prices a local or subscription model at nothing, and a metered one by the table as it is', () => {
+    const none = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 }
+    expect(pricesFor('local', prices)).toEqual(none)
+    expect(pricesFor('subscription', prices)).toEqual(none)
+    expect(pricesFor('metered', prices)).toEqual(prices)
+    expect(costOf(usage(1_000_000, 1_000_000, 1_000_000), pricesFor('local', prices))).toBe(0)
   })
 })

@@ -11,6 +11,8 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { OutpostConfig } from '../config.ts'
 import { localDate } from '../core/calendar.ts'
+import { pricesFor, type PriceTable } from '../core/cost.ts'
+import { billingOf, modelFor, type ModelRef } from '../core/models.ts'
 import { openDb, lockDataDir, type Db } from '../store/db.ts'
 import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
@@ -105,7 +107,7 @@ export class Runtime {
     this.clock = parts.clock ?? new SystemClock(error => this.log(`a timer failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`))
     this.repo = new Repo(this.db, () => this.clock.now())
     this.driver = parts.driver ?? new DshSessionDriver(ctx, this.workspaceDir)
-    this.model = parts.model ?? new DshModelClient(ctx, () => this.settings().model)
+    this.model = parts.model ?? new DshModelClient(ctx, () => modelFor('brief', this.settings()))
     this.icons = parts.icons ?? new NodeIconFetcher(this.iconsDir)
     this.runner = new JobRunner({ repo: this.repo, driver: this.driver, clock: this.clock, settings: () => this.settings(), log })
     const jobs: JobDeps = { repo: this.repo, runner: this.runner, clock: this.clock, icons: this.icons }
@@ -133,9 +135,37 @@ export class Runtime {
       maxParallel: c.maxParallel.get(),
       dailyBudgetYuan: c.dailyBudgetYuan.get(),
       sessionTimeoutMin: c.sessionTimeoutMin.get(),
-      prices: c.prices.get(),
       model: c.model.get() ?? null,
+      verifyModel: c.verifyModel.get() ?? null,
+      briefModel: c.briefModel.get() ?? null,
+      followupModel: c.followupModel.get() ?? null,
+      pricesOf: model => this.pricesOf(model, c.prices.get()),
     }
+  }
+
+  /** DSH's default model now (what a role with no model chosen runs on), or null when DSH cannot say. */
+  defaultModel(): ModelRef | null {
+    try {
+      const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
+      return { provider, model }
+    } catch (error) {
+      this.log(`could not read the default model of DSH: ${messageOf(error)}`)
+      return null
+    }
+  }
+
+  /**
+   * The prices of tokens used on `model` (null: DSH's default model, as it is now): `table` when its provider is metered,
+   * nothing when it is local or the subscription (`billingOf`, by the provider's id and DSH's name for it). When DSH
+   * cannot say which model is its default, `table`: an estimate on the safe side of the budget.
+   */
+  private pricesOf(model: ModelRef | null, table: PriceTable): PriceTable {
+    const route = model ?? this.defaultModel()
+    if (!route) return table
+    let name: string | undefined
+    try { name = this.ctx.llm.listProviders().find(p => p.id === route.provider)?.name }
+    catch { /* known by its id alone */ }
+    return pricesFor(billingOf(route.provider, name), table)
   }
 
   /** Today's local date, `YYYY-MM-DD`. */

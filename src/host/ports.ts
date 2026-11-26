@@ -4,6 +4,7 @@
  * back them with DSH (and the fakes the tests use) live elsewhere. Nothing here imports from `@deepseek-ai/*`.
  */
 import type { z } from 'zod'
+import type { ModelRef } from '../core/models.ts'
 import type { Id, Usage } from '../core/types.ts'
 
 /** A tool the research agent can call. `schema` describes the arguments; `execute` gets them as the model sent them. */
@@ -14,13 +15,16 @@ export interface ToolSpec<S extends z.ZodType = z.ZodType> {
   execute(args: z.infer<S>): Promise<unknown>
 }
 
-/** One agent session: what to call it, what to tell it, which tools it may use, and which model (null = the host's default). */
+/**
+ * One agent session: what to call it, what to tell it, which tools it may use, and which model. null keeps the host's
+ * choice (its default model); a model is used as given, even one the host no longer offers (the session then fails).
+ */
 export interface SessionSpec {
   sessionId: string
   title: string
   prompt: string
   tools: ToolSpec[]
-  model: { provider: string; model: string } | null
+  model: ModelRef | null
 }
 
 /** How one round of a session ended and what it cost in tokens. */
@@ -36,10 +40,10 @@ export interface SessionDriver {
   /** Say one more thing in the same session and wait for that round to end. */
   nudge(sessionId: string, text: string, signal: AbortSignal): Promise<SessionOutcome>
   /**
-   * A follow-up chat for the user: create the session (on the host's ordinary chat preset, not the research one) and send
-   * the message, without waiting for an answer.
+   * A follow-up chat for the user: create the session (on the host's ordinary chat preset, not the research one), choose
+   * its model, and send the message, without waiting for an answer.
    */
-  startInteractive(spec: Omit<SessionSpec, 'model'>): Promise<void>
+  startInteractive(spec: SessionSpec): Promise<void>
   /** Gives an existing session (a follow-up chat, after a restart) its tools again, without sending it anything. */
   rebind(sessionId: string, tools: ToolSpec[]): void
   /** Takes back every tool registered so far: Outpost is stopping. */

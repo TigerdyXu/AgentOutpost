@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DshModelClient } from '../../src/host/dsh-model.ts'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DshModelClient, listModelGroups } from '../../src/host/dsh-model.ts'
 import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
 
 let host: DshHost
@@ -101,5 +101,60 @@ describe('DshModelClient', () => {
     controller.abort() // after the fact: nothing left to reject, no unhandled rejection
     expect(add).toHaveBeenCalledWith('abort', expect.any(Function), expect.anything())
     expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]![1])
+  })
+})
+
+describe('listModelGroups', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  /** DSH's model directory: one provider answers, one fails (Ollama not running), one never answers. */
+  const directory = () => ({
+    listProviders: vi.fn(() => [{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'my-box', name: 'Ollama (local)' }, { id: 'anthropic', name: 'Anthropic' }]),
+    listModels: vi.fn(async (provider: string) => {
+      if (provider === 'my-box') throw new Error('connect ECONNREFUSED 127.0.0.1:11434')
+      if (provider === 'anthropic') return new Promise<never>(() => {})
+      return [
+        { provider, id: 'deepseek-flash', name: 'DeepSeek Flash', description: '快而便宜', badge: { text: '默认', tone: 'neutral' as const } },
+        { provider, id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+      ]
+    }),
+  })
+
+  it('lists each provider\'s models and marks a provider that fails or hangs', async () => {
+    vi.useFakeTimers()
+    const llm = directory()
+    let groups: Awaited<ReturnType<typeof listModelGroups>> | undefined
+    void listModelGroups(llm).then(result => { groups = result })
+
+    // Each provider has 5 seconds, all at the same time: one that hangs holds up the list no longer than that.
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(groups).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(groups).toEqual([
+      {
+        provider: 'deepseek-official', name: 'DeepSeek', billing: 'metered', error: null,
+        models: [{ id: 'deepseek-flash', name: 'DeepSeek Flash' }, { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }],
+      },
+      { provider: 'my-box', name: 'Ollama (local)', billing: 'local', models: [], error: '读取失败' },
+      { provider: 'anthropic', name: 'Anthropic', billing: 'subscription', models: [], error: '读取失败' },
+    ])
+    expect(llm.listModels.mock.calls.map(([provider]) => provider)).toEqual(['deepseek-official', 'my-box', 'anthropic'])
+    expect(vi.getTimerCount()).toBe(0) // no time limit left running
+  })
+
+  it('answers as soon as every provider has, and takes a time limit', async () => {
+    const llm = directory()
+    llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'anthropic', name: 'Anthropic' }])
+    const started = Date.now()
+    const groups = await listModelGroups(llm, 50)
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(groups.map(g => [g.provider, g.models.length, g.error])).toEqual([['deepseek-official', 2, null], ['anthropic', 0, '读取失败']])
+
+    llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    vi.useFakeTimers()
+    const quick = listModelGroups(llm)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await quick).toHaveLength(1) // no provider hung: no waiting for the limit
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
