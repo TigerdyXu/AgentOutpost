@@ -18,6 +18,13 @@ describe('identityKey', () => {
     expect(identityKey('Muse', 'Meta')).not.toBe(identityKey('Muse', 'Muse AI'))
   })
 
+  it('keeps names and companies made only of symbols apart, by what they are', () => {
+    expect(identityKey('★', 'X')).not.toBe(identityKey('☆', 'X'))
+    expect(identityKey('X', '★')).not.toBe(identityKey('X', '☆'))
+    expect(identityKey(' ★ ', 'X')).toBe(identityKey('★', 'X')) // still trimmed
+    expect(identityKey('Ｘ', '★')).toBe(identityKey('x', '★')) // and unified
+  })
+
   it('does not run the name into the company', () => {
     expect(identityKey('AB', 'C')).not.toBe(identityKey('A', 'BC'))
   })

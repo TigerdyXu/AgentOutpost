@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
+import { identityKey } from '../core/identity.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
@@ -481,21 +482,26 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       // once (Ruling 25), through the same path, which waits for its daily run or its baseline if one is in flight.
       // A candidate that is another spelling of a product already tracked (or paused, or in 建档中) is that product: the
       // tracked row joins this track instead of the candidate's own, which is left as it is, so one product is never
-      // baselined or run twice (M1.1 §13).
-      const fresh = new Set<Id>()
-      const lacking = new Set<Id>()
+      // baselined or run twice (M1.1 §13). Two ticked candidates that are spellings of each other are one product too: the
+      // first is taken, the later row stays a candidate and is not linked.
+      const fresh: Id[] = []
+      const lacking: Id[] = []
       const linked = new Set(repo.productsOfTrack(t.id).map(p => p.id))
+      const taken = new Set<string>()
       for (const c of chosen) {
         const named = repo.getProduct(c.productId)
         if (!named) continue
         const p = named.status === 'candidate' || named.status === 'archived' ? repo.findSameProduct(named) ?? named : named
+        const same = identityKey(p.name, p.company)
+        if (taken.has(same)) continue
+        taken.add(same)
         const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
         repo.linkProduct(t.id, p.id)
-        if (p.status === 'candidate' || p.status === 'archived') fresh.add(p.id)
-        else if (isWorkedOn(p) && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.add(p.id)
+        if (p.status === 'candidate' || p.status === 'archived') fresh.push(p.id)
+        else if (isWorkedOn(p) && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.push(p.id)
       }
-      rt.background(rt.scheduler.baseline([...fresh]), `baseline of the products of track ${t.id}`)
-      if (lacking.size) rt.background(rt.scheduler.topUpNow([...lacking]), `top-up of the products joining track ${t.id}`)
+      rt.background(rt.scheduler.baseline(fresh), `baseline of the products of track ${t.id}`)
+      if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products joining track ${t.id}`)
       return { ok: true }
     },
 

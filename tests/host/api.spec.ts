@@ -657,6 +657,50 @@ describe('POST tracks/:id/start', () => {
     expect(['running', 'stopped'].map(id => repo.getProduct(id)!.status)).toEqual(['baselining', 'paused'])
   })
 
+  it('takes only the first of two ticked candidates that are spellings of one product, and baselines it once', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    addAlike('first', '千问Go!', '阿里巴巴', 'candidate')
+    addAlike('second', '千问Go', '阿里巴巴', 'candidate')
+    addAlike('other', '千问Plus', '阿里巴巴', 'candidate') // another product, picked in the same go
+    const b = addTrack({ name: '赛道B', status: 'picking' })
+    const chosen = ['first', 'second', 'other'].map(id => addCandidate(b.id, id).id)
+
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: chosen }))
+
+    expect(baseline).toHaveBeenCalledTimes(1)
+    expect(baseline).toHaveBeenCalledWith(['first', 'other']) // one id for the two spellings, in the order ticked
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['first', 'other'])
+    expect(repo.getProduct('second')).toMatchObject({ status: 'candidate', name: '千问Go' }) // left a candidate, not linked
+  })
+
+  it('links a tracked twin once and tops it up once when two ticked candidates are both its spellings', async () => {
+    vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('tracked', '千问Go!', '阿里巴巴', 'tracking', a.id)
+    for (const dim of DEFAULT_DIMENSIONS) card('tracked', dim.key, 1, [])
+    addAlike('copy-1', '千问Go', '阿里巴巴', 'candidate')
+    addAlike('copy-2', '千问 Go', '阿里巴巴', 'candidate')
+    const b = addTrack({ name: '赛道B', status: 'picking', dimensions: [...DEFAULT_DIMENSIONS, { key: 'pricing-model', label: '定价模式' }] })
+    const chosen = ['copy-1', 'copy-2'].map(id => addCandidate(b.id, id).id)
+
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: chosen }))
+
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['tracked'])
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['tracked'])
+  })
+
+  it('does not take two products whose names are only different symbols for one', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    addAlike('star', '★', 'X', 'candidate')
+    addAlike('hollow', '☆', 'X', 'candidate')
+    const b = addTrack({ name: '赛道B', status: 'picking' })
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: ['star', 'hollow'].map(id => addCandidate(b.id, id).id) }))
+    expect(baseline).toHaveBeenCalledWith(['star', 'hollow'])
+  })
+
   it('keeps the row a candidate points at when that row is tracked itself, and baselines a candidate whose twins are all candidates', async () => {
     const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
     vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
