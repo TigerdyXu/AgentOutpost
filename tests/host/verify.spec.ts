@@ -301,6 +301,20 @@ describe('verifyProduct', () => {
     expect(repo.pendingCardEdits('p1')).toEqual([])
   })
 
+  it('does not take the product\'s own name or company in a summary for a repeat of a dropped sentence', async () => {
+    repo.upsertProduct({ ...repo.getProduct('p1')!, name: 'Kimi', company: '北京月之暗面科技有限公司' })
+    const sources = [official('https://kimi.example/'), addSource('https://blog.example/ipo')]
+    addEdit({
+      dimension: 'positioning', summary: '北京月之暗面科技有限公司的长文本助手', bullets: ['长文本助手'], changeNote: '建档',
+      body: 'Kimi 是长文本助手[1]。北京月之暗面科技有限公司据说要上市[2]。', sourceIds: sources.map(s => s.id),
+    })
+    driver.script[VERIFY] = reportCheck(s => s.sourceId === sources[1]!.id ? NOT_THERE : SEEN)
+
+    await verifyProduct(deps, 'p1', 'baseline')
+
+    expect(card('positioning')).toMatchObject({ version: 1, summary: '北京月之暗面科技有限公司的长文本助手', body: 'Kimi 是长文本助手[1]。' })
+  })
+
   it('rejects a baseline card with no valid source', async () => {
     const quoteMissing = addSource('https://blog.example/a')
     const wechat = addSource('https://mp.weixin.qq.com/s?__biz=MzB&mid=1&idx=1&sn=x')
@@ -589,5 +603,60 @@ describe('withoutVoidClaims', () => {
     expect(withoutVoidClaims({ ...card, summary: '有评测说它比同类快一倍' }, [2], [1])).toBeNull()
     // Nothing dropped, nothing compared.
     expect(withoutVoidClaims({ ...card, bullets: ['评测说它比同类快一倍'] }, [], [1, 2])!.bullets).toEqual(['评测说它比同类快一倍'])
+  })
+
+  it('keeps a citation written after a closing quote or bracket with the sentence it closes', () => {
+    const ab = (body: string) => ({ ...text(body), sourceIds: ['a', 'b'] })
+    // 「…。」[2]: the quoted, refuted sentence goes whole; the sentence after it stays, renumbered.
+    expect(withoutVoidClaims(ab('官方说：「速度提升一倍。」[2]团队版免费[1]。'), [2], [1])).toMatchObject({ body: '团队版免费[1]。', sourceIds: ['a'] })
+    expect(withoutVoidClaims(ab('官方说：「速度提升一倍。」[1]团队版免费[2]。'), [2], [1])).toMatchObject({ body: '官方说：「速度提升一倍。」[1]', sourceIds: ['a'] })
+    // Straight and curly double quotes alike, with no unbalanced quote left behind.
+    for (const quoted of ['有人说："它比同类快一倍。"[2]', '有人说：“它比同类快一倍。”[2]']) {
+      const out = withoutVoidClaims(ab(`团队版免费[1]。${quoted}另外它支持中文。`), [2], [1])!
+      expect(out.body).toBe('团队版免费[1]。另外它支持中文。')
+    }
+    // A bracketed aside, closed after its stop, goes whole.
+    expect(withoutVoidClaims(ab('团队版免费[1]。（据说下月降价。）[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
+    expect(withoutVoidClaims(ab('团队版免费[1]。(据说下月降价。)[2]【传闻。】[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
+    // A straight quote opening the next sentence is not taken for the close of this one.
+    expect(withoutVoidClaims(ab('团队版免费[1]。"据说下月降价。"[2]'), [2], [1])!.body).toBe('团队版免费[1]。')
+  })
+
+  it('renumbers the citations in the bullets like the body, and drops a bullet whose every citation is void', () => {
+    const card = {
+      summary: '个人免费，团队收费',
+      bullets: ['个人版免费[1]', '团队版 40 美元[3]', '传闻会降价[2]', '两种都有[1][2]', '没有引用的要点'],
+      body: '个人版免费[1]。据说下月降价[2]。团队版每人每月 40 美元[3]。',
+      sourceIds: ['a', 'b', 'c'],
+      inferenceSpans: [],
+    }
+    const out = withoutVoidClaims(card, [2], [1, 3])!
+    expect(out.body).toBe('个人版免费[1]。团队版每人每月 40 美元[2]。')
+    expect(out.sourceIds).toEqual(['a', 'c'])
+    expect(out.bullets).toEqual(['个人版免费[1]', '团队版 40 美元[2]', '两种都有[1]', '没有引用的要点'])
+    // A source not void, whose sentence went with a void one, stays while a bullet still cites it, and leaves otherwise.
+    const lone = { ...card, body: '个人版免费[1]。据说下月降价[2][3]。', bullets: ['个人版免费[1]', '团队版另算[3]'] }
+    expect(withoutVoidClaims(lone, [2], [1])).toMatchObject({ body: '个人版免费[1]。', sourceIds: ['a', 'c'], bullets: ['个人版免费[1]', '团队版另算[2]'] })
+    expect(withoutVoidClaims({ ...lone, bullets: ['个人版免费[1]'] }, [2], [1])).toMatchObject({ body: '个人版免费[1]。', sourceIds: ['a'] })
+  })
+
+  it('rejects the edit when every bullet rests only on void sources', () => {
+    const card = { summary: '个人免费', bullets: ['传闻会降价[2]', '还会再降[2]'], body: '个人版免费[1]。据说下月降价[2]。', sourceIds: ['a', 'b'], inferenceSpans: [] }
+    expect(withoutVoidClaims(card, [2], [1])).toBeNull()
+  })
+
+  it('does not count the product\'s name or company, nor a run of Latin letters and digits as more than one, toward an echo', () => {
+    const names = ['Perplexity', 'Perplexity AI']
+    const card = { summary: 'Perplexity 主打答案引擎', bullets: ['PERPLEXITY AI 的 Pro 版 20 美元'], body: '它主打答案引擎[1]。Perplexity 的月活过亿[2]。PerplexityAI 的 Pro 版 20 美元[2]。', sourceIds: ['a', 'b'], inferenceSpans: [] }
+    expect(withoutVoidClaims(card, [2], [1], names)).toMatchObject({ summary: 'Perplexity 主打答案引擎', body: '它主打答案引擎[1]。' })
+    // A run of Latin letters or digits is one unit: 「支持 GPT-4o 和 Claude 3.5」 is not eight in a row.
+    const models = { ...card, summary: '答案引擎', bullets: ['支持 GPT-4o 和 Claude 3.5 Sonnet'], body: '它主打答案引擎[1]。据说支持 GPT-4o 和 Claude 3.5 Sonnet[2]。' }
+    expect(withoutVoidClaims(models, [2], [1], names)!.bullets).toEqual(['支持 GPT-4o 和 Claude 3.5 Sonnet'])
+    // A real echo is still one, the names left out of the count or not.
+    const echo = { ...card, summary: '答案引擎', bullets: ['Perplexity 月活过亿，增速第一', '它主打答案引擎'], body: '它主打答案引擎[1]。据说 Perplexity 月活过亿，增速第一[2]。' }
+    expect(withoutVoidClaims(echo, [2], [1], names)!.bullets).toEqual(['它主打答案引擎'])
+    expect(withoutVoidClaims({ ...echo, summary: 'Perplexity 月活过亿，增速第一' }, [2], [1], names)).toBeNull()
+    expect(withoutVoidClaims({ ...echo, bullets: ['豆包月活过亿，增速是同类第一', '它主打答案引擎'], body: '它主打答案引擎[1]。据说字节跳动的豆包月活过亿，增速是同类第一[2]。' }, [2], [1], ['豆包', '字节跳动'])!.bullets)
+      .toEqual(['它主打答案引擎'])
   })
 })

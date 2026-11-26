@@ -829,6 +829,29 @@ describe('runs', () => {
     await vi.waitFor(() => { expect(repo.getBrief(TODAY)!.findingIds).toEqual([waiting.id]) })
   })
 
+  it('retries a daily update that failed only because its check did not finish as that check alone', async () => {
+    const track = addTrack({ dimensions: [{ key: 'positioning', label: '定位' }] })
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    card('p1', 'positioning', 1, [])
+    const daily = addRun('daily', { status: 'failed', error: '核查没有完成：模型返回了无法解析的内容' }, TODAY, { productId: 'p1' })
+    const source = repo.addSource({
+      url: 'https://cursor.com/changelog/2-0', title: 'Cursor 2.0', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true,
+      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+    })
+    const waiting = repo.addFinding({
+      productId: 'p1', runId: daily.id, headline: '后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [source.id], status: 'pending',
+      statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: randomUUID(), verifiedOn: null,
+    })
+    host.driver.script['outpost-verify-'] = checksAll
+
+    const { runId } = ok(await host.call('POST', `runs/${daily.id}/retry`)).json<ApiResponse<'POST runs/:id/retry'>>()
+
+    expect(repo.getRun(runId)).toMatchObject({ kind: 'verify', productId: 'p1', date: TODAY })
+    await vi.waitFor(() => { expect(repo.getRun(daily.id)).toMatchObject({ status: 'done', error: null }) })
+    expect(host.driver.runs.map(r => r.title)).toEqual(['前哨 · Cursor 核查 2026-11-25']) // the research is in: no new daily session
+    expect(repo.getFinding(waiting.id)).toMatchObject({ status: 'verified', verifiedOn: TODAY })
+  })
+
   it('refuses to retry what was already done again: a later run of the same work, a finished update that day, a newer batch', async () => {
     const track = addTrack()
     addProduct('p1', 'Cursor', 'tracking', track.id)

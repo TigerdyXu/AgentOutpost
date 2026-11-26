@@ -642,6 +642,21 @@ describe('Scheduler: the day', () => {
     expect(calls.rebaseline).toEqual([['p4'], ['p4'], ['p4']])
   })
 
+  it('does not mark the day complete when it is stopped while the day\'s brief is being written', async () => {
+    const writing = gate()
+    deps.synthesize = async date => { events.push(`brief ${date}`); await writing.promise; return synthesizeBrief({ repo, model: { complete }, clock: clock.clock, settings: () => settings }, date) }
+    scheduler = new Scheduler(deps)
+    const day = scheduler.runDay(DAY)
+    await vi.waitFor(() => { expect(events).toContain(`brief ${DAY}`) })
+    scheduler.stop() // quitting while the gist is asked for: what gets written is only a stand-in
+    writing.open()
+    await day
+
+    expect(repo.getBrief(DAY)).not.toBeNull()
+    expect(repo.getSetting(LAST_COMPLETED)).toBeUndefined() // the next start writes the brief again and only then completes the day
+    expect(calls.archiveOld).toEqual([])
+  })
+
   it('does not mark the day complete when the brief could not be written', async () => {
     deps.synthesize = async () => { throw new Error('磁盘已满') }
     scheduler = new Scheduler(deps)

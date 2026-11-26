@@ -17,6 +17,7 @@ import type {
 import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
 import { ICON_TYPES } from './icons.ts'
+import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import type { Runtime } from './runtime.ts'
 
@@ -126,8 +127,8 @@ export interface Api {
   /** The runs of the last `days` days (today counts as one), newest first. */
   'GET runs': { query?: { days?: number }; response: { runs: RunRow[] } }
   /**
-   * Runs a failed run's work again and answers with the new run: a failed check of a tracked product as that check alone,
-   * for its day. 409 「已经重新跑过了」 when that work was done again since (a later run of the same work, a finished
+   * Runs a failed run's work again and answers with the new run: a failed check of a tracked product, or its update that
+   * failed only because the check did not finish, as that check alone, for its day. 409 「已经重新跑过了」 when that work was done again since (a later run of the same work, a finished
    * update of the product that day, a newer batch of the track).
    */
   'POST runs/:id/retry': { response: { runId: Id } }
@@ -553,9 +554,11 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, '这个产品没有在跟踪，先恢复跟踪再更新')
           // A failed baseline is retried as one (for a tracked product too: the 7-day limit on top-ups is for the daily
           // runs, not for the user asking); a failed update as 「立即更新」, which re-baselines a product in 建档中; a failed
-          // check of a tracked product as that check alone, for its day (the research it would check is already in).
+          // check of a tracked product, or an update that failed only because its check did not finish (「核查没有完成：」),
+          // as that check alone, for its day (the research it would check is already in).
           if (run.kind === 'baseline') return { runId: await baselineNow(p) }
-          return { runId: await (run.kind === 'verify' && p.status === 'tracking' ? checkNow(p, run.date) : updateNow(p)) }
+          const checkOnly = run.kind === 'verify' || run.error?.startsWith(CHECK_NOT_DONE) === true
+          return { runId: await (checkOnly && p.status === 'tracking' ? checkNow(p, run.date) : updateNow(p)) }
         }
         case 'synthesize': {
           // The model is asked only when the day has something to sum up; with nothing, the brief is rewritten all the same.

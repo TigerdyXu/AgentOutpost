@@ -299,7 +299,11 @@ export class Scheduler {
     }
 
     if (!pastCutoff) toBrief('brief', () => this.deps.synthesize(date))
-    if ((await Promise.all(writes)).every(Boolean)) this.complete(date)
+    const written = (await Promise.all(writes)).every(Boolean)
+    // Stopped while the brief was written: its gist may be the stand-in of a cut-off summary, so the day stays open and
+    // the next start writes the brief again.
+    if (this.stopped) return
+    if (written) this.complete(date)
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }
 

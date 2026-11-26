@@ -128,7 +128,8 @@ function mergeDailyEdit(repo: Repo, edit: CardEdit, findings: Map<Id, Finding>, 
 /** Writes the edit without what its void sources said if a valid source and enough of it remain; rejects it otherwise. */
 function writeIfBacked(repo: Repo, edit: CardEdit, now: Date): void {
   const { removed, valid } = sourceCheck(repo, edit)
-  const kept = valid.length ? withoutVoidClaims(edit, removed, valid) : null
+  const product = repo.getProduct(edit.productId)
+  const kept = valid.length ? withoutVoidClaims(edit, removed, valid, product ? [product.name, product.company] : []) : null
   if (!kept) repo.setCardEditStatus(edit.id, 'rejected')
   else write(repo, edit, kept, now)
 }
@@ -168,10 +169,17 @@ function evidenceOf(s: Source): Evidence {
 const CITATION = /\[(\d+)\]/g
 
 /**
- * Where a sentence of a card body ends: after 。！？ or ；, with any citations written right after the mark, or after a
- * line break (a line without a full stop, such as a list item).
+ * Where a sentence of a card body may end: after 。！？ or ；, or after a line break (a line without a full stop, such
+ * as a list item). What closes the sentence after the mark (a closing quote or bracket) and the citations written after
+ * that go with it (`sentences`).
  */
-const SENTENCE_END = /[。！？；](?:\[\d+\])*|\n/g
+const STOP = /[。！？；]|\n/g
+/** Marks that only ever close: after a stop they belong to the sentence the stop ends (「…。」[2]). */
+const CLOSERS = new Set('」』”’）)】》〉\'')
+/** A straight double quote both opens and closes: after a stop it closes the sentence only if one is open in it. */
+const STRAIGHT_QUOTE = '"'
+/** Citations written right after a sentence's end (and its closing marks). */
+const TRAILING_CITATIONS = /(?:\[\d+\])*/y
 
 /** How many characters in a row a bullet or the summary must share with a dropped sentence to count as repeating it. */
 export const ECHO_CHARS = 8
@@ -194,17 +202,34 @@ function citationEdits(body: string, removed: readonly number[]): (Replacement &
   })
 }
 
-/** The sentences of `body`, in order and covering all of it (see `SENTENCE_END`). */
+/**
+ * The sentences of `body`, in order and covering all of it: each ends after a stop (see `STOP`), the closing quotes and
+ * brackets right after it, and the citations right after those, so that 「…。」[2] cites the quoted sentence.
+ */
 function sentences(body: string): Range[] {
   const out: Range[] = []
   let from = 0
-  for (const m of body.matchAll(SENTENCE_END)) {
-    out.push({ from, to: m.index + m[0].length })
-    from = m.index + m[0].length
+  for (const m of body.matchAll(STOP)) {
+    if (m.index < from) continue // inside what the sentence before took
+    let to = m.index + 1
+    if (m[0] !== '\n') {
+      for (;;) {
+        const c = body[to]
+        const closesQuote = c === STRAIGHT_QUOTE && countOf(body.slice(from, to), STRAIGHT_QUOTE) % 2 === 1
+        if (c === undefined || !(CLOSERS.has(c) || closesQuote)) break
+        to++
+      }
+      TRAILING_CITATIONS.lastIndex = to
+      to += TRAILING_CITATIONS.exec(body)![0].length
+    }
+    out.push({ from, to })
+    from = to
   }
   if (from < body.length) out.push({ from, to: body.length })
   return out
 }
+
+const countOf = (text: string, char: string) => text.split(char).length - 1
 
 /**
  * Where a position of the old body lies in the new one. A position inside a replaced stretch (a citation, a dropped
@@ -240,30 +265,50 @@ export function renumberCitations(body: string, removed: number[]): string {
   return applyEdits(body, citationEdits(body, removed))
 }
 
-/** A text as the echo test compares it: full-width forms folded, citations, whitespace and punctuation gone, as characters. */
-const echoText = (text: string) => [...text.replace(CITATION, '').normalize('NFKC').replace(/[\s\p{P}]/gu, '')]
+/** A text folded for the echo test: citations gone, full-width forms folded, lower case, whitespace and punctuation gone. */
+const fold = (text: string) => text.replace(CITATION, '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
 
-/** Whether `line` shares `ECHO_CHARS` or more characters in a row with `sentence` (both compared as `echoText`). */
-function echoes(line: string, sentence: string): boolean {
-  const said = echoText(sentence).join('')
-  const chars = echoText(line)
-  for (let i = 0; i + ECHO_CHARS <= chars.length; i++) if (said.includes(chars.slice(i, i + ECHO_CHARS).join(''))) return true
+/**
+ * A text as the echo test compares it, in units: `fold`ed, without the product's names (`names`, folded likewise, so
+ * that case and spaces do not matter), then each run of Latin letters and digits as one unit and anything else one
+ * character a unit. A Latin name or model number shared with a dropped sentence is not a repeat of it.
+ */
+function echoUnits(text: string, names: readonly string[]): string[] {
+  let folded = fold(text)
+  for (const name of names.map(fold).filter(Boolean).sort((a, b) => b.length - a.length)) folded = folded.split(name).join('')
+  return folded.match(/[a-z0-9]+|./gsu) ?? []
+}
+
+/** Units joined so that a run of them is found only at unit boundaries. */
+const joinUnits = (units: readonly string[]) => `\u0000${units.join('\u0000')}\u0000`
+
+/** Whether `line` shares `ECHO_CHARS` or more units in a row with `sentence` (both compared as `echoUnits`). */
+function echoes(line: string, sentence: string, names: readonly string[]): boolean {
+  const said = joinUnits(echoUnits(sentence, names))
+  const units = echoUnits(line, names)
+  for (let i = 0; i + ECHO_CHARS <= units.length; i++) if (said.includes(joinUnits(units.slice(i, i + ECHO_CHARS)))) return true
   return false
 }
+
+/** The source numbers a line cites (`[n]`). */
+const citedIn = (line: string) => [...line.matchAll(CITATION)].map(m => Number(m[1]))
 
 /**
  * A card without what its void sources said (design §2, §8.1: nothing goes into the dossier without a source that backs
  * it). `removed` are the void sources, `valid` the valid ones (1-based); any other source was not seen either way.
- * - Each sentence (split after 。！？； or a line break, see `SENTENCE_END`) citing a void source goes, unless it also cites
- *   a valid one; there only the void citation goes.
- * - The void sources leave `sourceIds`, and so does any source whose every citation went with a dropped sentence; the
- *   remaining citations are renumbered to close the gaps. The 推论 marks (`inferenceSpans`, UTF-16 offsets into the
- *   body) move with the text they cover; one left covering nothing is dropped.
- * - A bullet sharing `ECHO_CHARS` or more characters in a row with a dropped sentence (compared without width, spaces,
- *   punctuation and citations) goes too.
+ * `names` are the product's name and company, which do not count toward a repeat (below).
+ * - Each sentence (split after 。！？； or a line break, with the closing marks and citations right after, see
+ *   `sentences`) citing a void source goes, unless it also cites a valid one; there only the void citation goes.
+ * - A bullet sharing `ECHO_CHARS` or more units in a row with a dropped sentence (compared without width, case, spaces,
+ *   punctuation, citations and the product's names, a run of Latin letters and digits counting as one unit) goes too,
+ *   and so does a bullet whose every citation is of a void source.
+ * - The void sources leave `sourceIds`, and so does any source whose every citation went with a dropped sentence or
+ *   bullet; the remaining citations, in the body, the bullets and the summary, are renumbered to close the gaps. The
+ *   推论 marks (`inferenceSpans`, UTF-16 offsets into the body) move with the text they cover; one left covering nothing
+ *   is dropped.
  * Null, so that the edit is rejected, when the summary repeats a dropped sentence that way, or no bullet or no text is left.
  */
-export function withoutVoidClaims(card: CardText, removed: number[], valid: number[]): CardText | null {
+export function withoutVoidClaims(card: CardText, removed: number[], valid: number[], names: readonly string[] = []): CardText | null {
   const citations = citationEdits(card.body, [])
   const isVoid = (n: number) => removed.includes(n)
   const backs = (n: number) => valid.includes(n) && !isVoid(n)
@@ -271,8 +316,15 @@ export function withoutVoidClaims(card: CardText, removed: number[], valid: numb
     const cited = citations.filter(c => within(c, s)).map(c => c.n)
     return cited.some(isVoid) && !cited.some(backs)
   })
-  const kept = citations.filter(c => !cut.some(s => within(c, s)))
-  const uncited = [...new Set(citations.map(c => c.n))].filter(n => !kept.some(c => c.n === n))
+  const said = cut.map(s => card.body.slice(s.from, s.to))
+  const repeats = (line: string) => said.some(sentence => echoes(line, sentence, names))
+  const keptBullets = card.bullets.filter(b => {
+    const cited = citedIn(b)
+    return !repeats(b) && !(cited.length && cited.every(isVoid))
+  })
+
+  const kept = [...citations.filter(c => !cut.some(s => within(c, s))).map(c => c.n), ...keptBullets.flatMap(citedIn)]
+  const uncited = [...new Set(citations.map(c => c.n))].filter(n => !kept.includes(n))
   const drop = [...new Set([...removed, ...uncited])]
   const edits: Replacement[] = [
     ...cut.map(s => ({ ...s, text: '' })),
@@ -287,9 +339,9 @@ export function withoutVoidClaims(card: CardText, removed: number[], valid: numb
     .map(s => ({ start: Math.max(0, s.start), end: Math.min(body.length, s.end) }))
     .filter(s => s.end > s.start)
 
-  const said = cut.map(s => card.body.slice(s.from, s.to))
-  const repeats = (line: string) => said.some(sentence => echoes(line, sentence))
-  const bullets = card.bullets.filter(b => !repeats(b))
-  if (!body || !bullets.length || repeats(card.summary)) return null
-  return { summary: card.summary, bullets, body, sourceIds: card.sourceIds.filter((_, i) => !drop.includes(i + 1)), inferenceSpans }
+  if (!body || !keptBullets.length || repeats(card.summary)) return null
+  return {
+    summary: renumberCitations(card.summary, drop), bullets: keptBullets.map(b => renumberCitations(b, drop)), body,
+    sourceIds: card.sourceIds.filter((_, i) => !drop.includes(i + 1)), inferenceSpans,
+  }
 }
