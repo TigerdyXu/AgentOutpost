@@ -6,10 +6,10 @@
  * turn that took its message; what it cost is the usage of that turn's assistant messages.
  *
  * Outpost makes a research session's agent itself (`ctx.agents.create`) and keeps its handle, so that `release` can end
- * the live agent once the run is over: that closes the browser the preset launched for it. While it composes that agent it
- * refuses it the one browser tool that runs arbitrary code (`UNSAFE_BROWSER_TOOL`), and it gives up on a creation that
- * outlasts the run's time limit (a browser that never starts). A 追问 chat is made by DSH's session controller, as any
- * chat of the user's, and stays.
+ * the live agent once the run is over: that closes the browser the preset launched for it, and it gives up on a creation
+ * that outlasts the run's time limit (a browser that never starts). Every agent on the research preset, made by Outpost or
+ * by DSH reopening a research session, is refused the one browser tool that runs arbitrary code (`UNSAFE_BROWSER_TOOL`).
+ * A 追问 chat is made by DSH's session controller, as any chat of the user's, and stays.
  *
  * Every DSH value comes through `ctx` (session controller, workspace registry, persistence, agents, presets); this file
  * imports only DSH types.
@@ -64,6 +64,20 @@ export const PLAYWRIGHT_PROVIDER = 'playwright-mcp'
 export const UNSAFE_BROWSER_TOOL = `mcp__${PLAYWRIGHT_PROVIDER}__browser_run_code_unsafe`
 /** What a research session's model is told when it calls `UNSAFE_BROWSER_TOOL`. */
 export const RESEARCH_TOOL_REFUSED = '前哨的调研会话不能用这个工具'
+/** How the id of a 追问 chat begins (`src/host/followup.ts`); every other Outpost session is a research one. */
+const FOLLOWUP_SESSION_PREFIX = `${SESSION_PREFIX}followup-`
+
+/**
+ * Whether `agent` is built on the research preset, wherever it was made: by Outpost (`createOwned`), or by DSH reopening
+ * a research session (Desktop restoring its last page at startup, the user opening one from the sidebar or 运行记录). Told
+ * by the preset id DSH keeps in the session's durable header (`SessionHeader.agentPreset`, restored on resume); a session
+ * whose header names none (or an agent without one to read) by its id: an Outpost session that is not a 追问 chat.
+ */
+export function isResearchAgent(agent: Pick<Agent, 'id'> & { readonly session?: { readonly header?: { readonly agentPreset?: string } } }): boolean {
+  const preset = agent.session?.header?.agentPreset
+  if (preset !== undefined) return preset === AGENT_PRESET
+  return agent.id.startsWith(SESSION_PREFIX) && !agent.id.startsWith(FOLLOWUP_SESSION_PREFIX)
+}
 
 /**
  * What Outpost uses of DSH's preset registry (`ctx.agentPresets`, package `@deepseek-ai/dsh-agent-preset-registry`):
@@ -200,6 +214,8 @@ export class DshSessionDriver implements SessionDriver {
   private readonly owned = new Map<string, AgentHandle>()
   /** The 追问 chats it opened or gave their tools again: the user's conversations, which `release` never touches. */
   private readonly chats = new Set<string>()
+  /** The agents already refused `UNSAFE_BROWSER_TOOL` (`refuseUnsafeBrowser`), so that none is guarded twice. */
+  private readonly guarded = new WeakSet<Agent>()
 
   /**
    * @param ctx - the plugin's Context, which provides `sessionController`, `workspaceRegistry`, `sessionPersistence`,
@@ -207,9 +223,16 @@ export class DshSessionDriver implements SessionDriver {
    * @param workspaceDir - absolute directory of the 「前哨」 workspace; made when missing.
    */
   constructor(private readonly ctx: Context, private readonly workspaceDir: string) {
-    // DSH makes a new agent for a session on every create, resume and compaction; each gets the session's tools. A failure
-    // here would fail the agent's creation, so it is only logged; `open` registers again and reports it.
+    // DSH makes a new agent for a session on every create, resume and compaction; each gets the session's tools, and each
+    // on the research preset the guard (one DSH reopens included: Outpost did not make it, and its browser is back). A
+    // failure here would fail the agent's creation, so it is only logged; `open` registers the tools again and reports it.
+    // The guard goes on before the agent runs anything: DSH releases its queued work only after these listeners.
     ctx.on('agent/created', ({ agent }) => {
+      try {
+        if (isResearchAgent(agent)) this.refuseUnsafeBrowser(agent)
+      } catch (error) {
+        ctx.logger.warn('dsh-outpost: could not refuse %s to research session %s: %s', UNSAFE_BROWSER_TOOL, agent.id, String(error))
+      }
       try { this.attach(agent) } catch (error) { ctx.logger.warn('dsh-outpost: could not register the tools of session %s: %s', agent.id, String(error)) }
       return undefined
     })
@@ -375,8 +398,8 @@ export class DshSessionDriver implements SessionDriver {
    * agent's handle: disposing it is the one way DSH has to end a session's live agent without archiving it. The session
    * controller's own create keeps that handle until DSH stops, and with it the browser the preset launched.
    *
-   * During setup the agent is refused `UNSAFE_BROWSER_TOOL`: a guard on its own scope, which DSH checks for every call the
-   * agent makes, after approval (`tools.guard`). `signal` is DSH's creation-only cancel (`CreateAgentOptions.signal`): DSH
+   * During setup the agent is refused `UNSAFE_BROWSER_TOOL` (`refuseUnsafeBrowser`; its announcement then adds nothing).
+   * `signal` is DSH's creation-only cancel (`CreateAgentOptions.signal`): DSH
    * rolls the creation back when it aborts. Should a creation finish all the same after the abort, its handle is disposed
    * at once.
    */
@@ -394,8 +417,8 @@ export class DshSessionDriver implements SessionDriver {
       agentOptions,
       meta: { cwd: workspace.path, agentPreset: AGENT_PRESET },
       ...signal ? { signal } : {},
-      setup: async agentCtx => {
-        agentCtx.tools.guard(exec => exec.name === UNSAFE_BROWSER_TOOL ? RESEARCH_TOOL_REFUSED : undefined)
+      setup: async (agentCtx, agent) => {
+        this.refuseUnsafeBrowser(agent)
         await presets.mount(agentCtx, AGENT_PRESET)
       },
     })
@@ -408,6 +431,17 @@ export class DshSessionDriver implements SessionDriver {
     this.owned.set(id, handle)
     await workspace.attachSession(id as SessionId)
     return handle.agent
+  }
+
+  /**
+   * Refuses `agent` the browser tool that runs arbitrary code, once per agent: a guard on the agent's own scope, which DSH
+   * checks for every call the agent makes, after approval (`tools.guard`), and which goes with the agent. Every other
+   * tool, the other browser tools included, is left as it is.
+   */
+  private refuseUnsafeBrowser(agent: Agent): void {
+    if (this.guarded.has(agent)) return
+    agent.ctx.tools.guard(exec => exec.name === UNSAFE_BROWSER_TOOL ? RESEARCH_TOOL_REFUSED : undefined)
+    this.guarded.add(agent)
   }
 
   /** The live agent of a session (resumed when it is stored but not loaded), or undefined when there is no such session. */

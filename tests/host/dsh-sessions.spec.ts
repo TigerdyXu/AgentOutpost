@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { DshSessionDriver, RESEARCH_PRESET_BROKEN, RESEARCH_TOOL_REFUSED, UNSAFE_BROWSER_TOOL, toolParameters } from '../../src/host/dsh-sessions.ts'
+import { DshSessionDriver, isResearchAgent, RESEARCH_PRESET_BROKEN, RESEARCH_TOOL_REFUSED, UNSAFE_BROWSER_TOOL, toolParameters } from '../../src/host/dsh-sessions.ts'
 import type { SessionSpec, ToolSpec } from '../../src/host/ports.ts'
 import { researchTools } from '../../src/host/tools.ts'
 import { dshHost, type DshHost } from '../fixtures/dsh-context.ts'
@@ -444,6 +444,62 @@ describe('the browser tool that runs arbitrary code', () => {
     await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
     expect(host.guards('outpost-followup-1')).toEqual([])
     expect(host.denial('outpost-followup-1', 'mcp__playwright-mcp__browser_run_code_unsafe')).toBeUndefined()
+  })
+
+  /** The `tools.guard` mock of the session's current agent. */
+  const guardOf = (sessionId: string) => (host.agent(sessionId).ctx as unknown as { tools: { guard: ReturnType<typeof vi.fn> } }).tools.guard
+
+  it('is refused, once, in a research session DSH reopens by itself', async () => {
+    // A research run's session from before, opened again by DSH alone: Desktop restoring the last page at startup, or the
+    // user opening it from the sidebar or 运行记录. DSH composes it on the research preset again (its header says so), with
+    // the browser; Outpost has no run for it and never created it.
+    host.store('outpost-daily-old', { agentPreset: 'outpost-researcher' })
+    await host.sessionController.resolveAgent('outpost-daily-old')
+    expect(host.denial('outpost-daily-old', 'mcp__playwright-mcp__browser_run_code_unsafe')).toEqual({ reason: '前哨的调研会话不能用这个工具' })
+    expect(host.denial('outpost-daily-old', 'mcp__playwright-mcp__browser_navigate')).toBeUndefined()
+    expect(guardOf('outpost-daily-old')).toHaveBeenCalledOnce()
+    expect(host.sent('outpost-daily-old')).toEqual([]) // nothing said to it
+    // Made anew on the research preset by DSH's own session controller (as M1 made research sessions): the same.
+    await host.spawn('outpost-recommend-m1', { agentPreset: 'outpost-researcher' })
+    expect(host.denial('outpost-recommend-m1', 'mcp__playwright-mcp__browser_run_code_unsafe')).toEqual({ reason: '前哨的调研会话不能用这个工具' })
+    // A session Outpost creates gets it in its setup, and the announcement of the same agent does not add a second.
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    expect(guardOf('outpost-daily-p1')).toHaveBeenCalledOnce()
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    // Every agent DSH makes for a session gets its own: after a release, the reopened research session has it again.
+    await driver.release('outpost-daily-p1')
+    await host.sessionController.resolveAgent('outpost-daily-p1')
+    expect(guardOf('outpost-daily-p1')).toHaveBeenCalledOnce() // this agent's own mock
+    expect(host.denial('outpost-daily-p1', 'mcp__playwright-mcp__browser_run_code_unsafe')).toEqual({ reason: '前哨的调研会话不能用这个工具' })
+  })
+
+  it('is left alone in 追问 chats and standard sessions, Outpost\'s or the user\'s', async () => {
+    // A 追问 chat DSH reopens after a restart, which Outpost gives its tools again: the standard preset, no guard.
+    host.store('outpost-followup-1a2b3c4d', { agentPreset: 'standard' })
+    driver.rebind('outpost-followup-1a2b3c4d', [probe('outpost_read').tool])
+    await host.sessionController.resolveAgent('outpost-followup-1a2b3c4d')
+    expect(host.guards('outpost-followup-1a2b3c4d')).toEqual([])
+    // The user's own sessions, and a standard one whatever its id: the preset decides.
+    await host.spawn('chat-1', { agentPreset: 'standard' })
+    await host.spawn('chat-2')
+    await host.spawn('outpost-daily-odd', { agentPreset: 'standard' })
+    for (const id of ['chat-1', 'chat-2', 'outpost-daily-odd']) {
+      expect(host.guards(id), id).toEqual([])
+      expect(host.denial(id, 'mcp__playwright-mcp__browser_run_code_unsafe'), id).toBeUndefined()
+    }
+  })
+
+  it('tells a research agent by its preset, and by its id only when its session names no preset', () => {
+    const agent = (id: string, agentPreset?: string) => ({ id, session: { header: agentPreset === undefined ? {} : { agentPreset } } }) as never
+    expect(isResearchAgent(agent('outpost-daily-1', 'outpost-researcher'))).toBe(true)
+    expect(isResearchAgent(agent('anything', 'outpost-researcher'))).toBe(true)
+    expect(isResearchAgent(agent('outpost-daily-1', 'standard'))).toBe(false)
+    expect(isResearchAgent(agent('outpost-verify-1'))).toBe(true) // no preset recorded: an Outpost session…
+    expect(isResearchAgent(agent('outpost-followup-1'))).toBe(false) // …that is not a 追问 chat
+    expect(isResearchAgent(agent('chat-1'))).toBe(false)
+    expect(isResearchAgent({ id: 'outpost-baseline-1' } as never)).toBe(true) // no header to read at all
   })
 })
 

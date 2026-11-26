@@ -25,10 +25,14 @@ export interface RegisteredTool {
 
 export interface SentMessage { id: string; role: string; content: { type: string; text: string }[]; source: { kind: string; form?: string } }
 
+/** What DSH keeps in a session's durable header that the adapters read: the preset its agent was composed from. */
+export interface SessionHeader { agentPreset?: string }
+
 export interface FakeAgent {
   id: string
   ctx: Context
-  session: { id: string }
+  /** The live session, with its durable header (restored as it was stored when DSH resumes it). */
+  session: { id: string; header: SessionHeader }
   model: { select: Mock<(selection: { provider: string; model: string }) => void> }
   followup: Mock<(message: SentMessage) => void>
   /** Number of the latest turn, 0 before the first. */
@@ -63,6 +67,8 @@ export function dshHost() {
   const agents = new Map<string, FakeAgent>()
   /** Sessions stored on disk, live or not. */
   const stored = new Set<string>()
+  /** The durable header of each session, by id: written when the session is made, read back on every resume. */
+  const headers = new Map<string, SessionHeader>()
   const tools = new Map<string, Map<string, RegisteredTool>>()
   /** The guards installed on each session's current agent. */
   const guards = new Map<string, Guard[]>()
@@ -111,7 +117,7 @@ export function dshHost() {
       }),
     })
     const agent: FakeAgent = {
-      id: sessionId, ctx: agentCtx, session: { id: sessionId }, turn: 0, running: false, queued: [],
+      id: sessionId, ctx: agentCtx, session: { id: sessionId, header: headers.get(sessionId) ?? {} }, turn: 0, running: false, queued: [],
       model: { select: vi.fn() },
       // A message wakes an idle agent; one that arrives while a turn runs waits for the next turn.
       followup: vi.fn((message: SentMessage) => {
@@ -156,6 +162,7 @@ export function dshHost() {
       return { error: Object.assign(new Error(`session "${sessionId}" not found`), { code: 'session/not-found' }) }
     }),
     create: vi.fn(async (request: { sessionId: string; workspaceId: string; agentPreset?: string }) => {
+      headers.set(request.sessionId, request.agentPreset === undefined ? {} : { agentPreset: request.agentPreset })
       await spawn(request.sessionId, 'new')
       return { sessionId: request.sessionId, agentPreset: request.agentPreset }
     }),
@@ -191,6 +198,7 @@ export function dshHost() {
     /** Makes a new session and its agent for the caller, who owns it: disposing the handle ends the live agent. */
     create: vi.fn(async (options: CreateOptions) => {
       options.signal?.throwIfAborted()
+      headers.set(options.sessionId, options.meta?.agentPreset === undefined ? {} : { agentPreset: options.meta.agentPreset })
       const agent = await spawn(options.sessionId, 'new', options.setup, { signal: options.signal, stall: stalls.shift() })
       const dispose = vi.fn(async () => {
         if (agents.get(agent.id) !== agent) return
@@ -251,10 +259,10 @@ export function dshHost() {
     stallCreation: () => { stalls.push({ held: true }) },
     /** The messages sent to the session, oldest first. */
     sent: (sessionId: string) => sent.get(sessionId) ?? [],
-    /** A session that exists on disk with no live agent, as after a restart of DSH. */
-    store: (sessionId: string) => { stored.add(sessionId) },
-    /** Another agent (not Outpost's) being created, such as a chat the user opens. */
-    spawn: (sessionId: string) => spawn(sessionId, 'new'),
+    /** A session that exists on disk with no live agent, as after a restart of DSH; `header` as it was written. */
+    store: (sessionId: string, header: SessionHeader = {}) => { stored.add(sessionId); headers.set(sessionId, header) },
+    /** Another agent (not Outpost's) being created, such as a chat the user opens; `header` names its preset, if any. */
+    spawn: (sessionId: string, header?: SessionHeader) => { if (header) headers.set(sessionId, header); return spawn(sessionId, 'new') },
     /** Waits until the session's `count`-th turn has started. */
     started: (sessionId: string, count = 1) => vi.waitFor(() => { if ((agents.get(sessionId)?.turn ?? 0) < count) throw new Error(`turn ${count} of ${sessionId} has not started`) }),
     /** One step's assistant message, with its token accounting; in the latest turn unless told otherwise. */
