@@ -60,12 +60,14 @@ const isWorkedOn = (p: Product) => p.status === 'tracking' || p.status === 'base
  *
  * @param leaving - The track the products move out of; none: they are only added.
  * @returns One entry per product that joined (spellings left out are not), in the order given; unknown ids are skipped.
- * @throws When the track does not exist (nothing is linked then).
+ * @throws When the track does not exist, or is `leaving` itself (a product cannot leave the track it joins); nothing is linked then.
  */
 export function joinTrack(deps: JoinDeps, trackId: Id, productIds: Id[], leaving?: Id): Joined[] {
   const { repo, scheduler } = deps
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
+  // Linking and then unlinking the same track would leave the product out of it, and in no track if it was the only one.
+  if (leaving === trackId) throw new Error('A product cannot leave the track it joins')
   const keys = track.dimensions.map(d => d.key)
   const linked = new Set(repo.productsOfTrack(trackId).map(p => p.id))
   const taken = new Set<string>()

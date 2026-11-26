@@ -169,15 +169,20 @@ export interface Api {
    */
   'POST products/:id/link': { body: { trackId: Id }; response: { toppedUp: number } }
   /**
-   * 「从X拿掉」: the product leaves the track; its cards and history are kept (those of a dimension only that track had no
-   * longer show). 409 「这是它唯一的赛道。不想跟了就用「暂停跟踪」。」 when no other track that is on (not archived) would keep it, and
-   * for a track the product is not in.
+   * 「从X拿掉」: the product leaves the track. Its cards and their history stay stored, so nothing is lost; the product
+   * page shows only the dimensions that some track the product is still in lists, so the cards of a dimension only that
+   * track had are hidden, and show again if the product joins a track that lists the dimension. 409 when no other track
+   * that is on (not archived) would keep it (「这是它唯一的赛道。不想跟了就用「暂停跟踪」。」), and for a track the product is
+   * not in.
    */
   'POST products/:id/unlink': { body: { trackId: Id }; response: { ok: true } }
   /**
    * 「移到其他赛道」: `link` to `to` and `unlink` from `from`, in one transaction (the joining first, so that a failure
-   * leaves the product in `from`), with the same answer and the same 409s as `link`, and 409 too for a `from` the product is
-   * not in. A paused product stays paused.
+   * leaves the product in `from`). The answer and the 409s are `link`'s (an unknown, archived or already-joined `to`, a
+   * product that is not followed), and 409 too for a `from` the product is not in. There is no 「唯一的赛道」 refusal as
+   * `unlink` has: the product is in `to`, which is not archived, when it leaves `from`. What `unlink` says of the cards
+   * of a dimension only `from` had holds here too: kept, hidden on the product page, shown again by a track that lists
+   * them. A paused product stays paused.
    */
   'POST products/:id/move': { body: { from: Id; to: Id }; response: { toppedUp: number } }
   'GET products/:id': { response: ProductView }

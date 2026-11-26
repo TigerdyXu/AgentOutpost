@@ -1718,6 +1718,81 @@ textarea.op-input {
   cursor: progress;
 }
 
+/* An entry that cannot be used for now (nowhere to go): dimmed, still reachable, and not a button that answers a press. */
+.op-menu-item[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The entries about the tracks, set apart from the product's own settings by a hairline. */
+.op-menu-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+/* An entry that opens a list under itself: the arrow turns while it is open. */
+.op-menu-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.op-menu-more > .op-glyph {
+  color: var(--dsw-alias-label-secondary);
+  transition: transform 120ms ease;
+}
+
+.op-menu-more[aria-expanded="false"] > .op-glyph {
+  transform: rotate(-90deg);
+}
+
+.op-menu-more[aria-expanded="true"] {
+  font-weight: 600;
+}
+
+/* The tracks to choose from: indented under their entry, a long name cut short (the full one is its tooltip). */
+.op-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 232px;
+  margin-bottom: 2px;
+  overflow-y: auto;
+}
+
+.op-menu-option {
+  overflow: hidden;
+  padding-left: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-menu-pop[aria-busy="true"] .op-menu-option {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.op-menu-note {
+  margin: 0;
+  padding: 0 10px 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+/* What a move or an add did, said in the menu until the next thing is tried. */
+.op-menu-done {
+  margin: 2px 10px 4px;
+  color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 80%, var(--dsw-alias-label-primary));
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .op-menu-form {
   display: flex;
   flex-direction: column;
@@ -1748,7 +1823,7 @@ textarea.op-input {
 }
 
 .op-menu-problem {
-  margin: 2px 6px 4px;
+  margin: 2px 10px 4px;
   color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary));
   font-size: 13px;
   line-height: 20px;
@@ -2747,7 +2822,7 @@ button.op-run-open {
     background: var(--dsw-alias-interactive-bg-hover);
   }
 
-  .op-menu-item:not(:disabled):hover {
+  .op-menu-item:not(:disabled, [aria-disabled="true"]):hover {
     background: var(--dsw-alias-interactive-bg-hover);
   }
 

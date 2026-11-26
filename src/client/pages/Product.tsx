@@ -11,9 +11,9 @@ import { useShell } from '../shell/context.ts'
 import type { ProductTab, Route } from '../shell/route.ts'
 import { clockTime, localDay, shortDay } from '../time.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
-import { DossierTab } from './product/DossierTab.tsx'
+import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
-import { ProductMenu, type ProductChange } from './product/ProductMenu.tsx'
+import { ProductMenu, type ProductChange, type ProductTracks, type TrackChange } from './product/ProductMenu.tsx'
 import { SourcesTab } from './product/SourcesTab.tsx'
 
 /** How often the profile is read, and how often while something works on it; and how often a run is asked about. */
@@ -93,18 +93,36 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
     refresh()
   }
 
+  // Moving, adding and taking out: the answer is how many cards were asked for. The page and the column are read again.
+  const changeTracks = async (body: TrackChange) => {
+    const toppedUp = body.kind === 'move' ? (await call('POST products/:id/move', { id: productId, body: { from: body.from, to: body.to } })).toppedUp
+      : body.kind === 'link' ? (await call('POST products/:id/link', { id: productId, body: { trackId: body.to } })).toppedUp
+      : (await call('POST products/:id/unlink', { id: productId, body: { trackId: body.from } }), 0)
+    await reloadProfile()
+    refresh()
+    return toppedUp
+  }
+
   const known = state?.tracks.flatMap(entry => entry.products).find(item => item.product.id === productId)?.product
   const product = view?.product ?? known
   const updating = starting || runId !== null || !!view?.progress
+  // The tracks the product is in (the state lists no archived one), and the others it could go to; unknown until the state is read.
+  const inTracks = state?.tracks.filter(entry => entry.products.some(item => item.product.id === productId)).map(entry => entry.track) ?? []
+  const tracks: ProductTracks | null = state && inTracks.length > 0 ? {
+    current: inTracks.map(({ id, name }) => ({ id, name })),
+    others: state.tracks.map(entry => entry.track).filter(track => track.status !== 'archived' && !inTracks.some(own => own.id === track.id)).map(({ id, name }) => ({ id, name })),
+  } : null
 
-  // Which cards can be opened (those that exist), and whether they all are.
-  const openable = view?.cards.map(card => card.dimension) ?? []
+  // Which cards can be opened (those on the page that exist), and whether they all are.
+  const shown = view ? shownCards(view) : []
+  const openable = shown.map(card => card.dimension)
   const allOpen = openable.length > 0 && openable.every(key => expanded.has(key))
   const toggle = (key: DimensionKey) => setExpanded(previous => { const next = new Set(previous); if (!next.delete(key)) next.add(key); return next })
 
   const now = new Date()
   const times = view ? [...Object.values(view.history).flat(), ...view.cards].map(version => Date.parse(version.createdAt)).filter(Number.isFinite) : []
-  const newest = view && view.cards.length > 0 ? Math.max(...view.cards.map(card => Date.parse(card.createdAt)).filter(Number.isFinite)) : NaN
+  // When it was last updated is told by the cards on the page; the times above include those kept out of sight.
+  const newest = shown.length > 0 ? Math.max(...shown.map(card => Date.parse(card.createdAt)).filter(Number.isFinite)) : NaN
   const sameDay = Number.isFinite(newest) && localDay(new Date(newest)) === localDay(now)
   const meta = [
     product?.company,
@@ -139,7 +157,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       {view && <div className="op-phead-actions">
         {tab === 'dossier' && openable.length > 0 && <button type="button" className="op-button" data-size="small"
           onClick={() => { setExpanded(allOpen ? new Set() : new Set(openable)) }}>{t(allOpen ? 'product.collapseAll' : 'product.expandAll')}</button>}
-        <ProductMenu product={view.product} onChange={change} />
+        <ProductMenu product={view.product} onChange={change} tracks={tracks} onTracks={changeTracks} />
         <button type="button" className="op-button" data-variant="primary" disabled={updating} aria-busy={updating || undefined}
           onClick={() => { void startUpdate() }}>{t(updating ? 'product.updating' : 'product.updateNow')}</button>
       </div>}

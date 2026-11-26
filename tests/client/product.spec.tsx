@@ -290,9 +290,69 @@ describe('the profile', () => {
     expect(dcards()).toHaveLength(6)
   })
 
-  it('shows a card of a dimension the track no longer has, after the others', async () => {
-    await show(view({ dimensions: DIMENSIONS.slice(0, 2), cards: [...cards.slice(0, 2), card('p1', 'pricing', { bullets: ['按次收费'] })] }))
-    expect(dcards().map(item => item.querySelector('.op-dcard-name')?.textContent)).toEqual(['定位', '目标人群', 'pricing'])
+  describe('a dimension that none of the product’s tracks lists', () => {
+    const PRICING = { key: 'pricing', label: '定价' }
+    const LISTED = DIMENSIONS.slice(0, 2)
+    /** Cards and history of two listed dimensions and of 定价, which was only in a track the product left. */
+    const withPricing = (dimensions: Dimension[], extra: Partial<ProductView> = {}) => view({
+      dimensions,
+      cards: [...cards.slice(0, 2), card('p1', 'pricing', { bullets: ['按次收费'], body: '按次收费，不订阅。', createdAt: ago(0.5) })],
+      history: { ...history, pricing: [{ version: 1, changeNote: '建档', createdAt: nov(18) }] },
+      ...extra,
+    })
+    const names = () => dcards().map(item => item.querySelector('.op-dcard-name')?.textContent)
+
+    it('keeps its cards and history out of the profile, and shows them again once a track lists it', async () => {
+      await show(withPricing(LISTED))
+      expect(names()).toEqual(['定位', '目标人群'])
+      expect(text()).not.toContain('按次收费')
+      expect(text()).not.toContain('pricing')
+      // The product joins a track that lists it again: the card is back, under that track's label.
+      unmount()
+      await show(withPricing([...LISTED, PRICING]))
+      expect(names()).toEqual(['定位', '目标人群', '定价'])
+      expect(dcard('定价').textContent).toContain('按次收费')
+    })
+
+    it('leaves it out of 全部展开, and of the histories that open with the cards', async () => {
+      await show(withPricing(LISTED))
+      await click('全部展开')
+      expect(expanded()).toEqual(['定位', '目标人群'])
+      // Every card there is to open is open: the button says so, though a hidden card is not.
+      expect(all('button').some(button => button.textContent === '全部收起')).toBe(true)
+      expect(all('.op-history')).toHaveLength(2)
+      expect(text()).not.toContain('按次收费')
+      await click('全部收起')
+      expect(expanded()).toEqual([])
+    })
+
+    it('offers 全部展开 while a listed card is closed, whatever the hidden ones are', async () => {
+      await show(withPricing(LISTED), { route: route({ expand: 'positioning' }) })
+      expect(all('.op-phead-actions button').map(button => button.textContent)).toContain('全部展开')
+      await click(dcard('目标人群').querySelector('button')!)
+      expect(all('.op-phead-actions button').map(button => button.textContent)).toContain('全部收起')
+    })
+
+    it('falls back to the profile for a link to its card: nothing opens, nothing scrolls, nothing breaks', async () => {
+      await show(withPricing(LISTED), { route: route({ expand: 'pricing' }) })
+      expect(names()).toEqual(['定位', '目标人群'])
+      expect(expanded()).toEqual([])
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      expect(all('.op-dcard-open')).toHaveLength(0)
+      expect(document.querySelector('.op-product [role="alert"]')).toBeNull()
+    })
+
+    it('does not take its time for the time the profile was last updated', async () => {
+      // 定价 was written half an hour ago, after the card shown last: the header speaks of what is on the page.
+      await show(withPricing(LISTED, { cards: [card('p1', 'positioning', { createdAt: nov(20) }), card('p1', 'pricing', { createdAt: ago(0.5) })] }))
+      expect(document.querySelector('.op-phead-meta')?.textContent).toBe('字节跳动 · 11-18 建档 · 11-20 更新')
+    })
+
+    it('leaves the positioning sentence out when no track lists 定位 any more', async () => {
+      await show(withPricing([LISTED[1]!, PRICING]))
+      expect(names()).toEqual(['目标人群', '定价'])
+      expect(document.querySelector('.op-positioning')).toBeNull()
+    })
   })
 })
 
@@ -594,7 +654,7 @@ describe('the ⋯ menu', () => {
     expect(more().getAttribute('aria-expanded')).toBe('false')
     await click(more())
     expect(more().getAttribute('aria-expanded')).toBe('true')
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
     await click(control('暂停跟踪'))
     expect(patches(api)).toEqual([['products/p1', { status: 'paused' }]])
     // The menu closes, and the page and the column read the change.
@@ -603,7 +663,7 @@ describe('the ⋯ menu', () => {
     unmount()
     const paused = await show(view({ product: { ...doubao, status: 'paused', dailyBudgetYuan: 2.5 } }))
     await click(more())
-    expect(items()).toEqual(['恢复跟踪', '每日预算：¥2.5'])
+    expect(items()).toEqual(['恢复跟踪', '每日预算：¥2.5', '移到其他赛道…', '也加到其他赛道…'])
     await click(control('恢复跟踪'))
     expect(patches(paused.api)).toEqual([['products/p1', { status: 'tracking' }]])
   })
@@ -611,7 +671,7 @@ describe('the ⋯ menu', () => {
   it('offers neither pausing nor resuming while the product is being baselined', async () => {
     await show(view({ product: { ...doubao, status: 'baselining' } }))
     await click(more())
-    expect(items()).toEqual(['每日预算：不限'])
+    expect(items()).toEqual(['每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
   })
 
   it('sets the daily budget of the product, and clears it', async () => {
@@ -741,6 +801,307 @@ describe('the ⋯ menu, by keyboard', () => {
   })
 })
 
+describe('the ⋯ menu, tracks', () => {
+  const more = () => find('更多操作')
+  const menu = () => document.querySelector<HTMLElement>('[role="menu"]')
+  const items = () => all('[role="menuitem"]').map(item => item.textContent)
+  /** The entries of the open list of tracks. */
+  const options = () => all('[role="menu"] [role="group"] [role="menuitem"]').map(item => item.textContent)
+  const alert = () => document.querySelector('[role="menu"] [role="alert"]')?.textContent
+  const result = () => document.querySelector('[role="menu"] [role="status"]')?.textContent
+  /** The track requests sent so far (what is not a read, nor the pause or budget change). */
+  const sent = (api: ReturnType<typeof stubApi>) => api.requests.filter(request => request.method === 'POST' && /^products\/p1\/(link|unlink|move)$/.test(request.path)).map(request => [request.path, request.body])
+  const reads = (api: ReturnType<typeof stubApi>) => api.requests.filter(request => request.method === 'GET' && request.path === 'products/p1').length
+  const press = async (target: Element, key: string) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    await act(async () => { target.dispatchEvent(event) })
+    return event
+  }
+
+  const mine = tracked(doubao)
+  /** 小豆 is in 「Personal Agent」 alone; 「手机 AI 助理」 and the one still being picked are free; 「旧赛道」 is archived. */
+  const alone = state({ tracks: [
+    track('t1', 'Personal Agent', [mine, tracked(muse)], { dimensions: DIMENSIONS }),
+    track('t2', '手机 AI 助理', [tracked(muse)], { dimensions: DIMENSIONS }),
+    track('t3', 'AI 硬件', [], { dimensions: DIMENSIONS, status: 'picking' }),
+    track('t4', '旧赛道', [], { dimensions: DIMENSIONS, status: 'archived' }),
+  ] })
+  /** In two of them, with one left to add it to. */
+  const twice = state({ tracks: [
+    track('t1', 'Personal Agent', [mine, tracked(muse)], { dimensions: DIMENSIONS }),
+    track('t2', '手机 AI 助理', [mine], { dimensions: DIMENSIONS }),
+    track('t3', 'AI 硬件', [], { dimensions: DIMENSIONS }),
+  ] })
+  const MOVED = { 'POST products/:id/move': { toppedUp: 1 }, 'POST products/:id/link': { toppedUp: 2 }, 'POST products/:id/unlink': { ok: true } }
+
+  it('offers move only when the product is in one track, and remove per track when in several', async () => {
+    await show(view(), { state: alone }, MOVED)
+    await click(more())
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    expect(all('[role="menuitem"]').map(item => item.getAttribute('aria-expanded'))).toEqual([null, null, 'false', 'false'])
+    unmount()
+    await show(view(), { state: twice }, MOVED)
+    await click(more())
+    // Moving is moving out of the one track it is in; with several it is taking it out of one, so that is what is offered.
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉'])
+  })
+
+  it('offers no track entry when the page does not know the product’s tracks', async () => {
+    // The state is not read yet, or does not have the product in any track (it is not followed): nothing to move or remove.
+    await show(view(), { state: undefined }, MOVED)
+    await click(more())
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限'])
+    unmount()
+    await show(view(), { state: state({ tracks: [track('t1', 'Personal Agent', [tracked(muse)], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [], { dimensions: DIMENSIONS })] }) }, MOVED)
+    await click(more())
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限'])
+  })
+
+  it('move lists the other active tracks and reports the result', async () => {
+    const { api, context } = await show(view(), { state: alone }, MOVED)
+    await click(more())
+    const entry = control('移到其他赛道…')
+    await click(entry)
+    // The product's own track and the archived one are not there; the one still being picked is.
+    expect(entry.getAttribute('aria-expanded')).toBe('true')
+    expect(options()).toEqual(['手机 AI 助理', 'AI 硬件'])
+    expect(entry.getAttribute('aria-controls')).toBe(document.querySelector('[role="menu"] [role="group"]')!.id)
+    expect(document.querySelector('[role="menu"] [role="group"]')!.getAttribute('aria-labelledby')).toBe(entry.id)
+    // The focus is on the first of them, ready for the arrow keys.
+    expect(document.activeElement?.textContent).toBe('手机 AI 助理')
+    const before = reads(api)
+    await click(control('手机 AI 助理'))
+    expect(sent(api)).toEqual([['products/p1/move', { from: 't1', to: 't2' }]])
+    // The menu stays open to say what was done; the page and the column read the change.
+    expect(menu()).not.toBeNull()
+    expect(result()).toBe('已移到「手机 AI 助理」 · 补 1 张卡')
+    expect(alert()).toBeUndefined()
+    expect(document.querySelector('[role="menu"] [role="group"]')).toBeNull()
+    expect(reads(api)).toBeGreaterThan(before)
+    expect(context.refresh).toHaveBeenCalled()
+    // The focus did not fall to the page: it is back on the entry that opened the list.
+    expect(document.activeElement).toBe(control('移到其他赛道…'))
+  })
+
+  it('leaves 补 n 张卡 out when no card was added', async () => {
+    await show(view(), { state: alone }, { ...MOVED, 'POST products/:id/move': { toppedUp: 0 } })
+    await click(more())
+    await click(control('移到其他赛道…'))
+    await click(control('AI 硬件'))
+    expect(result()).toBe('已移到「AI 硬件」')
+  })
+
+  it('also-add keeps the product where it is', async () => {
+    const { api } = await show(view(), { state: alone }, MOVED)
+    await click(more())
+    await click(control('也加到其他赛道…'))
+    expect(options()).toEqual(['手机 AI 助理', 'AI 硬件'])
+    await click(control('AI 硬件'))
+    // A link and nothing else: no move, no leaving the track it is in.
+    expect(sent(api)).toEqual([['products/p1/link', { trackId: 't3' }]])
+    expect(result()).toBe('已加到「AI 硬件」 · 补 2 张卡')
+    expect(menu()).not.toBeNull()
+    expect(document.activeElement).toBe(control('也加到其他赛道…'))
+  })
+
+  it('opens one list at a time, and a second press on its entry folds it away', async () => {
+    await show(view(), { state: alone }, MOVED)
+    await click(more())
+    await click(control('移到其他赛道…'))
+    expect(options()).toHaveLength(2)
+    await click(control('也加到其他赛道…'))
+    expect(control('移到其他赛道…').getAttribute('aria-expanded')).toBe('false')
+    expect(control('也加到其他赛道…').getAttribute('aria-expanded')).toBe('true')
+    expect(all('[role="menu"] [role="group"]')).toHaveLength(1)
+    // Folded away by its own entry, the focus stays on it.
+    await click(control('也加到其他赛道…'))
+    expect(all('[role="menu"] [role="group"]')).toHaveLength(0)
+    expect(document.activeElement).toBe(control('也加到其他赛道…'))
+    // Opening the daily budget does not leave a list open under it.
+    await click(control('移到其他赛道…'))
+    await click(control('每日预算：不限'))
+    expect(all('[role="menu"] [role="group"]')).toHaveLength(0)
+  })
+
+  it('takes the product out of one track, and closes the menu with the focus back on ⋯', async () => {
+    const { api, context } = await show(view(), { state: twice }, MOVED)
+    await click(more())
+    await click(control('从「Personal Agent」拿掉'))
+    expect(sent(api)).toEqual([['products/p1/unlink', { trackId: 't1' }]])
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(more())
+    expect(context.refresh).toHaveBeenCalled()
+  })
+
+  it('shows 还没有别的赛道 when there is nowhere to go', async () => {
+    const stuck = state({ tracks: [track('t1', 'Personal Agent', [mine], { dimensions: DIMENSIONS }), track('t4', '旧赛道', [], { dimensions: DIMENSIONS, status: 'archived' })] })
+    const { api } = await show(view(), { state: stuck }, MOVED)
+    await click(more())
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    for (const name of ['移到其他赛道…', '也加到其他赛道…']) {
+      const entry = control(name)
+      expect(entry.getAttribute('aria-disabled'), name).toBe('true')
+      // Said once, and attached to both entries as their description.
+      const hint = document.getElementById(entry.getAttribute('aria-describedby')!)
+      expect(hint?.textContent, name).toBe('还没有别的赛道')
+      await click(entry)
+      expect(entry.getAttribute('aria-expanded'), name).toBe('false')
+    }
+    expect(all('[role="menu"] .op-menu-note')).toHaveLength(1)
+    expect(all('[role="menu"] [role="group"]')).toHaveLength(0)
+    expect(sent(api)).toEqual([])
+    // A disabled entry is still one the arrow keys reach, so that a reader of the screen hears why it cannot be used.
+    control('每日预算：不限').focus()
+    await press(document.activeElement!, 'ArrowDown')
+    expect(document.activeElement).toBe(control('移到其他赛道…'))
+    // In several tracks, with every other one joined, only 也加到 is out of use; taking it out of a track still is not.
+    unmount()
+    const full = state({ tracks: [track('t1', 'Personal Agent', [mine], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [mine], { dimensions: DIMENSIONS })] })
+    await show(view(), { state: full }, MOVED)
+    await click(more())
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉'])
+    expect(control('也加到其他赛道…').getAttribute('aria-disabled')).toBe('true')
+    expect(control('从「手机 AI 助理」拿掉').getAttribute('aria-disabled')).toBeNull()
+    expect(all('[role="menu"] .op-menu-note').map(note => note.textContent)).toEqual(['还没有别的赛道'])
+  })
+
+  it('a refused change is said inside the menu', async () => {
+    // The page thinks the product is in two tracks; the host knows better (the other one was archived since).
+    const only = '这是它唯一的赛道。不想跟了就用「暂停跟踪」。'
+    await show(view(), { state: twice }, { ...MOVED, 'POST products/:id/unlink': fail(409, only) })
+    await click(more())
+    await click(control('从「Personal Agent」拿掉'))
+    // The server's own words, in the menu, which stays open with the product where it was.
+    expect(alert()).toBe(only)
+    expect(menu()).not.toBeNull()
+    expect(result()).toBeUndefined()
+    unmount()
+    // A move or an add refused leaves the list open, to pick another; the next one that goes through clears the note.
+    let answers = [fail(409, '这个赛道已归档'), { toppedUp: 0 }]
+    const { api } = await show(view(), { state: alone }, { ...MOVED, 'POST products/:id/move': () => answers.shift() })
+    await click(more())
+    await click(control('移到其他赛道…'))
+    await click(control('手机 AI 助理'))
+    expect(alert()).toBe('这个赛道已归档')
+    expect(menu()).not.toBeNull()
+    expect(options()).toEqual(['手机 AI 助理', 'AI 硬件'])
+    expect(result()).toBeUndefined()
+    await click(control('AI 硬件'))
+    expect(alert()).toBeUndefined()
+    expect(result()).toBe('已移到「AI 硬件」')
+    expect(sent(api).map(([, body]) => body)).toEqual([{ from: 't1', to: 't2' }, { from: 't1', to: 't3' }])
+    // 它已经在这个赛道里了 and the like for an add.
+    unmount()
+    await show(view(), { state: alone }, { ...MOVED, 'POST products/:id/link': fail(409, '它已经在这个赛道里了') })
+    await click(more())
+    await click(control('也加到其他赛道…'))
+    await click(control('手机 AI 助理'))
+    expect(alert()).toBe('它已经在这个赛道里了')
+  })
+
+  it('sends a change once however often its entry is pressed', async () => {
+    let release = () => {}
+    const slow = new Promise<{ toppedUp: number }>(resolve => { release = () => { resolve({ toppedUp: 0 }) } })
+    const { api } = await show(view(), { state: alone }, { ...MOVED, 'POST products/:id/move': () => slow })
+    await click(more())
+    await click(control('移到其他赛道…'))
+    const target = control('手机 AI 助理')
+    await act(async () => { target.click(); target.click() })
+    await act(async () => { control('AI 硬件').click() })
+    expect(sent(api)).toEqual([['products/p1/move', { from: 't1', to: 't2' }]])
+    await act(async () => { release() })
+    await settle()
+    expect(result()).toBe('已移到「手机 AI 助理」')
+  })
+
+  it('says nothing, and takes no focus, when the menu was closed while the change was on its way', async () => {
+    let release = () => {}
+    const slow = new Promise<{ toppedUp: number }>(resolve => { release = () => { resolve({ toppedUp: 1 }) } })
+    const { api } = await show(view(), { state: alone }, { ...MOVED, 'POST products/:id/move': () => slow })
+    await click(more())
+    await click(control('移到其他赛道…'))
+    await act(async () => { control('手机 AI 助理').click() })
+    // The reader moves on: Escape closes the menu, and the focus goes to something else.
+    await press(document.activeElement!, 'Escape')
+    const elsewhere = find('立即更新')
+    elsewhere.focus()
+    await act(async () => { release() })
+    await settle()
+    // The move was made all the same; the menu, opened again, is as it was at first, and the focus was not taken.
+    expect(sent(api)).toEqual([['products/p1/move', { from: 't1', to: 't2' }]])
+    expect(document.activeElement).toBe(elsewhere)
+    await click(more())
+    expect(result()).toBeUndefined()
+    expect(options()).toEqual([])
+  })
+
+  it('keyboard: arrows walk the track list, Escape closes and returns focus to ⋯', async () => {
+    const { api } = await show(view(), { state: alone }, MOVED)
+    await click(more())
+    // ArrowRight on the entry opens its list, with the focus on the first track.
+    control('移到其他赛道…').focus()
+    const right = await press(document.activeElement!, 'ArrowRight')
+    expect(right.defaultPrevented).toBe(true)
+    expect(options()).toEqual(['手机 AI 助理', 'AI 硬件'])
+    expect(document.activeElement?.textContent).toBe('手机 AI 助理')
+    // The arrows walk the tracks, and on from the last one to the entry after the list, and round again.
+    await press(document.activeElement!, 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('AI 硬件')
+    await press(document.activeElement!, 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('也加到其他赛道…')
+    await press(document.activeElement!, 'ArrowUp')
+    expect(document.activeElement?.textContent).toBe('AI 硬件')
+    await press(document.activeElement!, 'ArrowUp')
+    await press(document.activeElement!, 'ArrowUp')
+    expect(document.activeElement?.textContent).toBe('移到其他赛道…')
+    // ArrowLeft from a track folds the list away and goes back to its entry.
+    await press(document.activeElement!, 'ArrowRight')
+    await press(document.activeElement!, 'ArrowDown')
+    expect(document.activeElement?.textContent).toBe('AI 硬件')
+    await press(document.activeElement!, 'ArrowLeft')
+    expect(options()).toEqual([])
+    expect(document.activeElement).toBe(control('移到其他赛道…'))
+    // Nothing was sent by walking about; Escape from inside the list closes the whole menu and gives the focus back.
+    await press(document.activeElement!, 'ArrowRight')
+    const escape = await press(document.activeElement!, 'Escape')
+    expect(escape.defaultPrevented).toBe(false)
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(more())
+    expect(sent(api)).toEqual([])
+    // Opened again, the menu is as it was at first: the list closed, the old answer gone.
+    await click(more())
+    expect(options()).toEqual([])
+    expect(result()).toBeUndefined()
+  })
+
+  it('goes on to the page: the column and the menu follow the state the move leaves behind', async () => {
+    // The shell's own state is read again after the move: the product is now in the other track, and the menu offers what is left.
+    let moved = false
+    const after = state({ tracks: [track('t1', 'Personal Agent', [tracked(muse)], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [mine, tracked(muse)], { dimensions: DIMENSIONS })] })
+    stubApi({
+      'GET state': () => moved ? after : state({ tracks: [track('t1', 'Personal Agent', [mine, tracked(muse)], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [tracked(muse)], { dimensions: DIMENSIONS })] }),
+      'GET products/:id': view(), 'GET products/:id/findings': noFindings,
+      'POST products/:id/move': () => { moved = true; return { toppedUp: 0 } },
+    })
+    localStorage.setItem('outpost.route', JSON.stringify({ page: 'product', productId: 'p1', tab: 'dossier' }))
+    await mount(<App t={t} />)
+    const rowsOf = (name: string) => [...all('.op-mid .op-group').find(group => group.getAttribute('aria-label') === name)!.querySelectorAll('.op-row-label')]
+      .map(label => label.textContent).filter(label => label !== '＋ 添加产品')
+    expect(rowsOf('Personal Agent')).toEqual(['豆包·小豆', 'Meta Muse'])
+    await click(find('更多操作'))
+    await click(control('移到其他赛道…'))
+    await click(control('手机 AI 助理'))
+    expect(result()).toBe('已移到「手机 AI 助理」')
+    await settle()
+    expect(rowsOf('Personal Agent')).toEqual(['Meta Muse'])
+    expect(rowsOf('手机 AI 助理')).toEqual(['豆包·小豆', 'Meta Muse'])
+    // Now it is in 手机 AI 助理 alone: the way back is a move to the first.
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    await click(control('移到其他赛道…'))
+    expect(options()).toEqual(['Personal Agent'])
+  })
+})
+
 describe('the feed tab', () => {
   const findings: Finding[] = [
     finding('f1', 'p1', { headline: '安卓全量开放', createdAt: '2026-11-25T08:05:00.000Z', dimensions: ['positioning'], sourceIds: ['s3'] }),
@@ -840,6 +1201,20 @@ describe('the feed tab', () => {
     await feed({ 'GET products/:id/findings': { findings: [finding('f9', 'p1', { headline: '开始收费', dimensions: ['business'] })], sources: [], changed: {} } })
     expect(feedCard('开始收费').querySelector('.op-card-changed')).toBeNull()
     expect([...feedCard('开始收费').querySelectorAll('button')].map(button => button.textContent)).toEqual(['追问'])
+  })
+
+  it('does not name a dimension the profile no longer shows, nor offer 看改动 for it', async () => {
+    const answer = (changed: string[]) => ({ 'GET products/:id/findings': { findings: [finding('f9', 'p1', { headline: '改了定价', dimensions: changed })], sources: [], changed: { f9: changed } } })
+    // 定价 is a card the product keeps from a track it left: only the one the page shows is named, and 看改动 opens that one.
+    const { context } = await feed(answer(['pricing', 'business']))
+    expect(feedCard('改了定价').querySelector('.op-card-changed')?.textContent).toBe('改了档案：商业化')
+    await click([...feedCard('改了定价').querySelectorAll<HTMLElement>('button')].find(button => button.textContent === '看改动 →')!)
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p1', tab: 'dossier', expand: 'business' })
+    // Only the hidden one changed: nothing to look at.
+    unmount()
+    await feed(answer(['pricing']))
+    expect(feedCard('改了定价').querySelector('.op-card-changed')).toBeNull()
+    expect([...feedCard('改了定价').querySelectorAll('button')].map(button => button.textContent)).toEqual(['追问'])
   })
 })
 

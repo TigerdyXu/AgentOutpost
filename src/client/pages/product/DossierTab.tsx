@@ -1,7 +1,7 @@
 /**
  * 档案 (design §5.4, mockup 4 option A): the key facts, the positioning sentence, and one card per dimension. A card holds
  * the dimension's conclusions; opened, it takes the whole row: the full text with its citations and sources on the left,
- * how the section changed over time on the right.
+ * how the section changed over time on the right. Only the dimensions the product's tracks list are shown.
  */
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import type { CardVersion, DimensionKey, Facts, Source } from '../../../core/types.ts'
@@ -103,6 +103,16 @@ function DimensionCard({ dimension, label, card, history, sources, open, baselin
   </article>
 }
 
+/**
+ * The cards the profile shows: those of a dimension that some track the product is in lists. A track the product left
+ * takes its own dimensions' cards out of sight; they stay stored (with their history) and come back when a track lists the
+ * dimension again.
+ */
+export function shownCards(view: Pick<ProductView, 'cards' | 'dimensions'>): CardVersion[] {
+  const listed = new Set(view.dimensions.map(dimension => dimension.key))
+  return view.cards.filter(card => listed.has(card.dimension))
+}
+
 export interface DossierProps {
   view: ProductView
   expanded: ReadonlySet<DimensionKey>
@@ -115,13 +125,10 @@ export interface DossierProps {
 export function DossierTab({ view, expanded, onToggle, focus, now }: DossierProps): ReactNode {
   const { t } = useShell()
   const baselining = view.product.status === 'baselining'
-  const byDimension = new Map(view.cards.map(card => [card.dimension, card] as const))
+  const byDimension = new Map(shownCards(view).map(card => [card.dimension, card] as const))
   const sources = new Map(view.sources.map(source => [source.id, source] as const))
-  // The track's dimensions in its order, then any card the product keeps of a dimension the track no longer lists.
-  const rows = [
-    ...view.dimensions,
-    ...view.cards.filter(card => !view.dimensions.some(d => d.key === card.dimension)).map(card => ({ key: card.dimension, label: card.dimension })),
-  ]
+  // The dimensions of the product's tracks, in their order: what no track lists is not shown (see `shownCards`).
+  const rows = view.dimensions
   const positioning = byDimension.get('positioning')?.summary.trim()
 
   const elements = useRef(new Map<DimensionKey, HTMLElement>())

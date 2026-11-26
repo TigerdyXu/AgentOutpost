@@ -30,7 +30,8 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {} }
   const card = (finding: Finding): ReactNode => <FindingCard key={finding.id} finding={finding} product={product} trackName={trackName}
     sources={finding.sourceIds.flatMap(id => known.get(id) ?? [])}
     // Only what the check verified went into the profile (design §8), and only where a card took a version resting on it.
-    changed={finding.status === 'verified' ? (changed[finding.id] ?? []).map(key => ({ key, label: labels.get(key) ?? key })) : []}
+    // A dimension that no track of the product lists is not on the profile: not named, and not what 看改动 opens.
+    changed={finding.status === 'verified' ? (changed[finding.id] ?? []).flatMap(key => labels.has(key) ? [{ key, label: labels.get(key)! }] : []) : []}
     promoted={finding.status === 'verified' && finding.statusNote === PROMOTED} />
 
   if (shown.length === 0 && unproven.length === 0) return <p className="op-day-empty">{t('feed.empty')}</p>

@@ -7,6 +7,7 @@ import { unreadCount } from '../../src/core/brief.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../../src/core/dimensions.ts'
 import type { Brief, Dimension, Finding, Id, ProductStatus, Run, Source, Track } from '../../src/core/types.ts'
 import type { ApiResponse } from '../../src/host/api.ts'
+import { joinTrack } from '../../src/host/join.ts'
 import type { Runtime } from '../../src/host/runtime.ts'
 import type { Repo } from '../../src/store/repo.ts'
 import { apiHost, type ApiHost, type Reply } from '../fixtures/api-host.ts'
@@ -1090,6 +1091,26 @@ describe('moving products between tracks', () => {
 
     expect(inTracks('p1')).toEqual(['赛道A']) // not in B as well: the add was rolled back with the rest
     await untouched()
+  })
+
+  it('joinTrack refuses to leave the track it joins, so a product is never linked and unlinked in one step', async () => {
+    const a = addTrack({ name: '赛道A' })
+    followed('p1', 'Cursor', a.id)
+    const b = addTrack({ name: '赛道B' })
+    repo.linkProduct(b.id, 'p1')
+    const unlink = vi.spyOn(repo, 'unlinkProduct')
+    const link = vi.spyOn(repo, 'linkProduct')
+
+    expect(() => joinTrack(rt, a.id, ['p1'], a.id)).toThrow('A product cannot leave the track it joins')
+
+    expect(link).not.toHaveBeenCalled()
+    expect(unlink).not.toHaveBeenCalled()
+    expect(inTracks('p1')).toEqual(['赛道A', '赛道B'])
+    await untouched()
+    // A move to another track is still a move.
+    const c = addTrack({ name: '赛道C' })
+    expect(joinTrack(rt, c.id, ['p1'], a.id).map(j => j.productId)).toEqual(['p1'])
+    expect(inTracks('p1')).toEqual(['赛道B', '赛道C'])
   })
 
   it('unlink takes the product out of one track and keeps its dossier', async () => {
