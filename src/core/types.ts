@@ -39,7 +39,10 @@ export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds:
   skipped: { productId: Id; reason: string; failed?: true }[]
   costYuan: number; createdAt: string; updatedAt: string }
 
-export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup'
+/** `identify`: a product the user named by hand, confirmed before it joins their track (M1.2 按名字加). */
+export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'
 export interface Usage { inputTokens: number; outputTokens: number; cacheReadTokens: number }
-export interface Run { id: Id; kind: RunKind; date: string; trackId: Id | null; productId: Id | null; sessionId: string | null; status: RunStatus; startedAt: string | null; endedAt: string | null; usage: Usage; costYuan: number; error: string | null; progress: { done: number; total: number } | null }
+export interface Run { id: Id; kind: RunKind; date: string; trackId: Id | null; productId: Id | null; sessionId: string | null; status: RunStatus; startedAt: string | null; endedAt: string | null; usage: Usage; costYuan: number; error: string | null; progress: { done: number; total: number } | null
+  /** What the user typed that the run is about (the name of a product to confirm, for `identify`), or null. */
+  subject: string | null }

@@ -356,7 +356,7 @@ describe('when there is nothing to pick', () => {
 describe('the footer', () => {
   const daily = (productId: string, costYuan: number, date = '2026-11-24', extra: Partial<Run> = {}): RunRow => ({
     id: `r-${productId}-${date}-${costYuan}`, kind: 'daily', date, trackId: null, productId, sessionId: null, status: 'done', startedAt: null, endedAt: null,
-    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan, error: null, progress: null, productName: productId, ...extra,
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan, error: null, progress: null, subject: null, productName: productId, ...extra,
   })
 
   it('estimates from ¥0.5 to ¥1.0 a product a day until there are daily runs, and says it is an estimate', async () => {

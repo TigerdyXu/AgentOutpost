@@ -164,7 +164,7 @@ export const productView = (p: Product, extra: Partial<ProductView> = {}): Produ
 })
 export const run = (id: string, productId: string | null, status: Run['status'], extra: Partial<Run & { productName: string | null }> = {}): Run & { productName: string | null } => ({
   id, kind: 'daily', date: '2026-11-25', trackId: null, productId, sessionId: null, status, startedAt: '2026-11-25T08:00:00.000Z', endedAt: null,
-  usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, productName: null, ...extra,
+  usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, subject: null, productName: null, ...extra,
 })
 
 // ---- rendering ----

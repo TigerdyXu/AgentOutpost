@@ -93,15 +93,17 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
   useEffect(() => () => { opening.current?.abort() }, [])
 
   const shown = shownOf(run)
-  const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' ? trackName : run.productName
+  // A confirmation names the product it confirmed once there is one, before that what the user typed.
+  const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' ? trackName : run.productName ?? run.subject
   const started = run.startedAt ? Date.parse(run.startedAt) : NaN
   const ended = run.endedAt ? Date.parse(run.endedAt) : run.status === 'running' ? now : NaN
   const took = Number.isFinite(started) && Number.isFinite(ended) ? duration(t, (ended - started) / 1000) : t('runs.none')
   // What the run says about itself: a remark on one that finished, the reason of one that was skipped or failed.
   const note = shown === 'done' ? run.error : shown === 'skipped' || shown === 'failed' ? run.error || t('runs.noReason')
     : shown === 'interrupted' ? t('runs.interrupted') : null
-  // A follow-up is a chat the reader started, which the host cannot run again.
-  const retryable = (shown === 'failed' || shown === 'interrupted') && run.kind !== 'followup'
+  // A follow-up is a chat the reader started, which the host cannot run again; a confirmation is asked for again from
+  // 「＋ 添加产品」.
+  const retryable = (shown === 'failed' || shown === 'interrupted') && run.kind !== 'followup' && run.kind !== 'identify'
 
   const open = async () => {
     if (!run.sessionId) return

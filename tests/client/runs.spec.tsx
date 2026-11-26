@@ -81,6 +81,23 @@ describe('the list', () => {
     expect(text()).toContain('花费都是估算')
   })
 
+  it('names a confirming run 确认产品 with its product, or with the name typed before the product is known', async () => {
+    await show([
+      run('r3', null, 'running', { kind: 'identify', trackId: 't1', subject: 'Gemini Agent', startedAt: at('2026-11-25', '09:00') }),
+      run('r2', null, 'done', { kind: 'identify', trackId: 't1', subject: '不存在的产品', error: '没有找到这个产品', endedAt: at('2026-11-25', '08:31'), costYuan: 0.12 }),
+      run('r1', 'p1', 'done', { kind: 'identify', trackId: 't1', subject: '小豆', productName: '豆包·小豆', endedAt: at('2026-11-25', '08:21'), costYuan: 0.1 }),
+      run('r0', null, 'failed', { kind: 'identify', trackId: 't1', subject: 'Muse', error: '会话出错', endedAt: at('2026-11-25', '08:02') }),
+    ])
+    const [running, missing, joined, failed] = rows().map(cells)
+    expect(running).toMatchObject({ kind: '确认产品', object: 'Gemini Agent', status: '运行中' })
+    expect(missing).toMatchObject({ kind: '确认产品', object: '不存在的产品', status: '完成', note: '没有找到这个产品' })
+    expect(joined).toMatchObject({ kind: '确认产品', object: '豆包·小豆', status: '完成' }) // the product it joined, as Outpost keeps it
+    expect(rows()[2]!.querySelector('.op-icon')).not.toBeNull() // with its icon, like the product's other runs
+    // A confirmation is asked for again from 「＋ 添加产品」, not retried here.
+    expect(failed).toMatchObject({ kind: '确认产品', object: 'Muse', status: '失败', note: '会话出错' })
+    expect(inside(rows()[3]!, '重试')).toBeUndefined()
+  })
+
   it('says it has nothing yet, and what went wrong when it cannot read the runs', async () => {
     await show([])
     expect(text()).toContain('还没有运行记录')

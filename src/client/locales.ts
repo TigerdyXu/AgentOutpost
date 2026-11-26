@@ -157,6 +157,10 @@ const TEXT = {
   'pick.start': ['开始跟踪 {count} 个', 'Track {count}'],
   'pick.starting': ['正在开始…', 'Starting…'],
   'pick.early': ['推荐还在进行，之后找到的候选会放进「候选推荐」', 'The search is still running; what it finds later goes under “Suggestions”'],
+
+  // 「＋ 添加产品」 (M1.2): a product added by name that Outpost already follows, paused, joins as it is.
+  'add.pausedElsewhere': ['已在「{tracks}」暂停，加进来了 · 仍是暂停', 'Paused in 「{tracks}」; added here · still paused'],
+
   // 产品档案 (design §5.4): the header, the tabs, the dossier, the feed and the sources.
   'product.status.tracking': ['跟踪中', 'Tracking'],
   'product.status.paused': ['已暂停', 'Paused'],
@@ -243,6 +247,7 @@ const TEXT = {
   'runs.kind.verify': ['核查', 'Check'],
   'runs.kind.synthesize': ['汇总', 'Brief'],
   'runs.kind.followup': ['追问', 'Ask'],
+  'runs.kind.identify': ['确认产品', 'Confirm product'],
   'runs.object.brief': ['哨报', 'The brief'],
   'runs.status.queued': ['排队中', 'Waiting'],
   'runs.status.running': ['运行中', 'Running'],

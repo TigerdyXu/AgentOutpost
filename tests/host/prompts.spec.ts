@@ -7,8 +7,9 @@ const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程
 const BASELINE_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', dimensions: '- positioning：定位' }
 const VERIFY_VARS = { productName: 'Cursor', company: 'Anysphere', officialDomains: 'cursor.com', today: '2026-11-25' }
 const DAILY_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', lastRun: '2026-11-24' }
+const IDENTIFY_VARS = { trackName: '个人 Agent', trackBrief: '能替人办事的 Agent', today: '2026-11-26', name: 'Gemini Agent', officialUrl: 'https://gemini.google/agent/' }
 /** Characters of the prompt text itself, without whitespace and the filled-in values. */
-const ownLength = (name: 'recommend' | 'baseline' | 'verify' | 'daily') => readFileSync(join(packageRoot(), 'prompts', `${name}.md`), 'utf8').replace(/\{\{\w+\}\}/g, '').replace(/\s/g, '').length
+const ownLength = (name: 'recommend' | 'baseline' | 'verify' | 'daily' | 'identify') => readFileSync(join(packageRoot(), 'prompts', `${name}.md`), 'utf8').replace(/\{\{\w+\}\}/g, '').replace(/\s/g, '').length
 
 describe('renderPrompt', () => {
   it('finds the package directory from the module', () => {
@@ -33,6 +34,15 @@ describe('renderPrompt', () => {
     expect(ownLength('baseline')).toBeLessThanOrEqual(1600)
     expect(ownLength('verify')).toBeLessThanOrEqual(1500)
     expect(ownLength('daily')).toBeLessThanOrEqual(1500)
+    expect(ownLength('identify')).toBeLessThanOrEqual(800)
+  })
+
+  it('tells the confirming agent to check only the product typed, and when to turn it down', () => {
+    const identify = renderPrompt('identify', IDENTIFY_VARS)
+    for (const said of ['个人 Agent', '能替人办事的 Agent', '2026-11-26', 'Gemini Agent', 'https://gemini.google/agent/',
+      'outpost_submit_candidate', 'outpost_done', '只核实这一个', 'strong', 'consider', 'excluded', 'reason', '停', '不属于这个赛道', '不要编'])
+      expect(identify, said).toContain(said)
+    expect(identify).not.toMatch(/\{\{|\}\}/)
   })
 
   it('tells the agents the rules they are held to', () => {

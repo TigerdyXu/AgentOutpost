@@ -118,6 +118,20 @@ describe('openDb', () => {
     expect(repo.findingsOfDate('2026-11-20').map(f => f.id)).toEqual(['f-old'])
   })
 
+  it('adds the subject column to the runs of a database made before it, keeping them', () => {
+    const raw = new DatabaseSync(dbPath)
+    migrate(raw, MIGRATIONS.slice(0, 2)) // the schema as M1.1 shipped it
+    raw.prepare(`INSERT INTO runs (id, kind, date, track_id, product_id, session_id, status, started_at, ended_at, usage, cost_yuan, error, progress)
+      VALUES ('r-old', 'daily', '2026-11-20', NULL, 'p1', NULL, 'done', NULL, NULL, '{"inputTokens":0,"outputTokens":0,"cacheReadTokens":0}', 0.2, NULL, NULL)`).run()
+    raw.close()
+
+    const db = open()
+
+    expect(db.prepare('PRAGMA table_info(runs)').all().map(c => c.name)).toContain('subject')
+    const repo = new Repo(db, () => time)
+    expect(repo.getRun('r-old')).toMatchObject({ id: 'r-old', kind: 'daily', productId: 'p1', costYuan: 0.2, subject: null })
+  })
+
   it('close is safe to call twice', () => {
     const db = openDb(dbPath)
     db.close()
@@ -342,6 +356,28 @@ describe('Repo: tracks and products', () => {
     expect(repo.findSameProduct(repo.getProduct('x')!)?.id).toBe('later-baselining')
   })
 
+  it('findFollowedByName matches spelling variants and ignores candidates', () => {
+    const { repo, insertAlike } = twinsRepo()
+    insertAlike('tracked', '千问Go!', '阿里巴巴', 'tracking')
+    insertAlike('candidate', '千问Go', '阿里巴巴', 'candidate')
+    insertAlike('archived', '千问 GO', '阿里巴巴', 'archived')
+    insertAlike('elsewhere', '千问-Go', '别家', 'paused') // another company: the name alone is compared
+    insertAlike('building', '千问 Go', '阿里巴巴云', 'baselining')
+    insertAlike('plus', '千问Go Plus', '阿里巴巴', 'tracking')
+    insertAlike('kimi-plus', 'Kimi+', '月之暗面', 'tracking')
+    // Case, width, spaces and punctuation aside; tracking, paused and 建档中 count; oldest first.
+    expect(repo.findFollowedByName('千问go').map(p => p.id)).toEqual(['tracked', 'elsewhere', 'building'])
+    expect(repo.findFollowedByName(' 千问ＧＯ！ ').map(p => p.id)).toEqual(['tracked', 'elsewhere', 'building'])
+    // Symbols are part of the name, and another name is another product.
+    expect(repo.findFollowedByName('Kimi')).toEqual([])
+    expect(repo.findFollowedByName('ｋｉｍｉ＋').map(p => p.id)).toEqual(['kimi-plus'])
+    expect(repo.findFollowedByName('千问')).toEqual([])
+    // A candidate or an archived row is not a product Outpost follows.
+    repo.setProductStatus('tracked', 'archived')
+    repo.setProductStatus('elsewhere', 'candidate')
+    expect(repo.findFollowedByName('千问Go').map(p => p.id)).toEqual(['building'])
+  })
+
   it('upsertProduct on an existing product refreshes its facts but never demotes status or erases what it already knows', () => {
     const repo = newRepo()
     const first = repo.upsertProduct(product({ status: 'tracking', iconPath: 'icons/a.png', dailyBudgetYuan: 2, officialDomains: ['cursor.com'] }))
@@ -441,6 +477,24 @@ describe('Repo: candidates', () => {
     repo.addCandidate(cand({ trackId: 't2', batchId: 'zzz' }))
     expect(repo.latestBatchId('t1')).toBe('b2')
     expect(repo.latestBatchId('t2')).toBe('zzz')
+  })
+
+  it('latestBatchId ignores candidates an identify run handed in', () => {
+    const repo = newRepo()
+    const run = (kind: 'recommend' | 'identify') => repo.createRun({ kind, date: '2026-11-25', trackId: 't1', productId: null }).id
+    const first = run('recommend')
+    repo.addCandidate(cand({ batchId: first }))
+    const confirm = run('identify')
+    repo.addCandidate(cand({ batchId: confirm, productId: 'p9' })) // the product typed by name, confirmed after the batch
+    expect(repo.latestBatchId('t1')).toBe(first) // still the recommendation the user is picking from
+    expect(repo.listCandidates('t1', confirm)).toHaveLength(1) // kept, under its own run
+    const second = run('recommend')
+    repo.addCandidate(cand({ batchId: second, productId: 'p2' }))
+    repo.addCandidate(cand({ batchId: run('identify'), productId: 'p8' }))
+    expect(repo.latestBatchId('t1')).toBe(second)
+    // A track that has only had products confirmed by name has no batch at all.
+    repo.addCandidate(cand({ trackId: 't3', batchId: confirm }))
+    expect(repo.latestBatchId('t3')).toBeNull()
   })
 })
 
@@ -699,7 +753,10 @@ describe('Repo: briefs, runs, spending, settings', () => {
   it('createRun starts a run queued with nothing spent', () => {
     const repo = newRepo()
     const r = repo.createRun({ kind: 'daily', date: '2026-11-25', trackId: 't1', productId: 'p1' })
-    expect(r).toEqual({ id: r.id, kind: 'daily', date: '2026-11-25', trackId: 't1', productId: 'p1', sessionId: null, status: 'queued', startedAt: null, endedAt: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null })
+    expect(r).toEqual({ id: r.id, kind: 'daily', date: '2026-11-25', trackId: 't1', productId: 'p1', sessionId: null, status: 'queued', startedAt: null, endedAt: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, subject: null })
+    // A run about something typed by the user (a product named by hand) keeps those words.
+    const named = repo.createRun({ kind: 'identify', date: '2026-11-25', trackId: 't1', productId: null, subject: 'Gemini Agent' })
+    expect(repo.getRun(named.id)).toEqual({ ...named, subject: 'Gemini Agent' })
   })
 
   it('getRun reads one run as it is now, or null', () => {

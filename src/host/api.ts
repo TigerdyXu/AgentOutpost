@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
-import { FOLLOWED, identityKey } from '../core/identity.ts'
+import { FOLLOWED } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
@@ -21,7 +21,9 @@ import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
 import { ICON_TYPES } from './icons.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
+import { startIdentify } from './jobs/identify.ts'
 import { startRecommendation } from './jobs/recommend.ts'
+import { joinTrack } from './join.ts'
 import type { Runtime } from './runtime.ts'
 
 // ---- the contract ----
@@ -147,6 +149,15 @@ export interface Api {
    * that the track gives dimensions it lacks gets their cards at once.
    */
   'POST tracks/:id/start': { body: { candidateIds: Id[] }; response: { ok: true } }
+  /**
+   * Adds a product to the track by its name (and official site, if known). When exactly one product Outpost follows has
+   * that name (`findFollowedByName`: width, case, spaces and punctuation aside), it joins at once, as 开始跟踪 joins it,
+   * without a run: `linked` is its id and `status` how it stands (a tracked one gets the cards of the dimensions this track
+   * adds; a paused one stays paused, with nothing filled in). Otherwise a confirmation starts (`identify`, see
+   * `startIdentify`), and `runId` is its run: once over, the run names the product that joined (`productId`), or says
+   * why none did (`error`). A blank official site is one not given.
+   */
+  'POST tracks/:id/add-product': { body: { name: string; officialUrl?: string }; response: { linked: Id; status: FollowedStatus } | { runId: Id } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
   'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
@@ -184,6 +195,9 @@ export type ApiResponse<K extends keyof Api> = Api[K]['response']
 // ---- limits ----
 
 const MAX_NAME = 20
+/** A product's name, as the agent may hand one in (`outpost_submit_candidate`). */
+const MAX_PRODUCT_NAME = 30
+const MAX_URL = 500
 const MAX_BRIEF = 100
 const MAX_REFINE = 60
 const MAX_DIMENSION_LABEL = 20
@@ -198,6 +212,11 @@ const NewTrack = z.object({ name: text(MAX_NAME).min(1), brief: text(MAX_BRIEF).
 const TrackPatch = z.object({ name: text(MAX_NAME).min(1).optional(), brief: text(MAX_BRIEF).optional(), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).optional() })
 const Recommend = z.object({ refine: text(MAX_REFINE).optional() })
 const Start = z.object({ candidateIds: z.array(z.string().min(1)).min(1).max(MAX_START) })
+const AddProduct = z.object({
+  name: text(MAX_PRODUCT_NAME).min(1),
+  officialUrl: z.preprocess(value => value === null || (typeof value === 'string' && !value.trim()) ? undefined : value,
+    z.string().trim().max(MAX_URL).url({ protocol: /^https?$/, error: 'officialUrl must be an http:// or https:// address' }).optional()),
+})
 const ProductPatch = z.object({ status: z.enum(['tracking', 'paused']).optional(), dailyBudgetYuan: z.number().min(0).max(100_000).nullable().optional() })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
@@ -530,33 +549,22 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         const reviewed: Reviewed = { batchId: latest, candidateIds: repo.listCandidates(t.id, latest).map(c => c.id) }
         repo.setSetting(reviewedKey(t.id), reviewed)
       }
-      // A product already tracked (in another track) only joins this one: the scheduler fills in the dimensions this track
-      // adds before its next daily run. Starting a baseline beside that run would put two checks on one product.
-      // A tracked one (or one in 建档中 for another track) that this track gives dimensions it lacks gets their cards at
-      // once (Ruling 25), through the same path, which waits for its daily run or its baseline if one is in flight.
-      // A candidate that is another spelling of a product already tracked (or paused, or in 建档中) is that product: the
-      // tracked row joins this track instead of the candidate's own, which is left as it is, so one product is never
-      // baselined or run twice (M1.1 §13). Two ticked candidates that are spellings of each other are one product too: the
-      // first is taken, the later row stays a candidate and is not linked.
-      const fresh: Id[] = []
-      const lacking: Id[] = []
-      const linked = new Set(repo.productsOfTrack(t.id).map(p => p.id))
-      const taken = new Set<string>()
-      for (const c of chosen) {
-        const named = repo.getProduct(c.productId)
-        if (!named) continue
-        const p = named.status === 'candidate' || named.status === 'archived' ? repo.findSameProduct(named) ?? named : named
-        const same = identityKey(p.name, p.company)
-        if (taken.has(same)) continue
-        taken.add(same)
-        const had = new Set(repo.dimensionsOfProduct(p.id).map(d => d.key))
-        repo.linkProduct(t.id, p.id)
-        if (p.status === 'candidate' || p.status === 'archived') fresh.push(p.id)
-        else if (isWorkedOn(p) && !linked.has(p.id) && lacksCard(p.id, t.dimensions.map(d => d.key).filter(key => !had.has(key)))) lacking.push(p.id)
-      }
-      rt.background(rt.scheduler.baseline(fresh), `baseline of the products of track ${t.id}`)
-      if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products joining track ${t.id}`)
+      // The products join as `joinTrack` says: a twin followed elsewhere instead of the candidate's own row, baselines for
+      // the new ones, the missing cards at once for the followed ones.
+      joinTrack(rt, t.id, chosen.map(c => c.productId))
       return { ok: true }
+    },
+
+    'POST tracks/:id/add-product': async req => {
+      const t = track(req.params.id!)
+      const { name, officialUrl } = AddProduct.parse(await req.body())
+      const followed = repo.findFollowedByName(name)
+      if (followed.length === 1) {
+        const [joined] = joinTrack(rt, t.id, [followed[0]!.id])
+        return { linked: joined!.productId, status: joined!.status as FollowedStatus }
+      }
+      // Not followed, or the name alone cannot say which (the same name at two companies): confirm it first.
+      return { runId: await startIdentify({ ...rt.jobs, scheduler: rt.scheduler }, t.id, { name, officialUrl: officialUrl ?? null }) }
     },
 
     'GET products/:id': ({ params }) => {

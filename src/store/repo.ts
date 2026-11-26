@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
-import { FOLLOWED, identityKey } from '../core/identity.ts'
+import { FOLLOWED, identityKey, nameKey } from '../core/identity.ts'
 import type {
   Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunKind, Source, Track,
 } from '../core/types.ts'
@@ -49,7 +49,7 @@ const CARD_VERSION = new Codec<CardVersion>('card_versions', { productId: 'plain
 const CARD_EDIT = new Codec<CardEdit>('card_edits', { id: 'plain', productId: 'plain', dimension: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', changeNote: 'plain', findingIds: 'json', status: 'plain' })
 const FACTS = new Codec<Facts>('facts', { productId: 'plain', version: 'plain', form: 'plain', platforms: 'plain', price: 'plain', firstReleased: 'plain', rivals: 'json', createdAt: 'plain' })
 const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', findingIds: 'json', minorIds: 'json', quietProductIds: 'json', skipped: 'json', costYuan: 'plain', createdAt: 'plain', updatedAt: 'plain' })
-const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json' })
+const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup'>>
 type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late' | 'sourceIds' | 'verifiedOn'>>
@@ -139,6 +139,15 @@ export class Repo {
     return this.readingAlike(product.name, product.company).find(p => p.id !== product.id && FOLLOWED.includes(p.status)) ?? null
   }
 
+  /**
+   * The products Outpost follows (tracking, paused or in 建档中) whose name reads as `name` (`nameKey`: width, case, spaces
+   * and punctuation aside), whatever their company, oldest first: what a product added by name may already be.
+   */
+  findFollowedByName(name: string): Product[] {
+    const key = nameKey(name)
+    return this.select(PRODUCT, 'ORDER BY created_at, rowid').filter(p => FOLLOWED.includes(p.status) && nameKey(p.name) === key)
+  }
+
   getProduct(id: Id): Product | null { return this.get(PRODUCT, id) ?? null }
 
   setProductStatus(id: Id, status: ProductStatus): void { this.patch(PRODUCT, id, { status }, ['status']) }
@@ -176,9 +185,14 @@ export class Repo {
     if (!changes) throw new Error(`candidates: unknown id ${id}`)
   }
 
-  /** The batch whose candidate was added last, or null when the track has none. */
+  /**
+   * The batch of recommendations whose candidate was added last, or null when the track has none. The candidate a run of
+   * another kind handed in (a product confirmed by name, `identify`) is no batch to pick from; a batch id that names no
+   * run at all counts.
+   */
   latestBatchId(trackId: Id): Id | null {
-    const row = this.db.prepare('SELECT batch_id FROM candidates WHERE track_id = ? ORDER BY rowid DESC LIMIT 1').get(trackId)
+    const row = this.db.prepare(`SELECT batch_id FROM candidates WHERE track_id = ?
+      AND NOT EXISTS (SELECT 1 FROM runs WHERE runs.id = candidates.batch_id AND runs.kind <> 'recommend') ORDER BY rowid DESC LIMIT 1`).get(trackId)
     return row ? String(row.batch_id) : null
   }
 
@@ -296,10 +310,10 @@ export class Repo {
   /** Saves the brief as given, replacing any earlier one for its date. */
   putBrief(b: Brief): void { this.insert(BRIEF, b, {}, 'INSERT OR REPLACE') }
 
-  createRun(r: Pick<Run, 'kind' | 'date' | 'trackId' | 'productId'>): Run {
+  createRun(r: Pick<Run, 'kind' | 'date' | 'trackId' | 'productId'> & Partial<Pick<Run, 'subject'>>): Run {
     const run: Run = {
       ...r, id: randomUUID(), sessionId: null, status: 'queued', startedAt: null, endedAt: null,
-      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, costYuan: 0, error: null, progress: null, subject: r.subject ?? null,
     }
     this.insert(RUN, run)
     return run

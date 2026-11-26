@@ -8,7 +8,12 @@ import type { ProductStatus } from './types.ts'
  * 「Kimi+」 is not 「Kimi」.
  */
 export function identityKey(name: string, company: string): string {
-  return `${simplified(name)}\u0000${simplified(company)}`
+  return `${nameKey(name)}\u0000${simplified(company)}`
+}
+
+/** The name half of `identityKey`: how a product typed by name alone is compared, its company not known yet. */
+export function nameKey(name: string): string {
+  return simplified(name)
 }
 
 /**

@@ -414,12 +414,13 @@ describe('outpost_submit_candidate', () => {
   })
 
   it('writes the product as a candidate in the track, the batch being this run', async () => {
-    const call = recommend()
+    const batch = repo.createRun({ kind: 'recommend', date: '2026-11-25', trackId: track.id, productId: null })
+    const call = recommend({ runId: batch.id })
     await call('outpost_submit_candidate', candidate)
     const [c] = repo.listCandidates(track.id)
-    expect(c).toMatchObject({ trackId: track.id, batchId: run.id, tier: 'strong', oneLiner: '带 Agent 的编辑器', reason: '同类里更新最勤' })
+    expect(c).toMatchObject({ trackId: track.id, batchId: batch.id, tier: 'strong', oneLiner: '带 Agent 的编辑器', reason: '同类里更新最勤' })
     expect(repo.getProduct(c!.productId)).toMatchObject({ name: 'Windsurf', company: 'Codeium', region: 'overseas', form: 'IDE', status: 'candidate', iconPath: null, officialDomains: ['windsurf.com'] })
-    expect(repo.latestBatchId(track.id)).toBe(run.id)
+    expect(repo.latestBatchId(track.id)).toBe(batch.id)
   })
 
   it('leaves the status of a product that is already tracked alone', async () => {

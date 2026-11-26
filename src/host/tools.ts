@@ -13,7 +13,7 @@ import { canonicalUrl } from '../core/url.ts'
 import type { Repo } from '../store/repo.ts'
 import type { IconFetcher, ToolSpec } from './ports.ts'
 
-export type RunToolKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'followup'
+export type RunToolKind = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'followup'
 
 /** What a set of tools may touch: the store, the run it belongs to, and the one track and product it is about (if any). */
 export interface ToolScope {
@@ -37,6 +37,8 @@ const UNOPENED_NOTE = 'openedVia=unopened：quoteFound/supportsClaim 按未知�
 
 const TOOL_NAMES: Record<RunToolKind, string[]> = {
   recommend: ['outpost_submit_candidate', 'outpost_done'],
+  // One product confirmed by name: the same candidate, handed in once (`buildTools` refuses a second).
+  identify: ['outpost_submit_candidate', 'outpost_done'],
   baseline: ['outpost_read', 'outpost_submit_card', 'outpost_submit_facts', 'outpost_done'],
   // No outpost_submit_facts: the key facts are nobody's check (the panel says 「AI 整理 · 未核查」), so only the baseline writes them.
   daily: ['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_done'],
@@ -159,7 +161,7 @@ function distinctUrls(urls: string[]): string[] {
   return urls.filter(u => { const key = canonicalUrl(u); return seen.has(key) ? false : (seen.add(key), true) })
 }
 
-function buildTools(scope: ToolScope): Record<string, ToolSpec> {
+function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpec> {
   const { repo } = scope
   /** Sources added by `outpost_add_source` so far, per item. */
   const added = new Map<Id, number>()
@@ -225,6 +227,9 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       '提交一个候选产品（推荐阶段，找到一个就提交一个，不要攒着）。name、company ≤30 字，form ≤20 字，oneLiner ≤40 字，reason ≤60 字；tier 为 strong（强烈推荐）、consider（可以考虑）或 excluded（不推荐，reason 写原因）；articles 至少 1 篇你找到的相关报道（url、title、publishedAt），热度由它们的发布日期算出，不要编数字。officialUrl、iconUrl 知道就填。同一轮里同一个产品只提交一次。成功返回 { candidateId }。',
       SubmitCandidate, args => {
         const trackId = needTrack()
+        const [handedIn] = kind === 'identify' ? repo.listCandidates(trackId, scope.runId) : []
+        const before = handedIn && repo.getProduct(handedIn.productId)
+        if (handedIn) reject(`这次只确认一个产品，已经提交过${before ? `「${before.name}」` : ''}了，不要再提交别的产品。请调用 outpost_done 结束`)
         const officialHost = args.officialUrl ? new URL(args.officialUrl).hostname.toLowerCase().replace(/^www\./, '') : null
         const product = repo.upsertProduct({
           name: args.name, company: args.company, region: args.region, form: args.form, iconPath: null,
@@ -367,6 +372,6 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
 
 /** The tools one kind of run gets. */
 export function researchTools(kind: RunToolKind, scope: ToolScope): ToolSpec[] {
-  const all = buildTools(scope)
+  const all = buildTools(kind, scope)
   return TOOL_NAMES[kind].map(name => all[name]!)
 }

@@ -2,12 +2,11 @@
  * Runs Outpost's research sessions. Each session gets a `Run` row and, in order: a budget check (a run the budget does
  * not allow is `skipped` with the reason; a run on a local or subscription model costs ¥0 and is never refused), a
  * place among at most `maxParallel` sessions at a time (the budget is checked again once it gets one, so work queued
- * behind a run that used the budget up does not start; recommendations need no place, see `UNPOOLED`), its rounds
- * with the agent
- * (a transient model or network failure retried, an agent that stops without `outpost_done` nudged once), the
- * tokens it used priced into the run as they come, and, once the run is settled, its session let go of (`release`: the
- * browser the research preset launched for it closes then, before the next session takes its place). A check runs on
- * the verify model and everything else on the research
+ * behind a run that used the budget up does not start; recommendations and confirmations need no place, see
+ * `UNPOOLED`), its rounds with the agent (a transient model or network failure retried, an agent that stops without
+ * `outpost_done` nudged once), the tokens it used priced into the run as they come, and, once the run is settled
+ * (`SessionPlan.settle`), its session let go of (`release`: the browser the research preset launched for it closes
+ * then, before the next session takes its place). A check runs on the verify model and everything else on the research
  * model (`modelFor`), as configured when the session starts; its tokens are priced by that model's provider, so a run on a
  * local or subscription model costs ¥0 and takes nothing from the budget.
  */
@@ -49,6 +48,8 @@ export interface SessionScope {
   productId?: Id | null
   /** `YYYY-MM-DD`. A run belongs to that day's brief and budget, whenever it actually runs. */
   date?: string
+  /** What the user typed that the run is about (`Run.subject`). */
+  subject?: string | null
 }
 
 /** One session, made once its run has a place to run: its title, its first message, and its tools. */
@@ -57,6 +58,12 @@ export interface SessionPlan {
   prompt: string
   /** The session's tools; `onDone` is what their `outpost_done` calls. */
   tools(onDone: (summary: string) => void): ToolSpec[]
+  /**
+   * Acts on what the session handed in, given the run as it ended (status and error stored): called in the same
+   * synchronous step that stores them, so nobody reads the run as over before it is settled (letting go of the session,
+   * which comes after, can take a while). It may amend the run. A failure is logged and leaves the run as it ended.
+   */
+  settle?(run: Run): void
 }
 
 export const NUDGE_TEXT = '请继续完成任务；全部提交后调用 outpost_done。'
@@ -81,9 +88,10 @@ const INVALID_BUDGET = '每日预算设置无效'
 const NOT_DONE = '提醒后仍没有调用 outpost_done，按已提交的内容收尾'
 /**
  * Kinds that neither wait for nor take one of the `maxParallel` places: the user is watching a recommendation (§5.3
- * promises candidates in 1–3 minutes), and queued behind the daily runs it could wait for hours. The budget still applies.
+ * promises candidates in 1–3 minutes), or the confirmation of a product they added by name, and queued behind the daily
+ * runs either could wait for hours. The budget still applies.
  */
-const UNPOOLED = new Set<RunKind>(['recommend'])
+const UNPOOLED = new Set<RunKind>(['recommend', 'identify'])
 /** Rounds that ended this way may simply go on: the agent stopped talking, hit its output limit, or the host restarted. */
 const CONTINUABLE = new Set<SessionOutcome['reason']>(['completed', 'max-tokens', 'interrupted'])
 
@@ -151,7 +159,9 @@ export class JobRunner {
 
   /** Like `session`, but answers at once with the new run (queued), for a caller that needs its id before the session ends. */
   start(kind: RunKind, scope: SessionScope, build: (runId: Id) => SessionPlan): { run: Run; finished: Promise<Run> } {
-    const run = this.repo.createRun({ kind, date: scope.date ?? localDate(this.clock.now()), trackId: scope.trackId ?? null, productId: scope.productId ?? null })
+    const run = this.repo.createRun({
+      kind, date: scope.date ?? localDate(this.clock.now()), trackId: scope.trackId ?? null, productId: scope.productId ?? null, subject: scope.subject ?? null,
+    })
     const finished = this.execute(run, build)
     this.hold(finished)
     return { run, finished }
@@ -201,8 +211,13 @@ export class JobRunner {
 
   private async execute(run: Run, build: (runId: Id) => SessionPlan): Promise<Run> {
     const id = run.id
+    let plan: SessionPlan | undefined
     const finish = (status: RunStatus, error: string | null): Run => {
       this.repo.updateRun(id, { status, error, endedAt: this.clock.now().toISOString() })
+      if (plan?.settle) {
+        try { plan.settle(this.repo.getRun(id)!) }
+        catch (failure) { this.log(`run ${id} could not be settled: ${failure instanceof Error ? failure.stack ?? failure.message : String(failure)}`) }
+      }
       return this.repo.getRun(id)!
     }
     const refused = this.refusal(run)
@@ -219,7 +234,7 @@ export class JobRunner {
       const late = this.refusal(run, model)
       if (late) return finish('skipped', late)
       let done = false
-      const plan = build(id)
+      plan = build(id)
       const tools = plan.tools(() => { done = true })
       const sessionId = `outpost-${run.kind}-${id.slice(0, 8)}`
       this.repo.updateRun(id, { status: 'running', startedAt: this.clock.now().toISOString(), sessionId })

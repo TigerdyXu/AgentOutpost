@@ -307,6 +307,33 @@ describe('sessions', () => {
     expect(repo.spentOn(TODAY, 'p1')).toBe(4.72)
   })
 
+  it('settles a run in the step that stores it as over, before its session is let go of, and logs a settle that fails', async () => {
+    const seen: { status: string; error: string | null; releasedYet: boolean }[] = []
+    const settled = (fail = false) => (runId: Id): SessionPlan => ({
+      ...build(runId),
+      settle: run => {
+        seen.push({ status: run.status, error: run.error, releasedYet: driver.released.includes(run.sessionId!) })
+        if (fail) throw new Error('出错了')
+        repo.updateRun(run.id, { error: '已处理' })
+      },
+    })
+    driver.script['outpost-daily-'] = finishes()
+    const run = await runner.session('daily', { productId: 'p1' }, settled())
+    expect(seen).toEqual([{ status: 'done', error: null, releasedYet: false }])
+    expect(run).toMatchObject({ status: 'done', error: '已处理' }) // what it settled is what comes back
+
+    driver.script['outpost-daily-'] = () => failure('Invalid API key')
+    const failed = await runner.session('daily', { productId: 'p1' }, settled(true))
+    expect(seen[1]).toEqual({ status: 'failed', error: 'Invalid API key', releasedYet: false })
+    expect(failed).toMatchObject({ status: 'failed', error: 'Invalid API key' }) // left as it ended
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(`run ${failed.id} could not be settled`))
+
+    // A run the budget refuses never had a session to settle.
+    repo.updateRun(seedRun.id, { costYuan: 20 })
+    expect(await runner.session('daily', { productId: 'p1' }, settled())).toMatchObject({ status: 'skipped' })
+    expect(seen).toHaveLength(2)
+  })
+
   it('releases a research session once its run is over', async () => {
     // What the run says when its session is let go of: the session's browser closes only after the run is settled.
     const statusAtRelease = new Map<string, string | undefined>()

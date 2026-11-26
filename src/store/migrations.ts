@@ -176,6 +176,11 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE findings ADD COLUMN verified_on TEXT;
   CREATE INDEX findings_verified_on ON findings (verified_on);
   `,
+  // 3: what the user typed that a run is about: the name of a product added by hand (M1.2), shown in 运行记录 until the
+  // product is known.
+  `
+  ALTER TABLE runs ADD COLUMN subject TEXT;
+  `,
 ]
 
 /**

@@ -16,6 +16,7 @@ const TODAY = '2026-11-25'
 const RECOMMEND = 'outpost-recommend-'
 const DAILY = 'outpost-daily-'
 const BASELINE = 'outpost-baseline-'
+const IDENTIFY = 'outpost-identify-'
 
 let host: ApiHost
 let rt: Runtime
@@ -832,6 +833,110 @@ describe('POST tracks/:id/start', () => {
     expect((await host.call('POST', 'tracks/nope/start', { candidateIds: [foreign.id] })).status).toBe(404)
     expect(repo.listTracks().find(t => t.id === track.id)!.status).toBe('picking')
     expect(repo.getProduct('c1')!.status).toBe('candidate')
+  })
+})
+
+describe('POST tracks/:id/add-product', () => {
+  const PRICING: Dimension = { key: 'pricing-model', label: '定价模式' }
+
+  it('adding a name that is followed in another track links it without a run', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('tracked', '千问Go!', '阿里巴巴', 'tracking', a.id)
+    for (const dim of DEFAULT_DIMENSIONS) card('tracked', dim.key, 1, [])
+    addAlike('copy', '千问Go', '阿里巴巴', 'candidate') // a candidate row of the same product does not count
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+
+    const reply = ok(await host.call('POST', `tracks/${b.id}/add-product`, { name: '千问go' }))
+
+    expect(reply.json()).toEqual({ linked: 'tracked', status: 'tracking' })
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['tracked'])
+    expect(repo.productsOfTrack(a.id).map(p => p.id)).toEqual(['tracked']) // still in its own track
+    await flush()
+    expect(repo.listRuns('')).toEqual([]) // nothing confirmed, nothing spent
+    expect(host.driver.runs).toEqual([])
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['tracked']) // for the one dimension B adds
+    expect(baseline.mock.calls.flat(2)).toEqual([]) // no baseline
+    expect(repo.getProduct('tracked')!.status).toBe('tracking')
+  })
+
+  it('adding the name of a paused product links it as it is, neither resumed nor topped up', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('stopped', 'Muse', 'Meta', 'paused', a.id)
+    const b = addTrack({ name: '赛道B', dimensions: [...DEFAULT_DIMENSIONS, PRICING] })
+
+    expect(ok(await host.call('POST', `tracks/${b.id}/add-product`, { name: 'muse', officialUrl: 'https://muse.meta.com/' })).json())
+      .toEqual({ linked: 'stopped', status: 'paused' })
+
+    await flush()
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['stopped'])
+    expect(repo.getProduct('stopped')!.status).toBe('paused')
+    expect(topUpNow).not.toHaveBeenCalled()
+    expect(baseline.mock.calls.flat(2)).toEqual([])
+    expect(repo.listRuns('')).toEqual([])
+  })
+
+  it('adding an unknown name starts an identify run', async () => {
+    const held = gate()
+    host.driver.script[IDENTIFY] = async round => {
+      await held.promise
+      if (!round.text.includes('Gemini Agent')) { await round.done('没有找到这个产品'); return completed() }
+      await round.call('outpost_submit_candidate', {
+        name: 'Gemini Agent', company: 'Google', region: 'overseas', form: '网页', oneLiner: 'Gemini 里能替你办事的 Agent', tier: 'strong', reason: '11 月向 Ultra 用户开放',
+        officialUrl: 'https://gemini.google/agent/', articles: [{ url: 'https://blog.google/gemini-agent', title: 'Gemini Agent 上线', publishedAt: '2026-11-20' }],
+      })
+      await round.done('已确认：Gemini Agent（Google）')
+      return completed()
+    }
+    host.driver.script[BASELINE] = holds(new Promise(() => {})) // its baseline starts and stays running
+    const t = addTrack({ name: '个人 Agent', brief: '能替人办事的 Agent' })
+    // The same name at two companies, both followed: the name alone cannot say which, so it is confirmed too.
+    const other = addTrack({ name: '别的赛道' })
+    addAlike('one', 'Nova', 'Amazon', 'tracking', other.id)
+    addAlike('two', 'Nova', '某创业公司', 'tracking', other.id)
+
+    const { runId } = ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: ' Gemini Agent ', officialUrl: 'https://gemini.google/agent/' })).json<{ runId: Id }>()
+
+    expect(repo.getRun(runId)).toMatchObject({ kind: 'identify', trackId: t.id, productId: null, subject: 'Gemini Agent' })
+    expect(repo.productsOfTrack(t.id)).toEqual([])
+    await vi.waitFor(() => { expect(host.driver.runs.map(r => r.title)).toEqual(['前哨 · 确认产品 Gemini Agent']) })
+    expect(host.driver.runs[0]!.prompt).toContain('https://gemini.google/agent/')
+    // The run log names it by what was typed while the product is not known yet.
+    const listed = ok(await host.call('GET', 'runs')).json<ApiResponse<'GET runs'>>().runs.find(r => r.id === runId)!
+    expect(listed).toMatchObject({ kind: 'identify', status: 'running', subject: 'Gemini Agent', productName: null })
+
+    held.open()
+    await vi.waitFor(() => { expect(host.driver.runs.map(r => r.title)).toContain('前哨 · Gemini Agent 建档') })
+    const joined = repo.productsOfTrack(t.id)
+    expect(joined.map(p => [p.name, p.company, p.status])).toEqual([['Gemini Agent', 'Google', 'baselining']])
+    expect(repo.getRun(runId)).toMatchObject({ status: 'done', error: null, productId: joined[0]!.id })
+    expect(ok(await host.call('GET', 'runs')).json<ApiResponse<'GET runs'>>().runs.find(r => r.id === runId)).toMatchObject({ productName: 'Gemini Agent' })
+    // It is not a batch to pick from.
+    expect(ok(await host.call('GET', `tracks/${t.id}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>()).toMatchObject({ batchId: null, candidates: [] })
+
+    ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: 'nova' }))
+    expect(repo.listRuns('').filter(r => r.kind === 'identify').map(r => r.subject)).toEqual(['nova', 'Gemini Agent'])
+  })
+
+  it('rejects an empty name and a non-http official url', async () => {
+    vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const t = addTrack()
+    addProduct('p1', 'Cursor', 'tracking')
+    for (const body of [{ name: '' }, { name: '   ' }, {}, { name: 'x'.repeat(31) }, { name: 'Cursor', officialUrl: 'ftp://cursor.com/' },
+      { name: 'Cursor', officialUrl: 'cursor.com' }, { name: 'Cursor', officialUrl: 'javascript:alert(1)' }, { name: 'Cursor', officialUrl: 42 }]) {
+      expect((await host.call('POST', `tracks/${t.id}/add-product`, body)).status, JSON.stringify(body)).toBe(400)
+    }
+    expect((await host.call('POST', 'tracks/nope/add-product', { name: 'Cursor' })).status).toBe(404)
+    await flush()
+    expect(repo.productsOfTrack(t.id)).toEqual([])
+    expect(repo.listRuns('')).toEqual([])
+    // A blank official site is one not given.
+    expect(ok(await host.call('POST', `tracks/${t.id}/add-product`, { name: 'Cursor', officialUrl: '  ' })).json()).toEqual({ linked: 'p1', status: 'tracking' })
   })
 })
 
