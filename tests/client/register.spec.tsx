@@ -52,6 +52,15 @@ it('registers main, sidebar entry, trailing count and plugin config row', () => 
   expect(Object.keys(dictionaries)).toEqual(['outpost'])
 })
 
+it('registers the Chinese dictionary for both locales', () => {
+  const { dictionaries } = fixture()
+  // The panel is always Chinese, whatever the Desktop's language: the English column is given the Chinese one.
+  const { zh, en } = dictionaries.outpost as { zh: Record<string, unknown>; en: Record<string, unknown> }
+  expect(zh.panel).toBe('前哨')
+  expect(en.panel).toBe('前哨')
+  expect(en).toBe(zh)
+})
+
 it('shows the two-column panel in main and a telescope in the sidebar', async () => {
   stubApi({ 'GET state': state() })
   const { entry } = fixture()

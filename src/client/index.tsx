@@ -13,7 +13,7 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { StateView } from '../host/api.ts'
 import STYLES from './styles.css?raw'
 import { call, usePoll } from './api.ts'
-import { en, NS, zh, type T } from './locales.ts'
+import { NS, zh, type T } from './locales.ts'
 import { SettingsForm, usePageForm } from './pages/Settings.tsx'
 import type { SessionAccess } from './shell/context.ts'
 import { App } from './shell/App.tsx'
@@ -122,7 +122,9 @@ export function apply(ctx: ClientContext): void {
     document.head.append(style)
     return () => { style.remove() }
   }, 'dsh-outpost: stylesheet')
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-outpost: dictionaries')
+  // The panel is always Chinese, whatever language the Desktop runs in: the English slot is given the Chinese dictionary too
+  // (the English column stays in locales.ts).
+  ctx.effect(() => ctx.locale.register(NS, { zh, en: zh }), 'dsh-outpost: dictionaries')
   const t = ctx.locale.bind(NS) as T
   const count = unreadCount()
   ctx.effect(() => () => { count.close() }, 'dsh-outpost: unread count')

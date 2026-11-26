@@ -169,6 +169,26 @@ describe('the day', () => {
     expect(headlines()).toEqual(['标题 f1', '标题 f2', '标题 f3'])
   })
 
+  it('names the filtered track on a card of a product in two tracks', async () => {
+    // 小豆 is in 「Personal Agent」 (its first track) and 「手机 AI 助理」.
+    const phone = track('t3', '手机 AI 助理', [tracked(doubao)])
+    await show(view([finding('f1', 'p1')]), { state: { ...shellState, tracks: [...shellState.tracks, phone] } })
+    const pill = (name: string) => all('.op-filter button').find(button => button.textContent?.startsWith(name))!
+    await click(pill('手机 AI 助理'))
+    expect(cardOf('标题 f1').textContent).toContain('· 手机 AI 助理')
+    expect(cardOf('标题 f1').textContent).not.toContain('Personal Agent')
+    await click(pill('Personal Agent'))
+    expect(cardOf('标题 f1').textContent).toContain('· Personal Agent')
+    expect(cardOf('标题 f1').textContent).not.toContain('手机 AI 助理')
+  })
+
+  it('names every track of the product when the brief is not filtered', async () => {
+    const phone = track('t3', '手机 AI 助理', [tracked(doubao)])
+    await show(view([finding('f1', 'p1')]), { state: { ...shellState, tracks: [...shellState.tracks, phone] } })
+    // In the track list's order.
+    expect(cardOf('标题 f1').querySelector('.op-card-track')?.textContent).toBe('· Personal Agent、手机 AI 助理')
+  })
+
   it('leaves a track with no products out of the pills', async () => {
     const picking = track('t3', 'AI 编程助手', [], { status: 'picking' })
     await show(view([finding('f1', 'p1')]), { state: { ...shellState, tracks: [...shellState.tracks, picking] } })
