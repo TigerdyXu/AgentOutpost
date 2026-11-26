@@ -390,6 +390,17 @@ describe('Scheduler: when to run', () => {
     expect(calls.rebaseline).toEqual([['p4'], ['p4']]) // the next day it is tried again
   })
 
+  it('baselines a stuck product again the same day when its baseline was cut short by a stop', async () => {
+    db.prepare('DELETE FROM track_products').run()
+    addProduct('p4', 'Zed', 'baselining', false)
+    const cut = repo.createRun({ kind: 'baseline', date: DAY, trackId: null, productId: 'p4' })
+    repo.updateRun(cut.id, { status: 'failed', startedAt: local('2026-11-25T08:00').toISOString(), endedAt: local('2026-11-25T08:05').toISOString(), error: STOPPED_ERROR })
+    clock.set('2026-11-25T09:00')
+    scheduler.start()
+    await flush()
+    expect(calls.rebaseline).toEqual([['p4']])
+  })
+
   it('stops looking once stopped', async () => {
     repo.setSetting(LAST_COMPLETED, '2026-11-24')
     scheduler.start()
@@ -964,6 +975,30 @@ describe('Scheduler: 重试 of a failed check', () => {
     holds['check p2']!.open()
     await Promise.all([second, now])
     expect(events.indexOf('check p2 done')).toBeLessThan(events.lastIndexOf('daily p2'))
+  })
+
+  it('never deadlocks with a top-up asked for while it waits: the top-up it waits for runs first, the one asked for later after it', async () => {
+    db.prepare("DELETE FROM card_versions WHERE product_id = 'p2'").run() // Windsurf misses a card, and keeps missing it
+    const filled = gate()
+    let baselines = 0
+    deps.rebaseline = async ids => {
+      const n = ++baselines
+      events.push(`rebaseline ${ids.join(',')} ${n}`)
+      if (n === 1) await filled.promise
+      events.push(`rebaseline ${ids.join(',')} ${n} over`)
+    }
+    scheduler = new Scheduler(deps)
+
+    const first = scheduler.baseline(['p2']) // a baseline in flight
+    const check = scheduler.recheck('p2', DAY) // waits for it
+    const more = scheduler.topUpNow(['p2']) // joins it, then asks for what is still missing: after the check
+    await flush()
+    filled.open()
+    await Promise.all([first, check, more])
+
+    expect(events.filter(e => e.startsWith('rebaseline') || e.startsWith('check'))).toEqual([
+      'rebaseline p2 1', 'rebaseline p2 1 over', 'check p2', 'check p2 done', 'rebaseline p2 2', 'rebaseline p2 2 over',
+    ])
   })
 })
 

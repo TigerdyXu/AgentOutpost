@@ -165,12 +165,14 @@ export class Scheduler {
       return null
     }
     const date = localDate(clock.now())
-    await this.checks.get(productId) // a check retried on its own: the update starts once it is over
-    const running = this.busy.get(productId)
-    if (running) return running
-    await this.topUp(productId, date)
-    const inFlight = this.busy.get(productId) // the day may have started it meanwhile
-    if (inFlight) return inFlight
+    for (;;) {
+      const checking = this.checks.get(productId) // a check retried on its own: the update starts once it is over
+      if (checking) { await checking; continue }
+      const running = this.busy.get(productId)
+      if (running) return running
+      await this.topUp(productId, date)
+      if (!this.checks.has(productId) && !this.busy.has(productId)) break // else the day, or 重试, started it meanwhile
+    }
     const run = await this.daily(productId, date)
     await this.queueBrief(date, `brief after updating product ${productId}`,
       () => repo.getBrief(date) ? this.deps.appendLate(date, productId) : this.deps.synthesize(date))
@@ -204,11 +206,13 @@ export class Scheduler {
 
   /**
    * 重试 of a failed check: checks the product again for `date` (`verifyProduct`), without a daily session. It never runs
-   * beside the product's daily run, baseline or another check (it waits for them, and they for it), and joins a recheck
-   * of the product already running. When the check runs to its end, the product's daily run of `date` that failed only
-   * because its check did not finish (「核查没有完成：…」) counts as done, its work being complete now (unless one that day
-   * is done already), and the brief of `date` takes what was verified, as after 「立即更新」. Resolves once it is over;
-   * never rejects (a check that did not finish is logged, and everything stays as it was). Once stopped, nothing starts.
+   * beside the product's daily run, baseline or another check: it waits for the daily run and the baseline in flight when
+   * it is asked for, and whatever starts on the product after that waits for it (so neither ever waits for the other);
+   * a recheck of the product already running is joined. When the check runs to its end, the product's daily run of `date`
+   * that failed only because its check did not finish (「核查没有完成：…」) counts as done, its work being complete now
+   * (unless one that day is done already), and the brief of `date` takes what was verified, as after 「立即更新」.
+   * Resolves once it is over; never rejects (a check that did not finish is logged, and everything stays as it was). Once
+   * stopped, nothing starts.
    * @throws When the product does not exist.
    */
   recheck(productId: Id, date: string): Promise<void> {
@@ -216,9 +220,9 @@ export class Scheduler {
     if (!repo.getProduct(productId)) throw new Error(`Unknown product ${productId}`)
     const running = this.checks.get(productId)
     if (running) return running
+    const before = [this.busy.get(productId), this.topUps.get(productId)]
     const work: Promise<void> = (async () => {
-      for (let other = this.busy.get(productId) ?? this.topUps.get(productId); other; other = this.busy.get(productId) ?? this.topUps.get(productId))
-        await other.catch(() => {})
+      await Promise.allSettled(before)
       if (this.stopped) return
       try {
         await this.deps.verifyProduct(productId, date)
@@ -300,8 +304,8 @@ export class Scheduler {
   }
 
   /**
-   * The day's work: the tracked products to run (in tracking order), and those stuck in 建档中 whose baseline has not
-   * started yet that day (a day run again, after a restart, does not baseline them again).
+   * The day's work: the tracked products to run (in tracking order), and those stuck in 建档中 without a baseline that
+   * started that day and was not cut short by a stop (a day run again, after a restart, does not baseline them again).
    */
   private plan(date: string): { toRun: Id[]; stuck: Id[] } {
     const { repo } = this.deps
@@ -315,7 +319,7 @@ export class Scheduler {
       const { finished, failures } = this.standing(date, id)
       return !finished && failures < MAX_DAILY_FAILURES
     })
-    const triedToday = new Set(repo.runsOfDate(date, 'baseline').filter(r => r.startedAt !== null).map(r => r.productId))
+    const triedToday = new Set(repo.runsOfDate(date, 'baseline').filter(r => r.startedAt !== null && r.error !== STOPPED_ERROR).map(r => r.productId))
     return { toRun, stuck: all.filter(p => p.status === 'baselining' && !triedToday.has(p.id)).map(p => p.id) }
   }
 
