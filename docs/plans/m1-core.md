@@ -720,7 +720,7 @@ Run: `pnpm check && pnpm pack`
 Expected: 生成 `dsh-outpost-<version>.tgz`
 
 - [ ] **Step 2: 装进桌面版**（先确认桌面版空闲、正常退出；装前备份 `~/.dsh/profiles/desktop/package.json` 与 `cordis.patch.yml` 到 `~/Projects/AgentOutpost-data/backup/`）
-Run: `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin --profile desktop add /Users/tiger/Projects/AgentOutpost/dsh-outpost-<version>.tgz`，再在 `~/.dsh/profiles/desktop/cordis.patch.yml` 给 `dsh-outpost` 行加 `config: { dataDir: /Users/tiger/Projects/AgentOutpost-data }`，打开桌面版。
+Run: `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" plugin --profile desktop add /Users/tiger/Projects/AgentOutpost/dsh-outpost-<version>.tgz`，再在 `~/.dsh/profiles/desktop/cordis.patch.yml` 给 `outpost` 行（包自带补丁插入的行 id 是 `outpost`，`dsh-outpost` 是包名）加 `config: { dataDir: /Users/tiger/Projects/AgentOutpost-data }`，打开桌面版。完整步骤见 `dev/README.md`「装进桌面版」。
 Expected: `dsh plugin --profile desktop list` 列出 `dsh-outpost`；侧栏出现「前哨」；`incompatible-version` 不出现。
 
 - [ ] **Step 2b: 开启浏览器兜底**：在「插件」页启用 `dsh-browser-use` 和 Playwright 两行，重启；设置页不再显示提示。
