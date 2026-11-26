@@ -360,7 +360,7 @@ describe('api client', () => {
       'POST products/:id/update-now': { runId: 'r1' },
       'PATCH tracks/:id': track('t1', '眼镜', []).track,
       'GET state': state(),
-      'GET brief': { brief: null, findings: [], products: [], sources: [], prevDate: null },
+      'GET brief': { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null },
     })
     expect(await call('POST findings/:id/read', { id: 'f 1/2' })).toEqual({ ok: true })
     expect(await call('POST products/:id/update-now', { id: 'p1' })).toEqual({ runId: 'r1' })

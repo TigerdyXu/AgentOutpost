@@ -63,6 +63,8 @@ export interface BriefView {
   products: Product[]
   /** The sources of `findings`. */
   sources: Source[]
+  /** For each of `findings` that changed the profile, the dimensions it changed (`changedBy`). */
+  changed: Record<Id, DimensionKey[]>
   /** The latest earlier day with a brief (「‹ 昨天」), or null. */
   prevDate: string | null
 }
@@ -116,7 +118,7 @@ export interface Api {
   'POST tracks/:id/start': { body: { candidateIds: Id[] }; response: { ok: true } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
-  'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[] } }
+  'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
   'PATCH products/:id': { body: { status?: 'tracking' | 'paused'; dailyBudgetYuan?: number | null }; response: Product }
   /** 「立即更新」: answers at once with the run it started (a baseline first, if a card is missing), or the one in flight. */
   'POST products/:id/update-now': { response: { runId: Id } }
@@ -334,6 +336,31 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     return day.some(r => r.kind === 'daily' && r.status === 'done') || later.some(r => r.kind === run.kind)
   }
 
+  /**
+   * The dimensions each finding changed (「改了档案：…」, 看改动): those with a card version that rests on it. What the agent
+   * says a finding affects (`Finding.dimensions`) is only a claim; an edit the check rejected changed nothing. The ones it
+   * names come first, in its order, then the others in the product's order. Findings that changed nothing are left out.
+   */
+  const changedBy = (findings: Finding[]): Record<Id, DimensionKey[]> => {
+    const wanted = new Set(findings.map(f => f.id))
+    const found = new Map<Id, Set<DimensionKey>>()
+    for (const productId of new Set(findings.map(f => f.productId))) {
+      const keys = new Set([...repo.dimensionsOfProduct(productId).map(d => d.key), ...repo.latestCards(productId).map(c => c.dimension)])
+      for (const key of keys) {
+        for (const version of repo.cardHistory(productId, key)) {
+          for (const id of version.findingIds) if (wanted.has(id)) found.set(id, (found.get(id) ?? new Set()).add(key))
+        }
+      }
+    }
+    const out: Record<Id, DimensionKey[]> = {}
+    for (const f of findings) {
+      const keys = found.get(f.id)
+      if (!keys) continue
+      out[f.id] = [...f.dimensions.filter(key => keys.has(key)), ...[...keys].filter(key => !f.dimensions.includes(key))]
+    }
+    return out
+  }
+
   const table: { [K in keyof Api]: Handler<K> } = {
     'GET health': () => ({ ok: true }),
 
@@ -361,13 +388,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const date = query.date === undefined ? rt.today() : day(query.date, 'date')
       const brief = repo.getBrief(date)
       const prevDate = repo.previousBriefDate(date)
-      if (!brief) return { brief: null, findings: [], products: [], sources: [], prevDate }
+      if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate }
       const findings = [...brief.findingIds, ...brief.minorIds].flatMap(id => repo.getFinding(id) ?? []).filter(isShown)
       return {
         brief,
         findings,
         products: products([...findings.map(f => f.productId), ...brief.quietProductIds, ...brief.skipped.map(s => s.productId)]),
         sources: repo.getSources(findings.flatMap(f => f.sourceIds)),
+        changed: changedBy(findings),
         prevDate,
       }
     },
@@ -487,7 +515,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'GET products/:id/findings': ({ params }) => {
       const p = product(params.id!)
       const findings = repo.findingsOfProduct(p.id).filter(f => f.status !== 'pending' && f.status !== 'withdrawn')
-      return { findings, sources: repo.getSources(findings.flatMap(f => f.sourceIds)) }
+      return { findings, sources: repo.getSources(findings.flatMap(f => f.sourceIds)), changed: changedBy(findings) }
     },
 
     'PATCH products/:id': async req => {

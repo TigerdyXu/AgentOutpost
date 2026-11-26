@@ -64,7 +64,7 @@ const view = (extra: Partial<ProductView> = {}): ProductView => productView(doub
 })
 
 const route = (extra: Partial<Extract<Route, { page: 'product' }>> = {}): Route => ({ page: 'product', productId: 'p1', tab: 'dossier', ...extra })
-const noFindings = { findings: [] as Finding[], sources: [] as Source[] }
+const noFindings = { findings: [] as Finding[], sources: [] as Source[], changed: {} }
 
 /** The product page over a stubbed API. */
 async function show(answer: ProductView | ReturnType<typeof fail> = view(), shell: Partial<Shell> = {}, extra: Record<string, unknown> = {}) {
@@ -750,7 +750,7 @@ describe('the feed tab', () => {
     finding('f5', 'p1', { headline: '转正了', createdAt: '2026-11-20T08:05:00.000Z', statusNote: '已证实', verifiedOn: '2026-11-21' }),
   ]
   const feed = (extra: Record<string, unknown> = {}, shell: Partial<Shell> = {}) =>
-    show(view(), { route: route({ tab: 'feed' }), ...shell }, { 'GET products/:id/findings': { findings, sources: [sources[2]!] }, 'POST followup': { sessionId: 's-1' }, ...extra })
+    show(view(), { route: route({ tab: 'feed' }), ...shell }, { 'GET products/:id/findings': { findings, sources: [sources[2]!], changed: { f1: ['positioning'], f2: ['business'] } }, 'POST followup': { sessionId: 's-1' }, ...extra })
   const headlines = () => all('.op-feed .op-card-title').map(title => title.textContent)
   const feedCard = (headline: string) => all('.op-feed .op-card').find(card => card.querySelector('.op-card-title')?.textContent === headline)!
 
@@ -817,8 +817,13 @@ describe('the feed tab', () => {
     expect(feedCard('传闻接入电商').querySelector('.op-card-changed')).toBeNull()
     // Verified and changing 商业化: its label, not its key.
     unmount()
-    await feed({ 'GET products/:id/findings': { findings: [finding('f9', 'p1', { headline: '开始收费', dimensions: ['business', 'positioning'] })], sources: [] } })
+    await feed({ 'GET products/:id/findings': { findings: [finding('f9', 'p1', { headline: '开始收费', dimensions: ['business', 'positioning', 'audience'] })], sources: [], changed: { f9: ['business', 'positioning'] } } })
     expect(feedCard('开始收费').querySelector('.op-card-changed')?.textContent).toBe('改了档案：商业化、定位')
+    // What it names but did not change is not claimed.
+    unmount()
+    await feed({ 'GET products/:id/findings': { findings: [finding('f9', 'p1', { headline: '开始收费', dimensions: ['business'] })], sources: [], changed: {} } })
+    expect(feedCard('开始收费').querySelector('.op-card-changed')).toBeNull()
+    expect([...feedCard('开始收费').querySelectorAll('button')].map(button => button.textContent)).toEqual(['追问'])
   })
 })
 
@@ -865,8 +870,8 @@ describe('the sources tab', () => {
 
 describe('inside the shell', () => {
   it('opens the card a finding points to, from the feed, on the same page', async () => {
-    const changing = finding('f1', 'p1', { headline: '安卓全量开放', dimensions: ['audience'] })
-    stubApi({ 'GET state': shellState, 'GET products/:id': view(), 'GET products/:id/findings': { findings: [changing], sources: [] } })
+    const changing = finding('f1', 'p1', { headline: '安卓全量开放', dimensions: ['positioning', 'audience'] })
+    stubApi({ 'GET state': shellState, 'GET products/:id': view(), 'GET products/:id/findings': { findings: [changing], sources: [], changed: { f1: ['audience'] } } })
     localStorage.setItem('outpost.route', JSON.stringify({ page: 'product', productId: 'p1', tab: 'feed' }))
     await mount(<App t={t} />)
     expect(dcards()).toHaveLength(0)

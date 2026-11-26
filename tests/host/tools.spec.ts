@@ -158,6 +158,16 @@ describe('outpost_submit_finding', () => {
     expect(repo.findingsOfProduct(product.id)).toHaveLength(1)
   })
 
+  it('keeps one source per page when a finding cites the same page twice', async () => {
+    const call = toolbox('daily')
+    const page = source({ url: 'https://www.pingwest.com/a/319864', publisher: '品玩', kind: 'media', isOfficial: false, quote: '小豆可以连接 40 多款应用' })
+    const other = source({ url: 'https://36kr.example/p/9', publisher: '36氪', kind: 'media', isOfficial: false, quote: '端内直接买票' })
+    // The same article again (once with a tracking parameter), with another sentence of it: still one source.
+    const again = { ...page, url: 'https://www.pingwest.com/a/319864?utm_source=feed', quote: '端内即可完成购票' }
+    const { findingId } = await call('outpost_submit_finding', { ...finding, sources: [page, again, other] }) as { findingId: string }
+    expect(repo.getSources(repo.getFinding(findingId)!.sourceIds).map(s => [s.publisher, s.quote])).toEqual([['品玩', '小豆可以连接 40 多款应用'], ['36氪', '端内直接买票']])
+  })
+
   it('accepts a new entry of a changelog or App Store page an earlier finding cited, but not the same news again', async () => {
     const call = toolbox('daily')
     const appstore = source({ url: 'https://apps.apple.com/app/cursor/id1', publisher: 'App Store', kind: 'appstore', isOfficial: false, quote: '新增后台 Agent' })

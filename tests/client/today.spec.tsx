@@ -182,9 +182,10 @@ describe('the day', () => {
   })
 
   it('names the dimensions a finding changed, and only for what went into the profile', async () => {
-    const changed = finding('f1', 'p1', { dimensions: ['positioning', 'monetization'] })
+    const changed = finding('f1', 'p1', { dimensions: ['positioning', 'monetization', 'audience'] })
     const waiting = finding('f2', 'p2', { status: 'unconfirmed', statusNote: '只有一个来源', dimensions: ['positioning'] })
-    await show(view([changed, waiting]))
+    // f1 names three dimensions, but only two cards took a version resting on it: the profile changed there only.
+    await show(view([changed, waiting], { changed: { f1: ['positioning', 'monetization'], f2: ['positioning'] } }))
     expect(cardOf('标题 f1').querySelector('.op-card-changed')?.textContent).toBe('改了档案：定位、商业化')
     // A 「待确认」 finding is not in the profile (design §8).
     expect(cardOf('标题 f2').querySelector('.op-card-changed')).toBeNull()
@@ -204,6 +205,16 @@ describe('marks and notes on a card', () => {
     // The finding waits as 待确认; the unopened mark is on the source and is not said twice.
     expect(tags(card, 'unconfirmed')).toHaveLength(1)
     expect(tags(card, 'unopened')).toHaveLength(1)
+  })
+
+  it('shows one chip per page, even when the finding lists the same page twice', async () => {
+    const twice = finding('f1', 'p1', { sourceIds: ['s1', 's2', 's3'] })
+    await show({ ...view([twice]), sources: [
+      source('s1', { url: 'https://www.pingwest.com/a/319864', publisher: '品玩' }),
+      source('s2', { url: 'https://pingwest.com/a/319864?utm_source=feed', publisher: '品玩' }),
+      source('s3', { url: 'https://36kr.com/p/1', publisher: '36氪' }),
+    ] })
+    expect([...cardOf('标题 f1').querySelectorAll('.op-source')].map(chip => chip.textContent)).toEqual(['品玩 · 11-24', '36氪 · 11-24'])
   })
 
   it('says 原文打不开 on the finding when no chip does', async () => {
@@ -404,11 +415,14 @@ describe('actions', () => {
   })
 
   it('jumps to the changed dimension on 看改动', async () => {
-    const changed = finding('f1', 'p1', { dimensions: ['monetization', 'positioning'] })
-    const { context } = await show(view([changed, finding('f2', 'p2', { dimensions: [] })]))
+    // f1 names 定位 first, but its 定位 edit did not go through: 看改动 opens the card that did change.
+    const changed = finding('f1', 'p1', { dimensions: ['positioning', 'monetization'] })
+    const named = finding('f2', 'p2', { dimensions: ['positioning'] })
+    const { context } = await show(view([changed, named], { changed: { f1: ['monetization'] } }))
     await click(inside(cardOf('标题 f1'), '看改动 →')!)
     expect(context.navigate).toHaveBeenCalledWith({ page: 'product', productId: 'p1', tab: 'dossier', expand: 'monetization' })
-    // A verified finding that changed no card has nothing to jump to.
+    // A verified finding that changed no card (whatever it names) has nothing to jump to.
+    expect(cardOf('标题 f2').querySelector('.op-card-changed')).toBeNull()
     expect(inside(cardOf('标题 f2'), '看改动 →')).toBeUndefined()
     expect(inside(cardOf('标题 f2'), '追问')).toBeDefined()
   })
@@ -479,7 +493,7 @@ describe('the rest of the day', () => {
   })
 
   it('says when the first brief will arrive when there is none yet', async () => {
-    await show({ brief: null, findings: [], products: [], sources: [], prevDate: null })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null })
     expect(text()).toContain('还没有哨报：前哨每天 08:00 跑完后会出现在这里')
     expect(all('.op-card')).toHaveLength(0)
     expect(title()).toBe('11月25日 · 周三')
@@ -487,13 +501,13 @@ describe('the rest of the day', () => {
     expect(document.querySelector<HTMLButtonElement>('.op-day-nav button')!.textContent).toBe('‹ 昨天')
     unmount()
     // Without the time, it leaves the time out.
-    await show({ brief: null, findings: [], products: [], sources: [], prevDate: '2026-11-24' }, { state: undefined })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-24' }, { state: undefined })
     expect(text()).toContain('还没有哨报：前哨每天跑完后会出现在这里')
     expect(document.querySelector<HTMLButtonElement>('.op-day-nav button')!.disabled).toBe(false)
   })
 
   it('says an earlier day has no brief', async () => {
-    await show({ brief: null, findings: [], products: [], sources: [], prevDate: null }, { route: { page: 'today', date: '2026-11-20' } })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null }, { route: { page: 'today', date: '2026-11-20' } })
     expect(title()).toBe('11月20日 · 周五')
     expect(text()).toContain('这一天没有哨报')
     expect(text()).not.toContain('还没有哨报')

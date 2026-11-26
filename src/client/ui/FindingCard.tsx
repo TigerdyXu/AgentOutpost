@@ -3,7 +3,8 @@
  * of the profile it changed, and 追问. The brief and the product's 动态 tab show the same card.
  */
 import { useRef, type ReactNode } from 'react'
-import type { Finding, Id, Product, Source } from '../../core/types.ts'
+import type { DimensionKey, Finding, Id, Product, Source } from '../../core/types.ts'
+import { canonicalUrl } from '../../core/url.ts'
 import { UNOPENED } from '../notes.ts'
 import { useShell } from '../shell/context.ts'
 import { ProductIcon } from './ProductIcon.tsx'
@@ -18,8 +19,8 @@ export interface FindingCardProps {
   /** The track the product is in, when it is in one. */
   trackName: string | undefined
   sources: Source[]
-  /** Labels of the dimensions the finding changed, the first one first. */
-  changed: string[]
+  /** The dimensions the finding changed (a card version rests on it), the first one first: 看改动 opens that one. */
+  changed: { key: DimensionKey; label: string }[]
   /** It was 「待确认」 before and has been verified: tagged 已证实. */
   promoted: boolean
   /** Faded: the reader has been past it. */
@@ -34,11 +35,13 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
   const card = useRef<HTMLElement>(null)
   useLeaveViewport(card, read || !onRead, () => { onRead?.(finding.id) })
   const { ask, asking, problem } = useFollowup(finding.id)
+  // One chip per page: a finding handed in before sources were kept one per page may list one twice.
+  const pages = sources.filter((source, i) => sources.findIndex(other => canonicalUrl(other.url) === canonicalUrl(source.url)) === i)
 
   const unconfirmed = finding.status === 'unconfirmed'
   const unproven = finding.status === 'unproven'
   // A chip that says 原文打不开 already tells it; the finding says it only when none does.
-  const sayUnopened = (unconfirmed || unproven) && finding.statusNote === UNOPENED && !sources.some(source => source.openedVia === 'unopened')
+  const sayUnopened = (unconfirmed || unproven) && finding.statusNote === UNOPENED && !pages.some(source => source.openedVia === 'unopened')
   const plainNote = (unconfirmed || unproven) && finding.statusNote !== null && finding.statusNote !== UNOPENED ? finding.statusNote : null
   return <article ref={card} className="op-card" data-read={read ? '' : undefined} data-minor={minor ? '' : undefined} data-importance={finding.importance}>
     <div className="op-card-head">
@@ -53,17 +56,17 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
     <h2 className="op-card-title">{finding.headline}</h2>
     {finding.why.trim() && <p className="op-card-why"><span className="op-card-why-label">{t('today.why')}</span>{finding.why}</p>}
     <div className="op-card-foot">
-      {sources.map(source => <SourceChip key={source.id} source={source} />)}
+      {pages.map(source => <SourceChip key={source.id} source={source} />)}
       {(unconfirmed || unproven) && <span className="op-card-status">
         {unconfirmed ? <Tag kind="unconfirmed" /> : <span className="op-card-unproven">{t('feed.unproven')}</span>}
         {sayUnopened && <Tag kind="unopened" />}{plainNote && <span className="op-card-note">{plainNote}</span>}
       </span>}
       {changed.length > 0 && <span className="op-card-changed">
-        {t('today.changed')}{changed.flatMap((label, i) => [i > 0 ? t('today.list') : '', <b key={label}>{label}</b>])}
+        {t('today.changed')}{changed.flatMap(({ key, label }, i) => [i > 0 ? t('today.list') : '', <b key={key}>{label}</b>])}
       </span>}
       <span className="op-card-actions">
         {changed.length > 0 && <button type="button" className="op-link"
-          onClick={() => { navigate({ page: 'product', productId: finding.productId, tab: 'dossier', expand: finding.dimensions[0]! }) }}>{t('today.look')}</button>}
+          onClick={() => { navigate({ page: 'product', productId: finding.productId, tab: 'dossier', expand: changed[0]!.key }) }}>{t('today.look')}</button>}
         <button type="button" className="op-link" disabled={asking} aria-busy={asking || undefined} onClick={() => { void ask() }}>{t('today.followup')}</button>
       </span>
     </div>

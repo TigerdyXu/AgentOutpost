@@ -159,7 +159,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       <div className="op-tabpanel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-${tab}`}>
         {tab === 'dossier' && <DossierTab view={view} expanded={expanded} onToggle={toggle} focus={expand} now={now} />}
         {tab === 'feed' && (feed.data
-          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} />
+          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} />
           : feed.error && <p className="op-day-problem" role="alert">{describeError(t, feed.error)}</p>)}
         {tab === 'sources' && <SourcesTab view={view} />}
       </div>

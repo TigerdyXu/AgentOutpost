@@ -266,7 +266,22 @@ describe('GET brief', () => {
   it('returns another day\'s brief, and an empty one for a day without', async () => {
     expect(ok(await host.call('GET', 'brief?date=2026-11-23')).json<ApiResponse<'GET brief'>>()).toMatchObject({ brief: { date: '2026-11-23' }, prevDate: '2026-11-20' })
     expect(ok(await host.call('GET', 'brief?date=2026-11-20')).json<ApiResponse<'GET brief'>>().prevDate).toBeNull()
-    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], prevDate: '2026-11-23' })
+    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-23' })
+  })
+
+  it('says which dimensions each finding actually changed: those whose card a version of it cites, not the ones it names', async () => {
+    // f names 定位, 商业化 and 体验, but the check let through only edits of 体验 and 商业化 resting on it (and one of 体验
+    // resting on the minor update as well): those it names come first, in its order; 定位 is not claimed.
+    const f = addFinding('p1', { dimensions: ['positioning', 'business', 'experience'] })
+    const minor = addFinding('p1', { importance: 'minor', dimensions: [] })
+    putBrief(TODAY, [f.id, ids.f2!], { minorIds: [minor.id] })
+    for (const dimension of ['positioning', 'business', 'experience']) card('p1', dimension, 1, [])
+    repo.addCardVersion({ ...repo.latestCards('p1').find(c => c.dimension === 'experience')!, version: 2, findingIds: [minor.id, f.id] })
+    repo.addCardVersion({ ...repo.latestCards('p1').find(c => c.dimension === 'business')!, version: 2, findingIds: [f.id] })
+    const view = ok(await host.call('GET', 'brief')).json<ApiResponse<'GET brief'>>()
+    expect(view.changed).toEqual({ [f.id]: ['business', 'experience'], [minor.id]: ['experience'] })
+    const feed = ok(await host.call('GET', 'products/p1/findings')).json<ApiResponse<'GET products/:id/findings'>>()
+    expect(feed.changed).toEqual({ [f.id]: ['business', 'experience'], [minor.id]: ['experience'] })
   })
 
   it('refuses a date that is not YYYY-MM-DD', async () => {

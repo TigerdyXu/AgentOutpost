@@ -126,8 +126,8 @@ export function Today(): ReactNode {
     if (!product) return null
     const tracks = tracksOf(product.id)
     const labels = new Map(tracks.flatMap(track => track.dimensions).map(dimension => [dimension.key, dimension.label] as const))
-    // Only what the check verified went into the profile (design §8).
-    const changed = finding.status === 'verified' ? finding.dimensions.map(key => labels.get(key) ?? key) : []
+    // Only what the check verified went into the profile (design §8), and only where a card took a version resting on it.
+    const changed = finding.status === 'verified' ? (view.changed?.[finding.id] ?? []).map(key => ({ key, label: labels.get(key) ?? key })) : []
     return <FindingCard key={finding.id} finding={finding} product={product} trackName={tracks[0]?.name}
       sources={finding.sourceIds.flatMap(id => index.sources.get(id) ?? [])} changed={changed} read={finding.read || read.has(finding.id)}
       promoted={finding.verifiedOn === brief!.date && finding.statusNote === PROMOTED}

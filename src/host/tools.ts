@@ -282,11 +282,14 @@ function buildTools(scope: ToolScope): Record<string, ToolSpec> {
       SubmitFinding, args => {
         const productId = needProduct()
         checkDimensions(productId, 'dimensions', args.dimensions)
-        const urls = args.sources.map(s => s.url)
-        const cited = args.sources.map(s => ({ url: s.url, kind: s.kind, isOfficial: s.isOfficial }))
+        // One page is one source, however often it is cited: the first citation of it stands (the cards' sources stay as
+        // given, since their [n] count them).
+        const pages = args.sources.filter((s, i, all) => all.findIndex(o => canonicalUrl(o.url) === canonicalUrl(s.url)) === i)
+        const urls = pages.map(s => s.url)
+        const cited = pages.map(s => ({ url: s.url, kind: s.kind, isOfficial: s.isOfficial }))
         const twin = recentFindings(productId).find(r => isDuplicate({ productId, headline: args.headline, urls: cited }, [r]))
         if (twin) reject(`这条和已有发现重复：${twin.headline}`)
-        const sources = storeSources(args.sources)
+        const sources = storeSources(pages)
         const finding = repo.addFinding({
           productId, runId: scope.runId, headline: args.headline, why: args.why, importance: args.importance, claimKind: args.claimKind, sourceIds: sources.map(s => s.id),
           status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: args.dimensions, inference: args.inference, read: false, late: false,
