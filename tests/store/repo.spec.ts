@@ -34,6 +34,21 @@ const spec = (over: Partial<Omit<Track, 'id' | 'createdAt'>> = {}): Omit<Track, 
   ({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'pricing', label: '价格' }], status: 'active', ...over })
 const product = (over: Partial<Omit<Product, 'id' | 'createdAt'>> = {}): Omit<Product, 'id' | 'createdAt'> =>
   ({ name: 'Cursor', company: 'Anysphere', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: ['cursor.com'], status: 'tracking', dailyBudgetYuan: null, ...over })
+/**
+ * A repo whose database also takes rows written straight into the table, one minute apart: the spellings that sit side by
+ * side in a database made before alike spellings were told to be one product (`upsertProduct` no longer makes them).
+ */
+const twinsRepo = () => {
+  const db = open()
+  const repo = new Repo(db, () => time)
+  let made = 0
+  const insertAlike = (id: string, name: string, company: string, status: Product['status']) => {
+    const createdAt = new Date(time.getTime() + made++ * 60_000).toISOString()
+    db.prepare('INSERT INTO products (id, name, company, region, form, icon_path, official_domains, status, daily_budget_yuan, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?)')
+      .run(id, name, company, 'domestic', 'App', '[]', status, createdAt)
+  }
+  return { repo, db, insertAlike }
+}
 const sourceSpec = (over: Partial<Omit<Source, 'id'>> = {}): Omit<Source, 'id'> =>
   ({ url: 'https://cursor.com/changelog', title: 'Changelog', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: '推出新定价', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...over })
 const findingSpec = (over: Partial<Omit<Finding, 'id' | 'createdAt'>> = {}): Omit<Finding, 'id' | 'createdAt'> =>
@@ -277,6 +292,54 @@ describe('Repo: tracks and products', () => {
     const otherNameSameCompany = repo.upsertProduct(product({ name: 'Cursor Web' }))
     expect(otherNameSameCompany.id).not.toBe(first.id)
     expect(new Set([first.id, sameNameOtherCompany.id, otherNameSameCompany.id]).size).toBe(3)
+  })
+
+  it('upsertProduct finds the same product under a slightly different spelling', () => {
+    const { repo, db } = twinsRepo()
+    const first = repo.upsertProduct(product({ name: '千问Go!', company: '阿里巴巴', status: 'candidate' }))
+    const again = repo.upsertProduct(product({ name: '千问Go', company: '阿里巴巴', status: 'candidate' }))
+    expect(again.id).toBe(first.id)
+    expect(again.name).toBe('千问Go!') // the first spelling stays
+    expect(db.prepare('SELECT COUNT(*) AS n FROM products').get()).toMatchObject({ n: 1 })
+    // Another company is another product, however alike the names.
+    expect(repo.upsertProduct(product({ name: '千问Go', company: '别家' })).id).not.toBe(first.id)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM products').get()).toMatchObject({ n: 2 })
+  })
+
+  it('upsertProduct picks the worked-on one, then the oldest, when several rows already read alike', () => {
+    const { repo, db, insertAlike } = twinsRepo()
+    insertAlike('a', 'Amoo 1', '阶跃星辰', 'candidate')
+    insertAlike('b', 'Amoo-1', '阶跃星辰', 'tracking')
+    insertAlike('c', 'Amoo 1!', '阶跃星辰', 'tracking')
+    expect(repo.upsertProduct(product({ name: 'amoo1', company: '阶跃星辰', status: 'candidate' })).id).toBe('b')
+    expect(db.prepare('SELECT COUNT(*) AS n FROM products').get()).toMatchObject({ n: 3 })
+    repo.setProductStatus('b', 'archived')
+    repo.setProductStatus('c', 'archived')
+    expect(repo.upsertProduct(product({ name: 'amoo1', company: '阶跃星辰', status: 'candidate' })).id).toBe('a') // none worked on: the oldest
+  })
+
+  it('findSameProduct returns the worked-on twin, not a candidate one', () => {
+    const { repo, insertAlike } = twinsRepo()
+    insertAlike('wanted', '千问Go', '阿里巴巴', 'candidate')
+    insertAlike('other-candidate', '千问 Go', '阿里巴巴', 'candidate')
+    expect(repo.findSameProduct(repo.getProduct('wanted')!)).toBeNull() // two candidates are not a tracked product
+    insertAlike('tracked', '千问Go!', '阿里巴巴', 'tracking')
+    expect(repo.findSameProduct(repo.getProduct('wanted')!)).toMatchObject({ id: 'tracked', name: '千问Go!' })
+    expect(repo.findSameProduct(repo.getProduct('other-candidate')!)?.id).toBe('tracked')
+    expect(repo.findSameProduct(repo.getProduct('tracked')!)).toBeNull() // never itself
+  })
+
+  it('findSameProduct counts tracking, paused and baselining, takes the oldest of several, and skips archived ones and other companies', () => {
+    const { repo, insertAlike } = twinsRepo()
+    insertAlike('x', 'Muse', 'Meta', 'candidate')
+    insertAlike('archived', 'M.use', 'Meta', 'archived')
+    insertAlike('elsewhere', 'Muse', 'Muse AI', 'tracking')
+    expect(repo.findSameProduct(repo.getProduct('x')!)).toBeNull()
+    insertAlike('first-paused', 'MUSE!', 'Meta', 'paused')
+    insertAlike('later-baselining', 'M-use', 'Meta', 'baselining')
+    expect(repo.findSameProduct(repo.getProduct('x')!)?.id).toBe('first-paused') // the first one made, whichever worked-on status
+    repo.setProductStatus('first-paused', 'archived')
+    expect(repo.findSameProduct(repo.getProduct('x')!)?.id).toBe('later-baselining')
   })
 
   it('upsertProduct on an existing product refreshes its facts but never demotes status or erases what it already knows', () => {

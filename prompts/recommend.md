@@ -6,6 +6,7 @@
 - 之后建档要写的维度：{{dimensions}}
 - 今天：{{today}}
 - 已经在跟踪、不用再提交的产品：{{tracked}}
+- 别的赛道已在跟踪的产品：{{elsewhere}}（推荐它们时 name 和 company 照抄这里的写法）
 
 ## 上一轮的候选
 {{previous}}

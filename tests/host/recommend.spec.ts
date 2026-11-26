@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_DIMENSIONS } from '../../src/core/dimensions.ts'
-import type { CandidateTier, Track } from '../../src/core/types.ts'
+import type { CandidateTier, ProductStatus, Track } from '../../src/core/types.ts'
 import { startRecommendation } from '../../src/host/jobs/recommend.ts'
 import { JobRunner, type JobDeps, type RuntimeSettings } from '../../src/host/jobs/runner.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
@@ -108,6 +108,34 @@ describe('startRecommendation', () => {
     expect(first).not.toContain('Cursor')
     expect(first).not.toContain('多找些国内的')
     expect(first).toContain('第一次推荐')
+  })
+
+  it('tells the agent the products tracked in other tracks with their spelling', async () => {
+    const add = (name: string, company: string, status: ProductStatus) =>
+      repo.upsertProduct({ name, company, region: 'domestic', form: 'App', iconPath: null, officialDomains: [], status, dailyBudgetYuan: null })
+    const elsewhere = repo.createTrack({ name: '大模型助手', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'active' })
+    const both = add('千问Go!', '阿里巴巴', 'tracking') // in this track too
+    for (const p of [both, add('阶跃 Amoo', '阶跃星辰', 'baselining'), add('Muse', 'Meta', 'paused'), add('Tabby', 'TabbyML', 'candidate'), add('Old', 'Gone Inc', 'archived')])
+      repo.linkProduct(elsewhere.id, p.id)
+    repo.linkProduct(track.id, both.id)
+    repo.linkProduct(track.id, add('Cline', 'Cline Bot', 'tracking').id) // tracked here only
+
+    await startRecommendation(deps, track.id)
+    await runner.idle()
+
+    const prompt = driver.runs[0]!.prompt
+    const line = prompt.split('\n').find(l => l.includes('别的赛道已在跟踪的产品'))!
+    expect(line).toContain('阶跃 Amoo（阶跃星辰）、Muse（Meta）') // the spelling as kept, joined by 、, in the order they were linked
+    expect(line).not.toContain('千问Go!') // already in this track
+    for (const left of ['Tabby', 'Old', 'Cline']) expect(line).not.toContain(left)
+    expect(prompt).toContain('已经在跟踪、不用再提交的产品：')
+    expect(prompt).not.toMatch(/\{\{|\}\}/)
+
+    // Once the other track follows only products of this one, there is nothing to say.
+    for (const id of ['阶跃 Amoo', 'Muse']) repo.setProductStatus(repo.productsOfTrack(elsewhere.id).find(p => p.name === id)!.id, 'archived')
+    await startRecommendation(deps, track.id)
+    await runner.idle()
+    expect(driver.runs[1]!.prompt).toContain('别的赛道已在跟踪的产品：（没有）')
   })
 
   it('throws for a track that does not exist, without starting anything', async () => {

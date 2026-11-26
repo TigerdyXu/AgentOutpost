@@ -4,6 +4,7 @@
  * weekly refresh is a new batch, and the batch id is the id of its run.
  */
 import { localDate } from '../../core/calendar.ts'
+import { FOLLOWED } from '../../core/identity.ts'
 import type { CandidateTier, Id } from '../../core/types.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
@@ -14,7 +15,8 @@ const TIER_LABEL: Record<CandidateTier, string> = { strong: '强烈推荐', cons
 /**
  * Starts a recommendation for the track and answers with the new batch id at once; the session runs in the background
  * and its candidates appear in the batch as the agent submits them. The prompt carries the track, the user's request
- * `refine` (if any), and the previous batch with each candidate's tier and reason.
+ * `refine` (if any), the previous batch with each candidate's tier and reason, and the products other tracks follow,
+ * named as they are kept.
  * @throws When the track does not exist (nothing is started then).
  */
 export async function startRecommendation(deps: JobDeps, trackId: Id, refine?: string): Promise<Id> {
@@ -27,7 +29,13 @@ export async function startRecommendation(deps: JobDeps, trackId: Id, refine?: s
     const product = repo.getProduct(c.productId)
     return product ? [`- ${product.name}（${product.company}）：${TIER_LABEL[c.tier]}。${c.reason}`] : []
   })
-  const tracked = repo.productsOfTrack(trackId).filter(p => p.status !== 'candidate' && p.status !== 'archived').map(p => p.name)
+  const here = repo.productsOfTrack(trackId)
+  const tracked = here.filter(p => p.status !== 'candidate' && p.status !== 'archived').map(p => p.name)
+  // What other tracks follow, spelled as it is kept: the agent is asked to copy that spelling, so that a recommendation
+  // lands on the product already tracked instead of a second row for it.
+  const inThisTrack = new Set(here.map(p => p.id))
+  const elsewhere = new Map(repo.listTracks().filter(t => t.id !== trackId).flatMap(t => repo.productsOfTrack(t.id))
+    .filter(p => FOLLOWED.includes(p.status) && !inThisTrack.has(p.id)).map(p => [p.id, `${p.name}（${p.company}）`]))
   const request = refine?.trim()
   const prompt = renderPrompt('recommend', {
     trackName: track.name,
@@ -35,6 +43,7 @@ export async function startRecommendation(deps: JobDeps, trackId: Id, refine?: s
     dimensions: track.dimensions.map(d => d.label).join('、'),
     today: localDate(clock.now()),
     tracked: tracked.length ? tracked.join('、') : '（还没有）',
+    elsewhere: elsewhere.size ? [...elsewhere.values()].join('、') : '（没有）',
     previous: previous.length ? previous.join('\n') : '（没有，这是第一次推荐）',
     refine: request || '（没有）',
   })

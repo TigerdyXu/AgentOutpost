@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
+import { FOLLOWED, identityKey } from '../core/identity.ts'
 import type {
   Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunKind, Source, Track,
 } from '../core/types.ts'
@@ -14,6 +15,9 @@ type Shape<T> = { readonly [K in keyof T]-?: Kind }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const snake = (name: string) => name.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)
+
+/** Orders the products Outpost follows before the rest; `sort` is stable, so each group stays oldest first. */
+const followedFirst = (a: Product, b: Product) => Number(FOLLOWED.includes(b.status)) - Number(FOLLOWED.includes(a.status))
 
 /** Maps one domain type to its table: camelCase field names are snake_case columns, `Kind` says how to convert. */
 class Codec<T extends object> {
@@ -92,18 +96,22 @@ export class Repo {
   // ---- products and candidates ----
 
   /**
-   * Adds a product, or refreshes the one that is already there: the same name at the same company (ignoring case and
-   * surrounding spaces), or the row `p.id` points at. A refresh keeps `id`, `createdAt` and `status` (status moves only
-   * through `setProductStatus`, so meeting a tracked product again in another track never demotes it), updates `region`
-   * and `form`, merges `officialDomains`, and does not let a null `iconPath` or `dailyBudgetYuan` erase a value it has.
-   * The first spelling of name and company stays unless the row was found by `id`, which may rename it.
+   * Adds a product, or refreshes the one that is already there: the row `p.id` points at, the same name at the same
+   * company (ignoring case and surrounding spaces), or else a row that reads the same by `identityKey` (「千问Go!」 for
+   * 「千问Go」; the one Outpost follows if several do, else the oldest). A refresh keeps `id`, `createdAt` and `status`
+   * (status moves only through `setProductStatus`, so meeting a tracked product again in another track never demotes
+   * it), updates `region` and `form`, merges `officialDomains`, and does not let a null `iconPath` or `dailyBudgetYuan`
+   * erase a value it has. The first spelling of name and company stays unless the row was found by `id`, which may
+   * rename it.
    */
   upsertProduct(p: Omit<Product, 'id' | 'createdAt'> & { id?: Id }): Product {
     return this.db.atomic(() => {
       const name = p.name.trim()
       const company = p.company.trim()
       const byId = p.id === undefined ? undefined : this.get(PRODUCT, p.id)
-      const existing = byId ?? this.select(PRODUCT, 'WHERE name = ? COLLATE NOCASE AND company = ? COLLATE NOCASE', name, company)[0]
+      const existing = byId
+        ?? this.select(PRODUCT, 'WHERE name = ? COLLATE NOCASE AND company = ? COLLATE NOCASE', name, company)[0]
+        ?? this.readingAlike(name, company).sort(followedFirst)[0]
       if (!existing) {
         const created: Product = { ...p, name, company, id: p.id ?? randomUUID(), createdAt: this.stamp() }
         this.insert(PRODUCT, created)
@@ -120,6 +128,15 @@ export class Repo {
       this.patch(PRODUCT, existing.id, refreshed, Object.keys(refreshed))
       return { ...existing, ...refreshed }
     })
+  }
+
+  /**
+   * The product `product` is another row of: one with the same `identityKey` (the name and company spelled a little
+   * differently) that Outpost follows (tracking, paused or in 建档中), the oldest if several do; null when there is none.
+   * Never `product` itself, and never an archived or candidate row.
+   */
+  findSameProduct(product: Product): Product | null {
+    return this.readingAlike(product.name, product.company).find(p => p.id !== product.id && FOLLOWED.includes(p.status)) ?? null
   }
 
   getProduct(id: Id): Product | null { return this.get(PRODUCT, id) ?? null }
@@ -339,6 +356,12 @@ export class Repo {
   // ---- plumbing ----
 
   private stamp(): string { return this.now().toISOString() }
+
+  /** Every product whose `identityKey` is that of this name and company, oldest first. */
+  private readingAlike(name: string, company: string): Product[] {
+    const key = identityKey(name, company)
+    return this.select(PRODUCT, 'ORDER BY created_at, rowid').filter(p => identityKey(p.name, p.company) === key)
+  }
 
   private insert<T extends object>(codec: Codec<T>, value: T, extra: Record<string, SQLInputValue> = {}, verb = 'INSERT'): void {
     const columns = [...codec.columns(), ...Object.keys(extra)]

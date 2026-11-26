@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { packageRoot, renderPrompt } from '../../src/host/prompts.ts'
 
-const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程 Agent', dimensions: '定位、体验', today: '2026-11-25', tracked: '（还没有）', previous: '（没有）', refine: '{{trackName}} 原样保留' }
+const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程 Agent', dimensions: '定位、体验', today: '2026-11-25', tracked: '（还没有）', elsewhere: '千问Go!（阿里巴巴）', previous: '（没有）', refine: '{{trackName}} 原样保留' }
 const BASELINE_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', dimensions: '- positioning：定位' }
 const VERIFY_VARS = { productName: 'Cursor', company: 'Anysphere', officialDomains: 'cursor.com', today: '2026-11-25' }
 const DAILY_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', lastRun: '2026-11-24' }
@@ -29,7 +29,7 @@ describe('renderPrompt', () => {
   })
 
   it('keeps the research prompts short enough to read in one go', () => {
-    expect(ownLength('recommend')).toBeLessThanOrEqual(1600)
+    expect(ownLength('recommend')).toBeLessThanOrEqual(1500)
     expect(ownLength('baseline')).toBeLessThanOrEqual(1600)
     expect(ownLength('verify')).toBeLessThanOrEqual(1500)
     expect(ownLength('daily')).toBeLessThanOrEqual(1500)
@@ -37,7 +37,7 @@ describe('renderPrompt', () => {
 
   it('tells the agents the rules they are held to', () => {
     const recommend = renderPrompt('recommend', RECOMMEND_VARS)
-    for (const rule of ['outpost_submit_candidate', 'outpost_done', '4–8', '最多 6 个', 'excluded', '不要编', 'articles', 'tier', 'strong', 'consider', '每个候选至少 1 篇报道', '找不到就不要提交'])
+    for (const rule of ['outpost_submit_candidate', 'outpost_done', '4–8', '最多 6 个', 'excluded', '不要编', 'articles', 'tier', 'strong', 'consider', '每个候选至少 1 篇报道', '找不到就不要提交', '别的赛道已在跟踪的产品：千问Go!（阿里巴巴）', '照抄这里的写法'])
       expect(recommend).toContain(rule)
     const baseline = renderPrompt('baseline', BASELINE_VARS)
     for (const rule of ['outpost_read', 'outpost_submit_card', 'outpost_submit_facts', 'outpost_done', 'inferenceQuotes', 'quote', '逐字', 'isOfficial', '[n]', '1500', 'title（≤80 字）', 'publisher（≤30 字）'])

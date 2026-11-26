@@ -40,6 +40,19 @@ const addProduct = (id: Id, name: string, status: ProductStatus = 'tracking', tr
   if (trackId) repo.linkProduct(trackId, id)
   return product
 }
+/**
+ * A product row of its own spelling, beside rows that read alike: what a database made before alike spellings were one
+ * product holds. The row is made under another name, then renamed by id, which `upsertProduct` allows.
+ */
+const addAlike = (id: Id, name: string, company: string, status: ProductStatus, trackId?: Id) => {
+  addProduct(id, `row-${id}`, status, trackId)
+  return repo.upsertProduct({ id, name, company, region: 'overseas', form: 'App', iconPath: null, officialDomains: [], status, dailyBudgetYuan: null })
+}
+/** A candidate of the track pointing at the product, in a batch of its own. */
+const addCandidate = (trackId: Id, productId: Id) => repo.addCandidate({
+  trackId, batchId: `batch-${trackId}`, productId, tier: 'strong', oneLiner: '', reason: '',
+  heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: true,
+})
 const addSource = (title: string) => repo.addSource({
   url: `https://example.com/${encodeURIComponent(title)}`, title, publisher: '36氪', publishedAt: '2026-11-24', kind: 'media', isOfficial: false,
   quote: `${title}的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true,
@@ -599,6 +612,66 @@ describe('POST tracks/:id/start', () => {
     expect(prompt).toContain(`- ${slugDimension('定价模式')}：定价模式`) // what the new track adds
     expect(prompt).not.toContain('- audience：目标人群') // not what it has
     expect(repo.getProduct('p0')!.status).toBe('tracking') // stays tracked meanwhile
+  })
+
+  it('starting a candidate whose twin is tracked elsewhere links the tracked product', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('tracked', '千问Go!', '阿里巴巴', 'tracking', a.id)
+    for (const dim of DEFAULT_DIMENSIONS) card('tracked', dim.key, 1, [])
+    const b = addTrack({ name: '赛道B', status: 'picking', dimensions: [...DEFAULT_DIMENSIONS, { key: 'pricing-model', label: '定价模式' }] })
+    addAlike('copy', '千问Go', '阿里巴巴', 'candidate')
+    const candidate = addCandidate(b.id, 'copy')
+
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: [candidate.id] }))
+
+    expect(repo.productsOfTrack(b.id).map(p => [p.id, p.name])).toEqual([['tracked', '千问Go!']]) // not the row the candidate points at
+    expect(repo.getProduct('copy')).toMatchObject({ status: 'candidate', name: '千问Go' }) // left alone
+    expect(baseline).toHaveBeenCalledTimes(1)
+    expect(baseline).toHaveBeenCalledWith([]) // no new baseline
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['tracked']) // only the dimension B adds
+    expect(repo.getProduct('tracked')!.status).toBe('tracking')
+    expect(repo.listCandidates(b.id).map(c => [c.id, c.selected])).toEqual([[candidate.id, true]]) // the choice is still recorded as made
+  })
+
+  it('joins a twin in 建档中 or 暂停 as it is: the one being baselined gets the new dimensions, the paused one is left alone', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    const topUpNow = vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('running', '阶跃 Amoo', '阶跃星辰', 'baselining', a.id)
+    addAlike('stopped', 'Muse', 'Meta', 'paused', a.id)
+    const b = addTrack({ name: '赛道B', status: 'picking', dimensions: [...DEFAULT_DIMENSIONS, { key: 'pricing-model', label: '定价模式' }] })
+    const chosen = [['阶跃Amoo', '阶跃星辰'], ['Muse!', 'META']].map(([name, company], i) => {
+      addAlike(`copy-${i}`, name!, company!, 'candidate')
+      return addCandidate(b.id, `copy-${i}`).id
+    })
+
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: chosen }))
+
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['running', 'stopped'])
+    expect(baseline).toHaveBeenCalledWith([])
+    expect(topUpNow).toHaveBeenCalledTimes(1)
+    expect(topUpNow).toHaveBeenCalledWith(['running'])
+    expect(['running', 'stopped'].map(id => repo.getProduct(id)!.status)).toEqual(['baselining', 'paused'])
+  })
+
+  it('keeps the row a candidate points at when that row is tracked itself, and baselines a candidate whose twins are all candidates', async () => {
+    const baseline = vi.spyOn(rt.scheduler, 'baseline').mockResolvedValue()
+    vi.spyOn(rt.scheduler, 'topUpNow').mockResolvedValue()
+    const a = addTrack({ name: '赛道A' })
+    addAlike('own', 'Zed', 'Zed Inc', 'tracking', a.id)
+    addAlike('own-twin', 'Zed!', 'Zed Inc', 'tracking')
+    addAlike('new', 'Windsurf', 'Codeium', 'candidate')
+    addAlike('new-twin', 'Wind surf', 'Codeium', 'candidate')
+    const b = addTrack({ name: '赛道B', status: 'picking' })
+    const chosen = ['own', 'new'].map(id => addCandidate(b.id, id).id)
+
+    ok(await host.call('POST', `tracks/${b.id}/start`, { candidateIds: chosen }))
+
+    expect(repo.productsOfTrack(b.id).map(p => p.id)).toEqual(['own', 'new'])
+    expect(baseline).toHaveBeenCalledWith(['new'])
   })
 
   it('refuses no candidates, a candidate of another track and an unknown track', async () => {
