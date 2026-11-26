@@ -70,18 +70,33 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    chmod 600 "$BACKUP"/*
    ```
 
-3. **检查并打包**，得到 `dsh-outpost-<version>.tgz`（版本号取自 `package.json`）：
+   **新版本会升级数据库时，把数据库也备份上。** 新版本第一次打开时会给数据库加表或加列，旧版本看到升级过的数据库会拒绝打开（报 `Database schema version … is newer than this build understands`），所以想退回旧版本就得有升级前的那份。怎么知道会不会升级：`git diff <上次装的提交>..HEAD -- src/store/migrations.ts` 里多了一段脚本就会（拿不准就当会）。必须在**桌面版已经退出之后**拷，`-wal`、`-shm` 两个文件有就一起拷：
+
+   ```sh
+   for f in outpost.sqlite outpost.sqlite-wal outpost.sqlite-shm; do
+     [ -f ~/Projects/AgentOutpost-data/$f ] && cp -p ~/Projects/AgentOutpost-data/$f "$BACKUP"/
+   done
+   chmod 600 "$BACKUP"/*
+   ```
+
+   退回时先退出桌面版，把这几个文件拷回 `~/Projects/AgentOutpost-data/`（备份里没有 `-wal`、`-shm` 的，要把数据目录里现有的这两个删掉），再装回旧包（见下面「撤回」）。
+
+3. **检查并打包，放进固定的包目录** `~/Projects/AgentOutpost-data/packages/`，文件名带上提交号（版本号取自 `package.json`，一直是 0.1.0，靠提交号区分）。在干净的代码上打（`git status` 没有改动）：
 
    ```sh
    cd /Users/tiger/Projects/AgentOutpost
    export PATH=/opt/homebrew/opt/node@24/bin:$PATH
    pnpm check && pnpm pack
+   mkdir -p ~/Projects/AgentOutpost-data/packages
+   mv dsh-outpost-<version>.tgz ~/Projects/AgentOutpost-data/packages/dsh-outpost-<version>-$(git rev-parse --short HEAD).tgz
    ```
+
+   **以后一律从这个目录装。** profile 的 `package.json` 会记下装的是哪个文件；放在仓库里或临时目录里，文件过后会被删掉（临时目录重启就清空）。放在这里，旧版本的包也一直留着，退回时直接装回去。M1.1 起装过的包：`dsh-outpost-0.1.0-29ac71a.tgz`（M1.1）、`dsh-outpost-0.1.0-dd4d6bc.tgz`（M1.2）。
 
 4. **装进桌面版 profile**，确认列表里有 `dsh-outpost`：
 
    ```sh
-   "$DSH" plugin --profile desktop add /Users/tiger/Projects/AgentOutpost/dsh-outpost-<version>.tgz
+   "$DSH" plugin --profile desktop add ~/Projects/AgentOutpost-data/packages/dsh-outpost-<version>-<commit>.tgz
    "$DSH" plugin --profile desktop list
    ```
 
@@ -145,11 +160,13 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
 **撤回**：退出桌面版，`"$DSH" plugin --profile desktop remove dsh-outpost`（连同 `@deepseek-ai/dsh-browser-use`、`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 一起 remove），再把备份的 `package.json`、`cordis.patch.yml`（以及 `pnpm-lock.yaml`）拷回 `~/.dsh/profiles/desktop/`。数据目录里的东西不会被删。
 
-**装新版本**：重新 `pnpm check && pnpm pack`，退出桌面版，然后**先 remove 再 add**（版本号没变时，直接再 `add` 同一个 `.tgz` 会提示「Already up to date」而不换文件）：
+**退回上一个版本**：退出桌面版；那个版本之后数据库升级过的话，先按第 2 步把升级前备份的 `outpost.sqlite`（和 `-wal`、`-shm`）拷回去；再用下面「装新版本」的 remove + add，装 `packages/` 里旧的那个包。
+
+**装新版本**：按第 3 步打包放进 `packages/`，退出桌面版，按第 2 步备份（会升级数据库就连数据库一起），然后**先 remove 再 add**（版本号没变时，直接再 `add` 同一个 `.tgz` 会提示「Already up to date」而不换文件）：
 
 ```sh
 "$DSH" plugin --profile desktop remove dsh-outpost
-"$DSH" plugin --profile desktop add /Users/tiger/Projects/AgentOutpost/dsh-outpost-<version>.tgz
+"$DSH" plugin --profile desktop add ~/Projects/AgentOutpost-data/packages/dsh-outpost-<version>-<commit>.tgz
 ```
 
 再打开桌面版。前哨在设置页里改的值写在 `cordis.patch.yml` 的 `outpost` 行里，remove 不会动它。
