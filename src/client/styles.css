@@ -1750,11 +1750,14 @@ textarea.op-input {
   line-height: 22px;
 }
 
-/* The cards fill the width: as many columns as fit, none narrower than 300px. An open card takes the whole row. */
+/*
+ * The cards fill the width: as many columns as fit, none narrower than 300px, and at most three (design §5.4: three on a
+ * wide screen, two on a narrow one), so six dimensions make two full rows. An open card takes the whole row.
+ */
 .op-dgrid {
   container: op-dossier / inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(300px, calc((100% - 24px) / 3)), 1fr));
   gap: 12px;
   margin-top: 14px;
 }

@@ -199,11 +199,13 @@ describe('the profile', () => {
     expect(text()).not.toContain('首先是豆包现有的重度用户。')
   })
 
-  it('fills the width with a grid of cards from 300px', async () => {
+  it('fills the width with a grid of cards from 300px, at most three to a row (design §5.4: three wide, two narrow)', async () => {
     await show()
-    // jsdom does not lay anything out: the rule itself is what the stylesheet must say.
+    // jsdom does not lay anything out: the rule itself is what the stylesheet must say. A column is never narrower than
+    // 300px nor narrower than a third of the row (less the two 12px gaps), so a wide screen gets three columns that fill
+    // it, not four with the last row half empty.
     const css = (await import('../../src/client/styles.css?raw')).default
-    expect(css).toMatch(/\.op-dgrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(300px,\s*1fr\)\)/)
+    expect(css).toMatch(/\.op-dgrid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(max\(300px,\s*calc\(\(100% - 24px\) \/ 3\)\),\s*1fr\)\)/)
     expect(css).toMatch(/\.op-dcard\[data-expanded\]\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/)
     expect(css).not.toMatch(/border-left|border-inline-start/)
   })
