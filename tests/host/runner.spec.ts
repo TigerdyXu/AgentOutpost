@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { costOf } from '../../src/core/cost.ts'
 import type { ModelRef } from '../../src/core/models.ts'
 import type { Id, Product, Run } from '../../src/core/types.ts'
-import { JobRunner, NUDGE_TEXT, RETRY_DELAY_MS, isTransient, type RuntimeSettings, type SessionPlan } from '../../src/host/jobs/runner.ts'
+import { startFollowup } from '../../src/host/followup.ts'
+import { JobRunner, NUDGE_TEXT, RELEASE_WAIT_MS, RETRY_DELAY_MS, isTransient, type RuntimeSettings, type SessionPlan } from '../../src/host/jobs/runner.ts'
 import { researchTools } from '../../src/host/tools.ts'
 import { openDb, type Db } from '../../src/store/db.ts'
 import { Repo } from '../../src/store/repo.ts'
-import { FakeDriver, completed, failure, flush, gate, instantClock, usage } from '../fixtures/fake-driver.ts'
+import { FakeDriver, completed, failure, flush, gate, instantClock, usage, type Play } from '../fixtures/fake-driver.ts'
 
 const TODAY = '2026-11-25'
 const PROMPT = '找 Cursor 近一天的新动态'
@@ -295,6 +296,108 @@ describe('sessions', () => {
     expect(repo.spentOn(TODAY, 'p1')).toBe(4.72)
   })
 
+  it('releases a research session once its run is over', async () => {
+    // What the run says when its session is let go of: the session's browser closes only after the run is settled.
+    const statusAtRelease = new Map<string, string | undefined>()
+    const record = driver.release.bind(driver)
+    driver.release = async sessionId => {
+      statusAtRelease.set(sessionId, repo.listRuns('').find(r => r.sessionId === sessionId)?.status)
+      await record(sessionId)
+    }
+    const end = async (script: Play) => {
+      driver.script['outpost-daily-'] = script
+      const run = await runner.session('daily', { productId: 'p1' }, build)
+      expect(driver.released.filter(id => id === run.sessionId)).toHaveLength(1) // once, by the time the run is back
+      expect(statusAtRelease.get(run.sessionId!)).toBe(run.status)
+      return run
+    }
+
+    expect(await end(finishes())).toMatchObject({ status: 'done', error: null })
+    expect(await end(() => completed())).toMatchObject({ status: 'done', error: expect.stringContaining('outpost_done') }) // nudged, still not done
+    expect(await end(() => failure('Invalid API key'))).toMatchObject({ status: 'failed' })
+    expect(await end(() => ({ reason: 'timeout', usage: usage() }))).toMatchObject({ status: 'failed' })
+    expect(await end(() => ({ reason: 'blocked', usage: usage() }))).toMatchObject({ status: 'failed' })
+    expect(await end(() => ({ reason: 'aborted', usage: usage() }))).toMatchObject({ status: 'failed' })
+    const retried = await end(() => failure('fetch failed: ECONNRESET'))
+    expect(driver.runs.filter(s => s.sessionId === retried.sessionId)).toHaveLength(4) // released after the last retry only
+
+    // Only after the nudge: the nudge goes to a session that is still live.
+    driver.script['outpost-daily-'] = async r => {
+      if (r.kind === 'nudge') { expect(driver.released).not.toContain(r.sessionId); await r.done('补交完毕') }
+      return completed()
+    }
+    const nudged = await runner.session('daily', { productId: 'p1' }, build)
+    expect(driver.nudges.at(-1)).toEqual({ sessionId: nudged.sessionId, text: NUDGE_TEXT })
+    expect(driver.released.at(-1)).toBe(nudged.sessionId)
+
+    // A session DSH could not open at all is let go of too (whatever of it exists).
+    const run = driver.run.bind(driver)
+    driver.run = async () => { throw new Error('dsh-outpost: session "x" vanished right after it was created') }
+    const broken = await runner.session('daily', { productId: 'p1' }, build)
+    expect(broken.status).toBe('failed')
+    expect(driver.released.at(-1)).toBe(broken.sessionId)
+    driver.run = run
+
+    // A run the budget refuses never had a session: nothing to let go of.
+    const before = driver.released.length
+    settings.dailyBudgetYuan = 0
+    repo.updateRun(seedRun.id, { costYuan: 1 })
+    expect((await runner.session('daily', { productId: 'p1' }, build)).status).toBe('skipped')
+    expect(driver.released).toHaveLength(before)
+  })
+
+  it('lets the next queued session start only after the last one was released, and keeps a run whose release fails', async () => {
+    settings.maxParallel = 1
+    const events: string[] = []
+    driver.script['outpost-daily-'] = async r => { events.push(`run ${r.spec.title}`); await r.done(); return completed() }
+    driver.release = async sessionId => {
+      events.push(`release ${driver.runs.find(s => s.sessionId === sessionId)!.title}`)
+      throw new Error('DSH could not stop the browser')
+    }
+    const [a, b] = await Promise.all([runner.session('daily', { productId: 'p1' }, build), runner.session('daily', { productId: 'p2' }, daily('p2'))])
+    expect(events).toEqual(['run 前哨 · p1 日更', 'release 前哨 · p1 日更', 'run 前哨 · p2 日更', 'release 前哨 · p2 日更'])
+    expect([a.status, b.status]).toEqual(['done', 'done']) // a release that fails changes nothing about the run
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(a.sessionId!))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('DSH could not stop the browser'))
+  })
+
+  it('does not let a release that hangs hold up the sessions queued behind it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      settings.maxParallel = 1
+      driver.script['outpost-daily-'] = finishes()
+      let hung = false
+      driver.release = async () => { if (!hung) { hung = true; await new Promise<void>(() => {}) } } // the first never ends
+      const first = runner.session('daily', { productId: 'p1' }, build)
+      const second = runner.session('daily', { productId: 'p2' }, daily('p2'))
+      await flush(20)
+      expect(driver.runs).toHaveLength(1) // the place is still held while the release may yet finish
+      await vi.advanceTimersByTimeAsync(RELEASE_WAIT_MS)
+      expect((await first).status).toBe('done')
+      expect((await second).status).toBe('done') // went ahead
+      expect(RELEASE_WAIT_MS).toBe(60_000)
+      expect(log).toHaveBeenCalledWith(expect.stringContaining((await first).sessionId!))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not release a 追问 chat: it is the user\'s conversation', async () => {
+    const run = repo.createRun({ kind: 'daily', date: TODAY, trackId: null, productId: 'p1' })
+    const finding = repo.addFinding({
+      productId: 'p1', runId: run.id, headline: '后台 Agent 正式上线', why: '不用守着编辑器', importance: 'major', claimKind: 'self',
+      sourceIds: [], status: 'verified', statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false,
+      read: false, late: false, dedupeKey: 'k1', verifiedOn: TODAY,
+    })
+    const { sessionId } = await startFollowup({ repo, driver, clock: time.clock, icons: { fetch: async () => null }, settings: () => settings }, finding.id)
+    driver.script['outpost-daily-'] = finishes()
+    const research = await runner.session('daily', { productId: 'p1' }, build)
+    await runner.idle()
+    expect(driver.interactive.map(s => s.sessionId)).toEqual([sessionId])
+    expect(driver.released).toEqual([research.sessionId])
+    expect(driver.released).not.toContain(sessionId)
+  })
+
   it('fails sessions in flight and in the queue when it stops', async () => {
     settings.maxParallel = 1
     driver.script['outpost-daily-'] = r => new Promise(resolve => {
@@ -310,6 +413,8 @@ describe('sessions', () => {
     expect(await first.finished).toMatchObject({ status: 'failed', error: '前哨已停止' })
     expect(await second.finished).toMatchObject({ status: 'failed', error: '前哨已停止' })
     expect(driver.runs).toHaveLength(1)
+    // The session cut short is let go of; the queued run never had one.
+    expect(driver.released).toEqual([(await first.finished).sessionId])
   })
 })
 

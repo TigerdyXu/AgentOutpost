@@ -4,8 +4,10 @@
  * place among at most `maxParallel` sessions at a time (the budget is checked again once it gets one, so work queued
  * behind a run that used the budget up does not start; recommendations need no place, see `UNPOOLED`), its rounds
  * with the agent
- * (a transient model or network failure retried, an agent that stops without `outpost_done` nudged once), and the
- * tokens it used priced into the run as they come. A check runs on the verify model and everything else on the research
+ * (a transient model or network failure retried, an agent that stops without `outpost_done` nudged once), the
+ * tokens it used priced into the run as they come, and, once the run is settled, its session let go of (`release`: the
+ * browser the research preset launched for it closes then, before the next session takes its place). A check runs on
+ * the verify model and everything else on the research
  * model (`modelFor`), as configured when the session starts; its tokens are priced by that model's provider, so a run on a
  * local or subscription model costs ¥0 and takes nothing from the budget.
  */
@@ -61,6 +63,11 @@ export const NUDGE_TEXT = '请继续完成任务；全部提交后调用 outpost
 /** Retries after a transient failure, on top of the first try. */
 export const TRANSIENT_RETRIES = 3
 export const RETRY_DELAY_MS = 15_000
+/**
+ * How long a session's place waits for the session to be let go of (its browser closed) before the next session takes it
+ * anyway: a release that hangs must not stop the day's runs. Wall-clock time, like the session time limit.
+ */
+export const RELEASE_WAIT_MS = 60_000
 /** Sessions of runs that ended longer ago than this are archived. */
 export const ARCHIVE_AFTER_DAYS = 7
 
@@ -202,6 +209,8 @@ export class JobRunner {
     if (refused) return finish('skipped', refused)
     const release = UNPOOLED.has(run.kind) ? (this.stopped ? null : () => {}) : await this.slot()
     if (!release) return finish('failed', STOPPED_ERROR)
+    /** The run's session, once it may exist: from its first round on, whatever comes of it. */
+    let opened: string | null = null
     try {
       // The model as configured now, when the session starts. Passed as is: a model DSH no longer offers is not swapped
       // for another; the session fails and says so.
@@ -214,6 +223,7 @@ export class JobRunner {
       const tools = plan.tools(() => { done = true })
       const sessionId = `outpost-${run.kind}-${id.slice(0, 8)}`
       this.repo.updateRun(id, { status: 'running', startedAt: this.clock.now().toISOString(), sessionId })
+      opened = sessionId
       const spec: SessionSpec = { sessionId, title: plan.title, prompt: plan.prompt, tools, model }
       const used = noUsage()
       let outcome = await this.round(id, model, used, signal => this.driver.run(spec, signal))
@@ -226,7 +236,26 @@ export class JobRunner {
     } catch (error) {
       return finish('failed', messageOf(error))
     } finally {
+      // After the run is stored as settled (every round over, the nudge included) and before its place goes to the next.
+      if (opened) await this.letGo(opened)
       release()
+    }
+  }
+
+  /**
+   * Lets go of a session whose run is over (`SessionDriver.release`), waiting for it at most `RELEASE_WAIT_MS`; a failure
+   * is logged and changes nothing of the run, and a release still going on then goes on alone.
+   */
+  private async letGo(sessionId: string): Promise<void> {
+    const released = Promise.resolve()
+      .then(() => this.driver.release(sessionId))
+      .then(() => true, (error: unknown) => { this.log(`could not let go of session ${sessionId}: ${messageOf(error)}`); return true })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), RELEASE_WAIT_MS) })
+    try {
+      if (!await Promise.race([released, late])) this.log(`session ${sessionId} is still being let go of after ${RELEASE_WAIT_MS / 1000} s; the next session goes ahead`)
+    } finally {
+      clearTimeout(timer)
     }
   }
 

@@ -18,7 +18,7 @@ import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
 import { SystemClock } from './clock.ts'
 import { DshModelClient } from './dsh-model.ts'
-import { DshSessionDriver } from './dsh-sessions.ts'
+import { AGENT_PRESET, DshSessionDriver, type AgentPresets } from './dsh-sessions.ts'
 import { registerRoutes } from './http.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
@@ -29,6 +29,9 @@ import { verifyProduct } from './jobs/verify.ts'
 import type { Clock, IconFetcher, ModelClient, SessionDriver } from './ports.ts'
 import { Scheduler, type SchedulerSettings } from './scheduler.ts'
 import { researchTools } from './tools.ts'
+
+/** DSH's browser providers (`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` and its siblings), not the service. */
+const BROWSER_PROVIDER = /^@deepseek-ai\/dsh-(?:experimental-)?browser-use-./
 
 /** Follow-up chats younger than this many days get their tool back on start. */
 export const REBIND_FOLLOWUPS_DAYS = 30
@@ -173,14 +176,23 @@ export class Runtime {
   today(): string { return localDate(this.clock.now()) }
 
   /**
-   * Whether research sessions can open pages in a browser: DSH has the browser-use service (`dsh-browser-use`) and a
-   * browser provider registered with it (`providerName`, docs/subsystems/browser-use.md). Without one, pages behind a
-   * verification wall (公众号, 小红书, 知乎) stay unopened and their findings 「待确认」.
+   * Whether research sessions can open pages in a browser. Outpost's own browser lives inside the research preset
+   * (cordis.patch.yml: the browser-use service and its Playwright provider in an isolated group), so it is on when a
+   * revision of `outpost-researcher` DSH holds has a browser provider running (`inspectCompositions`: only active rows;
+   * a preset whose rows failed has no revision). A provider registered for the whole profile (`browserUse.providerName`,
+   * docs/subsystems/browser-use.md) counts too. Without either, pages behind a verification wall (公众号, 小红书, 知乎)
+   * stay unopened and their findings 「待确认」.
    */
   browserAvailable(): boolean {
     const service = this.ctx.get('browserUse') as { providerName?: unknown } | null | undefined
-    if (service === undefined || service === null) return false
-    return 'providerName' in service ? service.providerName !== undefined : true
+    if (service !== undefined && service !== null && (!('providerName' in service) || service.providerName !== undefined)) return true
+    const presets = this.ctx.get('agentPresets') as AgentPresets | null | undefined
+    try {
+      return presets?.inspectCompositions().some(c => c.id === AGENT_PRESET && c.modules.some(m => BROWSER_PROVIDER.test(m.moduleName))) ?? false
+    } catch (error) {
+      this.log(`could not read the composition of the research preset: ${messageOf(error)}`)
+      return false
+    }
   }
 
   /** Writes to DSH's log. */

@@ -64,8 +64,9 @@ describe('the browser fallback', () => {
   it('explains how to enable the browser fallback when it is off', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: false }) })
     expect(text()).toContain('没开浏览器兜底')
+    // The browser comes with the research preset (cordis.patch.yml), on; what can be missing is its two packages.
     expect(document.querySelector('.op-browser')?.textContent).toBe(
-      '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。到『插件』页启用 dsh-browser-use 和 Playwright 浏览器两项后重启。')
+      '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。浏览器装在前哨的调研预设里：在 DeepSeek Harness 里装上 dsh-browser-use 和 Playwright 浏览器两个包，然后重启。')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBeNull()
     expect(text()).not.toContain('浏览器兜底已开启')
   })
@@ -73,7 +74,7 @@ describe('the browser fallback', () => {
   it('shows no browser notice when it is on', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: true }) })
     expect(text()).not.toContain('没开浏览器兜底')
-    expect(text()).not.toContain('到『插件』页启用')
+    expect(text()).not.toContain('装上 dsh-browser-use')
     expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBe('')
   })

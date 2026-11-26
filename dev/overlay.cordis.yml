@@ -25,6 +25,39 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+          # Browser fallback, on (the user's choice, 2026-11-26): a page plain fetching cannot read (WeChat articles,
+          # Xiaohongshu, Zhihu) is opened in a headless Chrome. It lives in this preset, so only research sessions get it,
+          # never a session of the user's own; the browser-use service is isolated to the group, as DSH requires of a
+          # service inside a preset. What it costs:
+          # - Every research session gets the `mcp__playwright-mcp__*` tools, `browser_run_code_unsafe` among them
+          #   (arbitrary JavaScript in the Playwright process, by Playwright's own description), and they run without
+          #   approval, while the session reads pages nobody vetted.
+          # - Every live research session runs a Playwright MCP server (about 125 MB), and one that opened a page a headless
+          #   Chrome (0.7 GB on a blank page, more on real ones). Outpost ends a research session's live agent when its run
+          #   is over, which closes both, so only the sessions running now hold one; a research session opened later in DSH
+          #   starts its server again, until DSH restarts.
+          # Both packages must be installed in the profile (`dsh plugin add @deepseek-ai/dsh-browser-use
+          # @deepseek-ai/dsh-experimental-browser-use-playwright-mcp`): without them this preset fails and no research runs.
+          # Do not also turn on a Playwright provider for the whole profile: research sessions then fail to start
+          # ("serverName "playwright-mcp" is already in use"). executablePath is this machine's Chrome; elsewhere, point it
+          # at a Chromium-based browser, or drop the line to let Playwright find one. To change it, or to turn the fallback
+          # off, override the `outpost-researcher-preset` row in the profile's cordis.patch.yml: an override replaces the
+          # whole `config`, so restate it from this file with the line changed, or without the `browser` group. Off, a
+          # finding whose source will not open stays 「待确认」.
+          - id: browser
+            name: cordis:group
+            group: true
+            isolate:
+              browserUse: true
+            config:
+              - id: browser-use
+                name: '@deepseek-ai/dsh-browser-use'
+              - id: browser-use-playwright
+                name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+                config:
+                  mode: launch
+                  headless: true
+                  executablePath: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
           - id: compaction
             name: cordis:group
             group: true
@@ -42,12 +75,3 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
-    - id: outpost-browser-use
-      name: '@deepseek-ai/dsh-browser-use'
-      disabled: true
-    - id: outpost-browser-use-playwright
-      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
-      disabled: true
-      config:
-        mode: launch
-        headless: true

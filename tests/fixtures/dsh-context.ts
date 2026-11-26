@@ -1,7 +1,9 @@
 /**
  * An in-memory stand-in for the parts of DSH the adapters use (as superagent's `tests/fixtures/host.ts` builds one): a Cordis
- * `Context` providing `sessionController`, `workspaceRegistry`, `sessionPersistence`, `llm`, `agentDefaultModel` and `agents`, and fake
- * agents with their own `agent.ctx.tools`. Like DSH, creating or resuming a session emits `agent/created` before it resolves;
+ * `Context` providing `sessionController`, `workspaceRegistry`, `sessionPersistence`, `llm`, `agentDefaultModel`, `agentPresets`
+ * and `agents`, and fake agents with their own `agent.ctx.tools`. Like DSH, creating or resuming a session runs the creator's
+ * setup and then emits `agent/created` before it resolves; an agent made with `agents.create` belongs to its caller, whose
+ * handle's `dispose` takes the live agent (and everything registered on it) away while the session stays stored;
  * a message sent to an idle agent starts a turn at once (`turn/start`; the step takes the message out of the inbox,
  * `agent/inbox/claimed`; then records it, `user/message`), and one sent while a turn runs waits for that turn to end. The test plays the model: `assistant(...)` and `turnEnd(...)` emit what
  * DSH would.
@@ -32,6 +34,14 @@ export interface FakeAgent {
   running: boolean
   /** Messages waiting for the next turn. */
   queued: SentMessage[]
+}
+
+/** What `agents.create` is given, as DSH's `CreateAgentOptions` has it. */
+export interface CreateOptions {
+  sessionId: string
+  agentOptions?: { provider?: string; model?: string; reasoningEffort?: string }
+  meta?: { cwd?: string; agentPreset?: string }
+  setup?: (agentCtx: Context, agent: FakeAgent) => unknown
 }
 
 /** A model chunk, as `ctx.llm.stream` yields them. */
@@ -68,7 +78,7 @@ export function dshHost() {
   }
 
   /** A new agent instance for `sessionId` (a fresh one on every create or resume, as DSH does), announced with `agent/created`. */
-  const spawn = async (sessionId: string, kind: 'new' | 'resume') => {
+  const spawn = async (sessionId: string, kind: 'new' | 'resume', setup?: (agentCtx: Context, agent: FakeAgent) => unknown) => {
     const agentCtx = new Context()
     const own = new Map<string, RegisteredTool>()
     tools.set(sessionId, own)
@@ -93,6 +103,7 @@ export function dshHost() {
     agents.set(sessionId, agent)
     stored.add(sessionId)
     try {
+      await setup?.(agentCtx, agent)
       await ctx.serial('agent/created', { agent, source: { kind: kind === 'new' ? 'startup' : 'resume' } } as never)
     } catch (error) {
       // As in DSH, a listener that throws fails the creation: the agent is gone again.
@@ -120,8 +131,14 @@ export function dshHost() {
       return { accepted: true }
     }),
   }
+  /** The 「前哨」 workspace and others, by path; `attachSession` records the sessions put into each. */
+  const workspaces = new Map<string, { id: string; path: string; attachSession: Mock<(sessionId: string) => Promise<void>> }>()
   const workspaceRegistry = {
-    create: vi.fn(async (path: string, _title?: string) => ({ id: `ws-${path}`, path })),
+    create: vi.fn(async (path: string, _title?: string) => {
+      let workspace = workspaces.get(path)
+      if (!workspace) workspaces.set(path, workspace = { id: `ws-${path}`, path, attachSession: vi.fn(async (_sessionId: string) => {}) })
+      return workspace
+    }),
     archiveSession: vi.fn(async (_sessionId: string, _options?: { stopActivity?: boolean }) => {}),
   }
   const sessionPersistence = { flush: vi.fn(async () => {}) }
@@ -132,10 +149,31 @@ export function dshHost() {
   }
   const agentDefaultModel = { currentSelection: vi.fn(() => ({ provider: 'deepseek-account', model: 'deepseek-flash' })) }
 
+  /** What `agents.create` was asked for, in order; each carries the handle it answered with. */
+  const created: { options: CreateOptions; handle: { agent: FakeAgent; dispose: Mock<() => Promise<void>> } }[] = []
   /** DSH's registry of live agents (`ctx.agents`): only those created or resumed, never stored ones. */
-  const agentRegistry = { get: vi.fn((sessionId: string) => agents.get(sessionId)) }
+  const agentRegistry = {
+    get: vi.fn((sessionId: string) => agents.get(sessionId)),
+    /** Makes a new session and its agent for the caller, who owns it: disposing the handle ends the live agent. */
+    create: vi.fn(async (options: CreateOptions) => {
+      const agent = await spawn(options.sessionId, 'new', options.setup)
+      const dispose = vi.fn(async () => {
+        if (agents.get(agent.id) !== agent) return
+        agents.delete(agent.id)
+        tools.get(agent.id)?.clear() // what was registered on the agent goes with its scope
+      })
+      const handle = { agent, dispose }
+      created.push({ options, handle })
+      return handle
+    }),
+  }
+  /** DSH's preset registry: `mount` composes an agent from a preset during its setup. */
+  const agentPresets = {
+    mount: vi.fn(async (_agentCtx: Context, id: string) => ({ id })),
+    inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
+  }
 
-  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agents: agentRegistry }))
+  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agentPresets, agents: agentRegistry }))
     ctx.reflect.provide(name, service)
 
   const agentOf = (sessionId: string): FakeAgent => {
@@ -145,8 +183,12 @@ export function dshHost() {
   }
 
   return {
-    ctx, sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agents: agentRegistry,
+    ctx, sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agentPresets, agents: agentRegistry,
     agent: agentOf,
+    /** Every `agents.create` call with the handle it answered with, oldest first. */
+    created,
+    /** The workspace at `path`, once `workspaceRegistry.create` made it. */
+    workspace: (path: string) => workspaces.get(path),
     /** The tools registered on the session's current agent, by name. */
     tools: (sessionId: string) => tools.get(sessionId) ?? new Map<string, RegisteredTool>(),
     /** The messages sent to the session, oldest first. */

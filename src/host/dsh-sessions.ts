@@ -5,17 +5,22 @@
  * message of Outpost's own (`source.kind: 'dsh-outpost'`), never one posing as the user. A round ends with the end of the
  * turn that took its message; what it cost is the usage of that turn's assistant messages.
  *
- * Every DSH value comes through `ctx` (session controller, workspace registry, persistence, agents); this file imports only
- * DSH types.
+ * Outpost makes a research session's agent itself (`ctx.agents.create`) and keeps its handle, so that `release` can end
+ * the live agent once the run is over: that closes the browser the preset launched for it. A 追问 chat is made by DSH's
+ * session controller, as any chat of the user's, and stays.
+ *
+ * Every DSH value comes through `ctx` (session controller, workspace registry, persistence, agents, presets); this file
+ * imports only DSH types.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { MessageId, TokenUsage, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-workspace'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { z } from 'zod'
@@ -39,6 +44,15 @@ export const AGENT_PRESET = 'outpost-researcher'
 export const FOLLOWUP_PRESET = 'standard'
 /** Title of the DSH workspace the sessions live in. */
 export const WORKSPACE_TITLE = '前哨'
+
+/**
+ * What Outpost uses of DSH's preset registry (`ctx.agentPresets`, package `@deepseek-ai/dsh-agent-preset-registry`):
+ * composing a new agent from a preset during its setup, and reading which modules each preset revision has running.
+ */
+export interface AgentPresets {
+  mount(agentCtx: Context, id: string): Promise<{ id: string }>
+  inspectCompositions(): readonly { readonly id: string; readonly modules: readonly { readonly moduleName: string }[] }[]
+}
 
 /**
  * The JSON Schema the model sees for a tool's arguments. It describes what the tool accepts (`io: 'input'`): a field with a
@@ -102,9 +116,14 @@ export class DshSessionDriver implements SessionDriver {
   private readonly bound = new Map<string, ToolSpec[]>()
   /** The agent each session's tools are registered on now, and how to take them off again. */
   private readonly attached = new Map<string, { agent: Agent; specs: ToolSpec[]; dispose(): void }>()
+  /** The research sessions this driver made and whose live agent it still holds, by id (see `release`). */
+  private readonly owned = new Map<string, AgentHandle>()
+  /** The 追问 chats it opened or gave their tools again: the user's conversations, which `release` never touches. */
+  private readonly chats = new Set<string>()
 
   /**
-   * @param ctx - the plugin's Context, which provides `sessionController`, `workspaceRegistry` and `sessionPersistence`.
+   * @param ctx - the plugin's Context, which provides `sessionController`, `workspaceRegistry`, `sessionPersistence`,
+   *   `agents`, `agentPresets` and `agentDefaultModel`. Research sessions it makes belong to it: they end with it.
    * @param workspaceDir - absolute directory of the 「前哨」 workspace; made when missing.
    */
   constructor(private readonly ctx: Context, private readonly workspaceDir: string) {
@@ -147,6 +166,7 @@ export class DshSessionDriver implements SessionDriver {
   rebind(sessionId: string, tools: ToolSpec[]): void {
     if (!sessionId.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${sessionId}" must start with "${SESSION_PREFIX}"`)
     this.bound.set(sessionId, tools)
+    this.chats.add(sessionId)
     const live = this.ctx.get('agents')?.get(sessionId as SessionId)
     if (live) this.attach(live)
   }
@@ -163,31 +183,95 @@ export class DshSessionDriver implements SessionDriver {
     this.bound.clear()
   }
 
+  /**
+   * Ends the live agent of a research session this driver made (`createOwned`) by disposing its handle: DSH stops the
+   * agent, unregisters it and unwinds its scope, and the browser provider closes the Playwright MCP server and the Chrome
+   * it launched for the session (docs/subsystems/browser-use.md, 「Session 所有权」). The session log stays on disk and in
+   * the 「前哨」 workspace: opening it in DSH later resumes it, without Outpost's tools. A 追问 chat is the user's and is
+   * left alone. A research session DSH resumed (after a restart) is held by DSH, which offers no way to let it go
+   * (archiving does not end the live agent): it only loses its tools, and the log says its browser stays.
+   */
+  async release(sessionId: string): Promise<void> {
+    if (this.chats.has(sessionId)) return
+    const handle = this.owned.get(sessionId)
+    this.owned.delete(sessionId)
+    if (!handle && this.bound.has(sessionId) && this.ctx.get('agents')?.get(sessionId as SessionId)) {
+      this.ctx.logger.warn('dsh-outpost: session %s was opened by DSH, not by Outpost; its live agent (and its browser) stays until DSH restarts', sessionId)
+    }
+    this.forget(sessionId)
+    try {
+      await handle?.dispose()
+    } catch (error) {
+      this.ctx.logger.warn('dsh-outpost: could not end the live agent of session %s: %s', sessionId, error instanceof Error ? error.message : String(error))
+    }
+  }
+
   async archive(sessionId: string): Promise<void> {
     await this.ctx.workspaceRegistry.archiveSession(sessionId as SessionId, { stopActivity: true })
+    this.forget(sessionId)
+    await this.release(sessionId)
+  }
+
+  /** Takes the session's tools off its agent and forgets them, so that an agent DSH makes for it later gets none. */
+  private forget(sessionId: string): void {
     this.bound.delete(sessionId)
     this.attached.get(sessionId)?.dispose()
     this.attached.delete(sessionId)
   }
 
-  /** The live agent of the session, created (and titled) first, on `preset`, when it does not exist; its tools registered. */
+  /**
+   * The live agent of the session, created (and titled) first, on `preset`, when it does not exist; its tools registered.
+   * A research session is made by this driver (`createOwned`), a 追问 chat by DSH's session controller.
+   */
   private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, preset = AGENT_PRESET): Promise<Agent> {
     const id = spec.sessionId
     if (!id.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${id}" must start with "${SESSION_PREFIX}"`)
     // Bound before the agent exists, so that `agent/created` finds the tools.
     this.bound.set(id, spec.tools)
+    if (preset !== AGENT_PRESET) this.chats.add(id)
     let agent = await this.resolve(id)
     if (!agent) {
       await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
       const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
-      const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
-      if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
-      agent = await this.resolve(id)
-      if (!agent) throw new Error(`dsh-outpost: session "${id}" vanished right after it was created`)
+      if (preset === AGENT_PRESET) {
+        agent = await this.createOwned(id, workspace)
+      } else {
+        const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
+        if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
+        agent = await this.resolve(id)
+        if (!agent) throw new Error(`dsh-outpost: session "${id}" vanished right after it was created`)
+      }
       await this.ctx.sessionController.rename({ sessionId: id as SessionId, title: spec.title })
     }
     this.attach(agent)
     return agent
+  }
+
+  /**
+   * A new research session whose live agent this driver holds. It is made as DSH's session controller makes one (the
+   * preset mounted during setup, the workspace's directory as its cwd, DSH's default model read anew until the spec
+   * selects one, the session put into the workspace), but through `ctx.agents.create`, which hands the caller the
+   * agent's handle: disposing it is the one way DSH has to end a session's live agent without archiving it. The session
+   * controller's own create keeps that handle until DSH stops, and with it the browser the preset launched.
+   */
+  private async createOwned(id: string, workspace: Workspace): Promise<Agent> {
+    const presets = this.ctx.get('agentPresets') as AgentPresets | undefined
+    if (!presets) throw new Error(`dsh-outpost: DSH has no agent presets here, so the research preset "${AGENT_PRESET}" cannot compose a session`)
+    const defaults = this.ctx.agentDefaultModel
+    const agentOptions: AgentOptions = {
+      get provider() { return defaults.currentSelection().provider },
+      get model() { return defaults.currentSelection().model },
+      get reasoningEffort() { return defaults.currentSelection().reasoningEffort },
+    }
+    const handle = await this.ctx.agents.create({
+      sessionId: id as SessionId,
+      agentOptions,
+      meta: { cwd: workspace.path, agentPreset: AGENT_PRESET },
+      setup: async agentCtx => { await presets.mount(agentCtx, AGENT_PRESET) },
+    })
+    this.owned.set(id, handle)
+    await workspace.attachSession(id as SessionId)
+    return handle.agent
   }
 
   /** The live agent of a session (resumed when it is stored but not loaded), or undefined when there is no such session. */

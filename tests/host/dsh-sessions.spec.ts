@@ -41,7 +41,18 @@ describe('DshSessionDriver.run', () => {
     await host.started('outpost-daily-p1')
     expect(existsSync(workspaceDir)).toBe(true)
     expect(host.workspaceRegistry.create).toHaveBeenCalledWith(workspaceDir, '前哨')
-    expect(host.sessionController.create).toHaveBeenCalledWith({ sessionId: 'outpost-daily-p1', workspaceId: `ws-${workspaceDir}`, agentPreset: 'outpost-researcher' })
+    // Outpost makes the research session itself (`agents.create`), so that it holds the handle that lets it go again
+    // (`release`); DSH's own create would keep that handle. As DSH composes a session, it runs on the preset, in the
+    // 「前哨」 workspace's directory, and follows DSH's default model until the spec chooses one.
+    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.created).toHaveLength(1)
+    const { options } = host.created[0]!
+    expect(options).toMatchObject({ sessionId: 'outpost-daily-p1', meta: { cwd: workspaceDir, agentPreset: 'outpost-researcher' } })
+    expect(host.agentPresets.mount).toHaveBeenCalledExactlyOnceWith(host.agent('outpost-daily-p1').ctx, 'outpost-researcher')
+    expect(options.agentOptions).toMatchObject({ provider: 'deepseek-account', model: 'deepseek-flash' })
+    host.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'ollama', model: 'qwen3' })
+    expect(options.agentOptions).toMatchObject({ provider: 'ollama', model: 'qwen3' }) // read anew, as DSH's own sessions do
+    expect(host.workspace(workspaceDir)!.attachSession).toHaveBeenCalledExactlyOnceWith('outpost-daily-p1')
     expect(host.sessionController.rename).toHaveBeenCalledWith({ sessionId: 'outpost-daily-p1', title: '前哨 · Cursor · 日更' })
     // The prompt goes in as a message of Outpost's own, not as one the user typed, and is made durable.
     const [message] = host.sent('outpost-daily-p1')
@@ -56,7 +67,7 @@ describe('DshSessionDriver.run', () => {
     const p = driver.run(specOf(), signal)
     await host.started('outpost-daily-p1')
     expect(host.sessionController.resolveAgent).toHaveBeenCalledWith('outpost-daily-p1')
-    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.agents.create).not.toHaveBeenCalled()
     expect(host.sessionController.rename).not.toHaveBeenCalled()
     expect([...host.tools('outpost-daily-p1').keys()]).toEqual(['outpost_done']) // the resumed agent gets the tools too
     host.turnEnd('outpost-daily-p1', { kind: 'completed' })
@@ -65,7 +76,7 @@ describe('DshSessionDriver.run', () => {
     // A second round of the same live session sends a second message into the same agent.
     const again = driver.run(specOf({ prompt: '再查一遍' }), signal)
     await host.started('outpost-daily-p1', 2)
-    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.agents.create).not.toHaveBeenCalled()
     expect(host.sent('outpost-daily-p1').map(m => m.content[0]!.text)).toEqual(['调用 outpost_done，summary 写 ok', '再查一遍'])
     host.turnEnd('outpost-daily-p1', { kind: 'completed' })
     expect(await again).toMatchObject({ reason: 'completed' })
@@ -118,7 +129,7 @@ describe('DshSessionDriver.run', () => {
     const twice = [probe('outpost_done').tool, probe('outpost_done').tool] // DSH refuses a second tool of the same name
     await expect(driver.run(specOf({ tools: twice }), signal)).rejects.toThrow('already registered')
     // The listener of `agent/created` swallowed it (a throw there fails the creation); the session and its agent exist.
-    expect(host.sessionController.create).toHaveBeenCalledTimes(1)
+    expect(host.agents.create).toHaveBeenCalledTimes(1)
     expect(host.agent('outpost-daily-p1').id).toBe('outpost-daily-p1')
     expect(host.tools('outpost-daily-p1').size).toBe(0) // the first was taken off again
     expect(host.sent('outpost-daily-p1')).toEqual([])
@@ -126,7 +137,7 @@ describe('DshSessionDriver.run', () => {
 
   it('refuses a session id without the outpost- prefix', async () => {
     await expect(driver.run(specOf({ sessionId: 'daily-p1' }), signal)).rejects.toThrow('outpost-')
-    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.agents.create).not.toHaveBeenCalled()
   })
 
   it('resolves with summed usage when the turn ends', async () => {
@@ -273,7 +284,7 @@ describe('DshSessionDriver.run', () => {
     const timer = new AbortController()
     timer.abort()
     expect(await driver.run(specOf(), timer.signal)).toEqual({ reason: 'timeout', usage: zero })
-    expect(host.sessionController.create).not.toHaveBeenCalled()
+    expect(host.agents.create).not.toHaveBeenCalled()
     expect(host.sessionController.cancel).not.toHaveBeenCalled()
   })
 
@@ -318,7 +329,9 @@ describe('DshSessionDriver.startInteractive', () => {
     const tools = researchTools('followup', { repo: {} as never, runId: 'r1', trackId: null, productId: 'p1', now: () => new Date(), icons: { fetch: async () => null }, onDone: () => {} })
     await driver.startInteractive({ sessionId: 'outpost-ask-1', title: '追问 · Cursor', prompt: '它的团队版多少钱？', tools, model: null })
     // The user's own chat (design §7.7): DSH's ordinary agent, not the research preset, which has only the web.
+    // DSH makes and keeps it, as any chat of the user's: Outpost never lets it go (`release`).
     expect(host.sessionController.create).toHaveBeenCalledWith({ sessionId: 'outpost-ask-1', workspaceId: `ws-${workspaceDir}`, agentPreset: 'standard' })
+    expect(host.agents.create).not.toHaveBeenCalled()
     expect(host.sessionController.rename).toHaveBeenCalledWith({ sessionId: 'outpost-ask-1', title: '追问 · Cursor' })
     expect([...host.tools('outpost-ask-1').keys()]).toEqual(['outpost_read'])
     expect(host.sent('outpost-ask-1')).toEqual([expect.objectContaining({ content: [{ type: 'text', text: '它的团队版多少钱？' }] })])
@@ -378,6 +391,73 @@ describe('DshSessionDriver.close', () => {
     expect(host.tools('outpost-followup-1').size).toBe(0)
     await host.spawn('outpost-followup-1')
     expect(host.tools('outpost-followup-1').size).toBe(0)
+  })
+})
+
+describe('DshSessionDriver.release', () => {
+  it('release frees the live session without archiving it', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    const { handle } = host.created[0]!
+    const live = host.agent('outpost-daily-p1')
+
+    await driver.release('outpost-daily-p1')
+    // The handle DSH gave for the agent is disposed: the live agent, and with it the browser it launched, is gone.
+    expect(handle.dispose).toHaveBeenCalledOnce()
+    expect(host.agents.get('outpost-daily-p1')).toBeUndefined()
+    expect(host.tools('outpost-daily-p1').size).toBe(0)
+    // Not archived, not deleted: the session stays where it was, and opening it in DSH later brings it back.
+    expect(host.workspaceRegistry.archiveSession).not.toHaveBeenCalled()
+    const reopened = await host.sessionController.resolveAgent('outpost-daily-p1')
+    expect('agent' in reopened && reopened.agent).not.toBe(live)
+    expect(host.agents.get('outpost-daily-p1')).toBeDefined()
+    expect(host.tools('outpost-daily-p1').size).toBe(0) // its run is over: Outpost no longer serves it
+    expect(host.sent('outpost-daily-p1')).toHaveLength(1) // nothing said to it
+
+    // Once is enough; a second call, and one for a session Outpost never opened, do nothing.
+    await driver.release('outpost-daily-p1')
+    await driver.release('outpost-never-1')
+    expect(handle.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a 追问 chat alone, and only takes its tools back from a research session DSH resumed', async () => {
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
+    host.store('outpost-daily-old') // a research session from before a restart, which DSH opens again for its run
+    const p = driver.run(specOf({ sessionId: 'outpost-daily-old' }), signal)
+    await host.started('outpost-daily-old')
+    host.turnEnd('outpost-daily-old', { kind: 'completed' })
+    await p
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      await driver.release('outpost-followup-1')
+      await driver.release('outpost-daily-old')
+      expect(host.agents.get('outpost-followup-1')).toBeDefined()
+      expect([...host.tools('outpost-followup-1').keys()]).toEqual(['outpost_read'])
+      expect(host.agents.get('outpost-daily-old')).toBeDefined()
+      expect(host.tools('outpost-daily-old').size).toBe(0)
+      // DSH holds the agent it resumed and offers no way to let it go: said in the log, with the session's id.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-old')
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), 'outpost-followup-1')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('logs a release that fails instead of throwing it', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    host.created[0]!.handle.dispose.mockRejectedValueOnce(new Error('the browser would not close'))
+    const warn = vi.spyOn(Object.getPrototypeOf(host.ctx.logger), 'warn').mockImplementation(() => {})
+    try {
+      await expect(driver.release('outpost-daily-p1')).resolves.toBeUndefined()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('%s'), 'outpost-daily-p1', expect.stringContaining('the browser would not close'))
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

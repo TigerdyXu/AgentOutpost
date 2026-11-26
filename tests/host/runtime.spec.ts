@@ -312,6 +312,33 @@ describe('Runtime', () => {
     expect(batch).toMatchObject({ status: 'failed', error: STOPPED_ERROR })
     await rt.stop() // twice is harmless
   })
+
+  it('says the browser fallback is on when the research preset composes an active browser provider', () => {
+    runtime = host.create()
+    const module = (moduleName: string) => ({ moduleName, useHostBase: true })
+    const compositions = vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => [])
+    expect(runtime.browserAvailable()).toBe(false) // no preset registry at all
+    host.services.agentPresets = { inspectCompositions: compositions }
+    expect(runtime.browserAvailable()).toBe(false) // the research preset does not compose (it is broken, say)
+
+    // Another preset's browser is not the research sessions'.
+    compositions.mockReturnValue([{ id: 'standard', modules: [module('@deepseek-ai/dsh-browser-use'), module('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp')], leakedServices: [] }])
+    expect(runtime.browserAvailable()).toBe(false)
+    // The research preset with the browser-use service but no provider active (its row disabled or still waiting).
+    compositions.mockReturnValue([{ id: 'outpost-researcher', modules: [module('@deepseek-ai/dsh-tool-web'), module('@deepseek-ai/dsh-browser-use')], leakedServices: [] }])
+    expect(runtime.browserAvailable()).toBe(false)
+    // cordis.patch.yml as shipped: the provider is active inside the research preset.
+    compositions.mockReturnValue([{ id: 'outpost-researcher', modules: [module('@deepseek-ai/dsh-tool-web'), module('@deepseek-ai/dsh-browser-use'), module('@deepseek-ai/dsh-experimental-browser-use-playwright-mcp')], leakedServices: [] }])
+    expect(runtime.browserAvailable()).toBe(true)
+    expect(compositions).toHaveBeenCalledWith() // every retained revision: a revision live sessions still hold counts too
+
+    // A registry that cannot say is not taken for a browser.
+    compositions.mockImplementation(() => { throw new Error('registry stopping') })
+    expect(runtime.browserAvailable()).toBe(false)
+    // A provider registered for the whole profile still counts, as before.
+    host.services.browserUse = { providerName: 'chrome-devtools-mcp' }
+    expect(runtime.browserAvailable()).toBe(true)
+  })
 })
 
 describe('models', () => {

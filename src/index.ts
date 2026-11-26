@@ -4,7 +4,7 @@ import { Config, type OutpostConfig } from './config.ts'
 import { Runtime } from './host/runtime.ts'
 
 export const name = 'dsh-outpost'
-export const inject = ['agents', 'sessionController', 'sessionPersistence', 'workspaceRegistry', 'tools', 'systemPrompt', 'webServer', 'llm', 'web', 'agentDefaultModel']
+export const inject = ['agents', 'agentPresets', 'sessionController', 'sessionPersistence', 'workspaceRegistry', 'tools', 'systemPrompt', 'webServer', 'llm', 'web', 'agentDefaultModel']
 export { Config }
 export type { OutpostConfig }
 

@@ -3,7 +3,7 @@
  * keyed by session id prefix (`'outpost-recommend-'`, `'outpost-baseline-'` …; the longest matching key wins); its entry
  * gets each round of a matching session and plays it, calling the session's tools as the agent would, and says how the
  * round ended. A session no entry matches ends every round `completed` without calling a tool. Every `run`, `nudge`,
- * `archive`, `startInteractive` and `rebind` is recorded.
+ * `release`, `archive`, `startInteractive` and `rebind` is recorded.
  */
 import type { Usage } from '../../src/core/types.ts'
 import type { Clock, SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from '../../src/host/ports.ts'
@@ -34,6 +34,8 @@ export class FakeDriver implements SessionDriver {
   readonly runs: SessionSpec[] = []
   readonly nudges: { sessionId: string; text: string }[] = []
   readonly archived: string[] = []
+  /** Sessions whose live state was let go of (`release`), in order. */
+  readonly released: string[] = []
   readonly interactive: SessionSpec[] = []
   /** Sessions given their tools again (`rebind`), in order. */
   readonly rebound: { sessionId: string; tools: ToolSpec[] }[] = []
@@ -67,6 +69,10 @@ export class FakeDriver implements SessionDriver {
 
   close(): void {
     this.closed = true
+  }
+
+  async release(sessionId: string): Promise<void> {
+    this.released.push(sessionId)
   }
 
   async archive(sessionId: string): Promise<void> {

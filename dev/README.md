@@ -95,43 +95,22 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    这是正式数据目录；开发版 dsh 用的是 `/Users/tiger/Projects/AgentOutpost-data/dev`，两个不要混用（同一个目录同时只能被一个前哨打开）。
 
-6. **（可选）开浏览器兜底**，让公众号、小红书、知乎这类有验证页的原文也能打开核实。包里带了两行，默认关着：`outpost-browser-use`（`@deepseek-ai/dsh-browser-use`）和 `outpost-browser-use-playwright`（`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp`，`mode: launch`、`headless: true`）。**一个 profile 只能注册一个浏览器提供方**，多了 dsh 会拒绝第二个。所以先看桌面版里是不是已经开了别的浏览器提供方：「插件」页里有没有已启用的 browser-use 行（别的插件也可能带），以及 profile 补丁里有没有：
+6. **浏览器兜底（默认打开，只给前哨的调研会话用）。** 公众号、小红书、知乎这类有验证页的原文，靠它用无界面 Chrome 打开核实。它装在包里的 `outpost-researcher` 预设里（`browser` 那一组：`@deepseek-ai/dsh-browser-use` 服务和 `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 提供方，`mode: launch`、`headless: true`、`executablePath` 指向本机 Chrome），所以只有前哨的调研会话有浏览器，你自己的会话没有。
 
-   ```sh
-   grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml
-   ```
-
-   - 已经有别的提供方（连同它的 `dsh-browser-use` 行）开着：前哨这两行保持关闭，前哨会直接用已注册的那个。
-   - 没有：先把这两个包装进桌面版 profile（桌面版 0.2.3-alpha.2 **不自带**它们，只打开开关会因为找不到包而起不来；同样要在桌面版退出时做，会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium）：
+   - **两个包必须装进 profile**：桌面版 0.2.3-alpha.2 不自带它们，没装的话调研预设起不来，前哨的推荐、建档、核查、日更**全都跑不了**。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
 
      ```sh
      "$DSH" plugin --profile desktop add @deepseek-ai/dsh-browser-use@0.2.3-alpha.2 @deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.3-alpha.2
      ```
 
-     它会提示这两个包「declares no dsh.bundle — installed as a plain dependency」，这是正常的：它们由前哨补丁里的两行加载。然后把这两行一起打开，在 `cordis.patch.yml` 末尾追加：
+   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（`serverName "playwright-mcp" is already in use`）。M1 时包里那两行 `outpost-browser-use`、`outpost-browser-use-playwright` 已经去掉；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
 
-     ```yaml
-     - id: outpost-browser-use
-       disabled: false
-     - id: outpost-browser-use-playwright
-       disabled: false
+     ```sh
+     grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml
      ```
 
-     Playwright 要用 Chromium 内核的浏览器。它自己找不到时，给这一行指定本机的 Chrome（`config` 要写全）。2026-11-26 验收时用的就是下面这种写法：
-
-     ```yaml
-     - id: outpost-browser-use-playwright
-       disabled: false
-       config:
-         mode: launch
-         headless: true
-         executablePath: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-     ```
-
-   **先看清代价再开**（2026-11-26 验收实测）：
-   - 浏览器提供方是整个 profile 共用的：**每个活着的会话**（包括你自己平时开的会话，不只是前哨的）都会带一个 Playwright MCP 子进程，用过浏览器的会话还各自留着一个无界面 Chrome；会话结束后它们也不退，直到桌面版重启。验收那天跑完一个赛道（推荐、3 个产品建档和核查、一次日更）后是 14 个 MCP 进程、7 个 Chrome，合计约 5 GB 内存（`top` 的 MEM）。
-   - 每个会话（包括你平时的）都会多出一组 `browser_*` 工具，其中 `browser_run_code_unsafe` 按 Playwright 自己的说明是「在 Playwright 进程里执行任意 JavaScript，等同远程代码执行」；验收时这些浏览器工具的调用都没有经过确认就执行了。前哨的调研会话整天在读不可信的网页，这一点要自己权衡。
-   - 不想要时把两行改回 `disabled: true` 再重启即可（包可以留着），前哨会退回「打不开就待确认」。
+   - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着；之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，调用不经确认，而调研会话读的是不可信网页。
+   - **关掉或换浏览器**：在 profile 补丁里覆盖 `outpost-researcher-preset` 这一行。覆盖会整段替换 `config`，所以要把包里 `cordis.patch.yml` 的这一行整段抄过来，去掉 `browser` 那一组（关掉），或改 `executablePath`（换成别的 Chromium 内核浏览器；删掉这一行则让 Playwright 自己找）。关掉后打不开的原文按「待确认」处理。
 
 7. **（按需）指定研究用的模型。** 前哨默认用桌面版的默认模型。如果默认模型不是 DeepSeek（比如设成了本机 Ollama），联网搜索和花费估算都对不上，给 `outpost` 行加上：
 
@@ -146,9 +125,9 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    也可以在前哨的设置页「模型」一栏填。
 
-8. **重新打开桌面版。** 侧栏出现「前哨」（望远镜图标；界面语言跟随系统，英文系统下叫「Outpost」），设置页显示的数据目录是 `/Users/tiger/Projects/AgentOutpost-data`；开了浏览器兜底的话，设置页「浏览器兜底」一栏显示「浏览器兜底已开启」，不再提示去「插件」页启用。
+8. **重新打开桌面版。** 侧栏出现「前哨」（望远镜图标；界面语言跟随系统，英文系统下叫「Outpost」），设置页显示的数据目录是 `/Users/tiger/Projects/AgentOutpost-data`；两个浏览器包装好了的话，设置页「浏览器兜底」一栏显示「浏览器兜底已开启」。
 
-**撤回**：退出桌面版，`"$DSH" plugin --profile desktop remove dsh-outpost`（装了浏览器兜底的，连同 `@deepseek-ai/dsh-browser-use`、`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 一起 remove），再把备份的 `package.json`、`cordis.patch.yml`（以及 `pnpm-lock.yaml`）拷回 `~/.dsh/profiles/desktop/`。数据目录里的东西不会被删。
+**撤回**：退出桌面版，`"$DSH" plugin --profile desktop remove dsh-outpost`（连同 `@deepseek-ai/dsh-browser-use`、`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 一起 remove），再把备份的 `package.json`、`cordis.patch.yml`（以及 `pnpm-lock.yaml`）拷回 `~/.dsh/profiles/desktop/`。数据目录里的东西不会被删。
 
 **装新版本**：重新 `pnpm check && pnpm pack`，退出桌面版，然后**先 remove 再 add**（版本号没变时，直接再 `add` 同一个 `.tgz` 会提示「Already up to date」而不换文件）：
 
