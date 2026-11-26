@@ -582,24 +582,33 @@ describe('the candidates of a track that other tracks already follow', () => {
 
     const found = await candidatesOf(b.id)
 
-    expect(found.map(f => [f.product.name, f.trackedIn])).toEqual([
-      ['小豆', ['Personal Agent', 'AI 硬件']],
-      ['千问Go', ['Personal Agent']],
-      ['Cursor', []],
-      ['老产品', []],
-      ['Zed!', []],
+    expect(found.map(f => [f.product.name, f.trackedIn, f.trackedStatus])).toEqual([
+      ['小豆', ['Personal Agent', 'AI 硬件'], 'tracking'],
+      ['千问Go', ['Personal Agent'], 'tracking'], // the status of the tracked twin, not of the candidate row
+      ['Cursor', [], null],
+      ['老产品', [], null],
+      ['Zed!', [], null],
     ])
   })
 
-  it('counts a paused or baselining product as tracked, and an archived one as not', async () => {
+  it('counts a paused or baselining product as followed, says which, and an archived one as not', async () => {
     const a = addTrack({ name: '赛道A' })
     const c = addTrack({ name: '赛道C' })
     const b = addTrack({ name: '赛道B', status: 'picking' })
     addProduct('paused', '暂停的', 'paused', a.id)
     addProduct('baselining', '建档中的', 'baselining', c.id)
     addProduct('archived-row', '归档的', 'archived', a.id)
-    for (const id of ['paused', 'baselining', 'archived-row']) addCandidate(b.id, id)
-    expect((await candidatesOf(b.id)).map(f => [f.product.name, f.trackedIn])).toEqual([['暂停的', ['赛道A']], ['建档中的', ['赛道C']], ['归档的', []]])
+    // A candidate row of its own whose twin, the one 开始跟踪 would link, is paused in two tracks.
+    addAlike('kimi-paused', 'Kimi 助手', '月之暗面', 'paused', a.id)
+    repo.linkProduct(c.id, 'kimi-paused')
+    addAlike('kimi-copy', 'Kimi助手!', '月之暗面', 'candidate')
+    for (const id of ['paused', 'baselining', 'archived-row', 'kimi-copy']) addCandidate(b.id, id)
+    expect((await candidatesOf(b.id)).map(f => [f.product.name, f.trackedIn, f.trackedStatus])).toEqual([
+      ['暂停的', ['赛道A'], 'paused'],
+      ['建档中的', ['赛道C'], 'baselining'],
+      ['归档的', [], null],
+      ['Kimi助手!', ['赛道A', '赛道C'], 'paused'],
+    ])
   })
 })
 

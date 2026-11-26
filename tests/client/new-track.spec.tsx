@@ -14,13 +14,17 @@ import { all, click, fail, find, mount, product, settle, state, stubApi, submit,
 
 const TRACK = 't1'
 const heat = (extra: Partial<Heat> = {}): Heat => ({ foundCount: 41, datedWeekly: [5, 7, 6, 10, 14], trend: 'up', showBars: true, ...extra })
-type Found = Candidate & { product: Product; trackedIn: string[] }
-/** A candidate of the track's batch `b1`: strong and picked by default unless `extra` says otherwise. */
-const cand = (id: string, name: string, extra: Partial<Candidate> & { product?: Partial<Product>; trackedIn?: string[] } = {}): Found => {
+type Found = CandidatesView['candidates'][number]
+/**
+ * A candidate of the track's batch `b1`: strong and picked by default unless `extra` says otherwise. Followed elsewhere
+ * (`trackedIn` given), its twin is tracking unless `trackedStatus` says otherwise.
+ */
+const cand = (id: string, name: string, extra: Partial<Candidate> & { product?: Partial<Product>; trackedIn?: string[]; trackedStatus?: Found['trackedStatus'] } = {}): Found => {
   const { product: productExtra, ...rest } = extra
   return {
     id, trackId: TRACK, batchId: 'b1', productId: `p-${id}`, tier: 'strong', oneLiner: `${name}是什么`, reason: `${name}为什么值得看`, heat: heat(), selected: true,
-    trackedIn: [], ...rest, product: product(`p-${id}`, name, { company: '某公司', status: 'candidate', form: 'App', ...productExtra }),
+    trackedIn: [], trackedStatus: rest.trackedIn?.length ? 'tracking' : null, ...rest,
+    product: product(`p-${id}`, name, { company: '某公司', status: 'candidate', form: 'App', ...productExtra }),
   }
 }
 const doubao = cand('c1', '豆包·小豆', { product: { company: '字节跳动', form: 'App 内代理' } })
@@ -420,6 +424,20 @@ describe('a candidate that other tracks already follow', () => {
     // With only the one that is tracked elsewhere ticked there is no day's cost and no profile to build.
     for (const name of ['Meta Muse', 'OpenAI Dots', '某手机厂商代理']) await click(box(name))
     expect(footer()).toBe('已选 1 个稍后再挑开始跟踪 1 个')
+  })
+
+  it('says a product paused elsewhere is paused there, without promising missing dimensions, and leaves it out of the estimate', async () => {
+    // Paused in two tracks: it neither runs nor gets topped up, so there is nothing to add for it here.
+    const paused = cand('c1', 'Kimi助手', { trackedIn: ['Personal Agent', '手机 AI 助理'], trackedStatus: 'paused' })
+    const building = cand('c3', 'OpenAI Dots', { trackedIn: ['AI 硬件'], trackedStatus: 'baselining' })
+    await show(view([paused, muse, building]))
+    expect(card('Kimi助手').querySelector('.op-pick-tracked')?.textContent).toBe('已在Personal Agent、手机 AI 助理暂停')
+    expect(card('Kimi助手').textContent).not.toContain('只补缺的维度')
+    expect(card('OpenAI Dots').querySelector('.op-pick-tracked')?.textContent).toBe('已在AI 硬件跟踪 · 只补缺的维度') // 建档中: as tracked
+    expect(box('Kimi助手').disabled).toBe(false)
+    // All three ticked; only Muse is a new day's work and a new profile.
+    expect(footer()).toContain('已选 3 个')
+    expect(footer()).toContain('预计每天 ¥0.5～1（估算） · 首次建档约 5 分钟')
   })
 })
 

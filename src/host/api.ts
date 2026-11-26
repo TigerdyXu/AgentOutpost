@@ -14,7 +14,7 @@ import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, identityKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
-  Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, Run, RunStatus, Source, Track,
+  Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
 import { listModelGroups } from './dsh-model.ts'
 import { startFollowup } from './followup.ts'
@@ -86,9 +86,14 @@ export interface CandidatesView {
    * `trackedIn`: the names of the other tracks (archived ones aside) that Outpost already follows the candidate's product
    * in, in the order the tracks are listed: the product itself, or another row that reads alike (`findSameProduct`), tracked,
    * paused or in 建档中. Empty for a product no other track follows. A product runs once a day whatever its tracks.
+   * `trackedStatus`: with `trackedIn`, the status of the followed product that 开始跟踪 would put in this track (the
+   * candidate's product, or for a candidate row its twin): a paused one neither runs nor gets the missing dimensions. Null
+   * when `trackedIn` is empty.
    */
-  candidates: (Candidate & { product: Product; trackedIn: string[] })[]
+  candidates: (Candidate & { product: Product; trackedIn: string[]; trackedStatus: FollowedStatus | null })[]
 }
+/** The statuses of a product Outpost follows (`FOLLOWED`). */
+export type FollowedStatus = Extract<ProductStatus, 'tracking' | 'paused' | 'baselining'>
 export interface ProductView {
   product: Product
   facts: Facts | null
@@ -287,13 +292,18 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    */
   const isWorkedOn = (p: Product) => p.status === 'tracking' || p.status === 'baselining'
   /**
-   * The names of the tracks among `others` that follow the product: it, or another row that reads alike, tracked, paused or
-   * in 建档中, is one of their products. A candidate row of its own for a product tracked elsewhere (「千问Go」 beside
-   * 「千问Go!」) is told as that product is.
+   * The names of the tracks among `others` that follow the product (`trackedIn`): it, or another row that reads alike,
+   * tracked, paused or in 建档中, is one of their products. A candidate row of its own for a product tracked elsewhere
+   * (「千问Go」 beside 「千问Go!」) is told as that product is. With them, the status of the row 开始跟踪 would link
+   * (`trackedStatus`: the product itself, or for a candidate or archived row its twin, as `POST tracks/:id/start` picks it).
    */
-  const trackedElsewhere = (p: Product, others: { name: string; products: Set<Id> }[]) => {
-    const followed = [p, repo.findSameProduct(p)].flatMap(row => row && FOLLOWED.includes(row.status) ? [row.id] : [])
-    return others.filter(other => followed.some(id => other.products.has(id))).map(other => other.name)
+  const trackedElsewhere = (p: Product, others: { name: string; products: Set<Id> }[]): { trackedIn: string[]; trackedStatus: FollowedStatus | null } => {
+    const twin = repo.findSameProduct(p)
+    const followed = [p, twin].flatMap(row => row && FOLLOWED.includes(row.status) ? [row.id] : [])
+    const trackedIn = others.filter(other => followed.some(id => other.products.has(id))).map(other => other.name)
+    const joining = p.status === 'candidate' || p.status === 'archived' ? twin : p
+    const status = joining && FOLLOWED.includes(joining.status) ? joining.status as FollowedStatus : null
+    return { trackedIn, trackedStatus: trackedIn.length ? status : null }
   }
   /** Whether the product has no card yet for one of `keys`. */
   const lacksCard = (productId: Id, keys: DimensionKey[]) => {
@@ -501,7 +511,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         elapsedSec: Number.isNaN(started) ? 0 : Math.max(0, Math.floor((ended - started) / 1000)),
         candidates: batchId === null ? [] : repo.listCandidates(t.id, batchId).flatMap(c => {
           const p = repo.getProduct(c.productId)
-          return p ? [{ ...c, product: p, trackedIn: trackedElsewhere(p, elsewhere) }] : []
+          return p ? [{ ...c, product: p, ...trackedElsewhere(p, elsewhere) }] : []
         }),
       }
     },

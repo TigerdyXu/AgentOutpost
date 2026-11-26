@@ -284,7 +284,10 @@ function PickCard({ candidate, picked, tracked, compact, onToggle }: {
       </span>
     </span>
     {tracked && <span className="op-pick-tracked">{t('pick.tracked')}</span>}
-    {candidate.trackedIn.length > 0 && <span className="op-pick-tracked">{t('pick.trackedElsewhere', { tracks: candidate.trackedIn.join('、') })}</span>}
+    {/* Followed elsewhere: it joins this track as it is. A paused one neither runs nor gets the missing dimensions. */}
+    {candidate.trackedIn.length > 0 && <span className="op-pick-tracked">
+      {t(candidate.trackedStatus === 'paused' ? 'pick.pausedElsewhere' : 'pick.trackedElsewhere', { tracks: candidate.trackedIn.join('、') })}
+    </span>}
     {!compact && candidate.oneLiner && <span className="op-pick-one">{candidate.oneLiner}</span>}
     {!compact && <HeatLine heat={candidate.heat} />}
     {candidate.reason && <span className="op-pick-why"><b>{t(compact ? 'pick.whyShort' : 'pick.why')}</b>{candidate.reason}</span>}

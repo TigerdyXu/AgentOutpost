@@ -144,6 +144,7 @@ const TEXT = {
   'pick.region.overseas': ['海外', 'Overseas'],
   'pick.tracked': ['已在跟踪', 'Already tracked'],
   'pick.trackedElsewhere': ['已在{tracks}跟踪 · 只补缺的维度', 'Already tracked in {tracks} · only the missing dimensions are added'],
+  'pick.pausedElsewhere': ['已在{tracks}暂停', 'Paused in {tracks}'],
   'pick.heatFound': ['找到 {count} 篇相关报道', 'Found {count} related articles'],
   'pick.trend.up': ['热度上升', 'heating up'],
   'pick.trend.flat': ['平稳', 'steady'],
