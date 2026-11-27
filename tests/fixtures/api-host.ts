@@ -32,13 +32,18 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   const routes: CapturedRoute[] = []
   const line = () => vi.fn<(format: unknown, ...params: unknown[]) => void>()
   const logger = { info: line(), warn: line(), error: line(), debug: line() }
+  /** DSH's diagnostic of each preset that did not load, by id (`breakPreset`); every other preset composes. */
+  const brokenPresets = new Map<string, string>()
   /**
-   * Other DSH services `ctx.get` finds: `agentPresets`, whose research preset composes (without a browser) unless a test
-   * says otherwise, and `browserUse`, say.
+   * Other DSH services `ctx.get` finds: `agentPresets`, whose research presets compose (no browser running in either)
+   * unless a test says otherwise, and `browserUse`, say.
    */
   const services: Record<string, unknown> = {
     agentPresets: {
-      resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id })),
+      resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => {
+        const broken = brokenPresets.get(id)
+        return broken === undefined ? { id } : { id, broken }
+      }),
       inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
     },
   }
@@ -84,6 +89,11 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
 
   return {
     dir, dataDir, ctx, routes, logger, services, llm, agentDefaultModel, clock, driver, complete, icons, config, create, call,
+    /** From now on DSH reports the preset `id` broken with `reason`; null makes it compose again. */
+    breakPreset: (id: string, reason: string | null = `${id}: Cannot find package`) => {
+      if (reason === null) brokenPresets.delete(id)
+      else brokenPresets.set(id, reason)
+    },
     cleanup: () => { rmSync(dir, { recursive: true, force: true }) },
   }
 }

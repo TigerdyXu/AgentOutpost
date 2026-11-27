@@ -187,6 +187,7 @@ describe('GET state', () => {
     expect(state.todayUnread).toBe(1)
     expect(state.todayCostYuan).toBe(1.25)
     expect(state.browserAvailable).toBe(false)
+    expect(state.browserMissing).toBe(false)
     expect(state.researchBroken).toBe(false)
     // The time the daily run is due, for the page that says when the first brief will arrive.
     expect(state.runTime).toBe(rt.settings().runTime)
@@ -252,19 +253,27 @@ describe('GET state', () => {
     expect(host.ctx.get).toHaveBeenCalledWith('browserUse')
   })
 
-  it('says when research cannot run because its preset does not compose, apart from whether the browser is on', async () => {
+  it('says when research runs on the preset without a browser, and when it cannot run at all', async () => {
     const state = async () => ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>()
     const presets = host.services.agentPresets as { resolve: ReturnType<typeof vi.fn>; inspectCompositions: ReturnType<typeof vi.fn> }
-    expect(await state()).toMatchObject({ researchBroken: false })
-    // The browser packages are missing: DSH marks the preset broken, and no research session can start.
-    presets.resolve.mockResolvedValueOnce({ id: 'outpost-researcher', broken: 'browser-use-playwright: Cannot find package' })
-    expect(await state()).toMatchObject({ researchBroken: true, browserAvailable: false })
+    expect(await state()).toMatchObject({ researchBroken: false, browserMissing: false })
+    // The browser packages are missing (a plain `dsh plugin add` of Outpost): DSH marks the browser preset broken, and
+    // research runs on the one without a browser.
+    host.breakPreset('outpost-researcher', 'browser-use-playwright: Cannot find package')
+    expect(await state()).toMatchObject({ researchBroken: false, browserMissing: true, browserAvailable: false })
     expect(presets.resolve).toHaveBeenCalledWith('outpost-researcher')
-    // A Playwright browser for the whole profile beside the preset's own: a conflict, not 「on」.
+    expect(presets.resolve).toHaveBeenCalledWith('outpost-researcher-basic')
+    // Neither loads: no research session can start.
+    host.breakPreset('outpost-researcher-basic', 'tool-web: Cannot find package')
+    expect(await state()).toMatchObject({ researchBroken: true, browserMissing: false, browserAvailable: false })
+    host.breakPreset('outpost-researcher', null)
+    host.breakPreset('outpost-researcher-basic', null)
+    // A Playwright browser for the whole profile beside the preset's own: research moves to the preset without a browser,
+    // which the profile's Playwright reaches, so the browser is on all the same.
     presets.inspectCompositions.mockReturnValue([{ id: 'outpost-researcher', modules: [{ moduleName: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp', useHostBase: true }], leakedServices: [] }])
-    expect(await state()).toMatchObject({ researchBroken: false, browserAvailable: true })
+    expect(await state()).toMatchObject({ researchBroken: false, browserMissing: false, browserAvailable: true })
     host.services.browserUse = { providerName: 'playwright-mcp' }
-    expect(await state()).toMatchObject({ researchBroken: true, browserAvailable: false })
+    expect(await state()).toMatchObject({ researchBroken: false, browserMissing: true, browserAvailable: true })
   })
 })
 

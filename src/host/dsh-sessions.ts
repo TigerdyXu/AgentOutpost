@@ -1,13 +1,14 @@
 /**
  * `SessionDriver` on DSH: Outpost's research sessions are ordinary DSH sessions in the 「前哨」 workspace, running the
- * `outpost-researcher` preset (a 追问 chat runs DSH's `standard` preset instead: it is the user's own conversation, design
- * §7.7). Each gets the `outpost_*` tools of its round on its own agent, and is told what to do with a
- * message of Outpost's own (`source.kind: 'dsh-outpost'`), never one posing as the user. A round ends with the end of the
- * turn that took its message; what it cost is the usage of that turn's assistant messages.
+ * `outpost-researcher` preset, or `outpost-researcher-basic` (the same without the browser) when that one cannot be used
+ * (`chooseResearchPreset`); a 追问 chat runs DSH's `standard` preset instead: it is the user's own conversation, design
+ * §7.7. Each gets the `outpost_*` tools of its round on its own agent, and is told what to do with a message of Outpost's
+ * own (`source.kind: 'dsh-outpost'`), never one posing as the user. A round ends with the end of the turn that took its
+ * message; what it cost is the usage of that turn's assistant messages.
  *
  * Outpost makes a research session's agent itself (`ctx.agents.create`) and keeps its handle, so that `release` can end
  * the live agent once the run is over: that closes the browser the preset launched for it, and it gives up on a creation
- * that outlasts the run's time limit (a browser that never starts). Every agent on the research preset, made by Outpost or
+ * that outlasts the run's time limit (a browser that never starts). Every agent on a research preset, made by Outpost or
  * by DSH reopening a research session, is refused the one browser tool that runs arbitrary code (`UNSAFE_BROWSER_TOOL`).
  * A 追问 chat is made by DSH's session controller, as any chat of the user's, and stays.
  *
@@ -38,7 +39,17 @@ declare module '@deepseek-ai/dsh-llm' {
 
 /** Every Outpost session id starts with this; the tools go only to sessions that carry it. */
 export const SESSION_PREFIX = 'outpost-'
+/** The research preset (cordis.patch.yml), with the browser fallback; research runs on it whenever it can be used. */
 export const AGENT_PRESET = 'outpost-researcher'
+/**
+ * The same research preset without the browser group (cordis.patch.yml), so that it loads without the browser packages,
+ * which the Desktop does not ship and a plain `dsh plugin add` of Outpost does not install. Research runs on it when
+ * `AGENT_PRESET` cannot be used (`chooseResearchPreset`); a page behind a verification wall then stays unopened and its
+ * finding 「待确认」, unless the profile has a browser of its own.
+ */
+export const BASIC_AGENT_PRESET = 'outpost-researcher-basic'
+/** Every preset a research session runs on. */
+export const RESEARCH_PRESETS: readonly string[] = [AGENT_PRESET, BASIC_AGENT_PRESET]
 /**
  * The preset of a 追问 chat: DSH's own `standard` agent (`packages/bundle/web-app/presets/standard.patch.yml` in the dsh
  * source), which the desktop and web profiles compose, with `outpost_read` added.
@@ -48,10 +59,11 @@ export const FOLLOWUP_PRESET = 'standard'
 export const WORKSPACE_TITLE = '前哨'
 
 /**
- * What a research run fails with when the research preset cannot compose a session (`researchPresetProblem`); what
- * DSH said is in the log.
+ * What a research run fails with when neither research preset can compose a session (`chooseResearchPreset`). A missing
+ * browser no longer stops research (it runs without one), so this is something deeper, which the user cannot fix from a
+ * sentence here: it says what stops and where the details are (what DSH said of each preset is in the log).
  */
-export const RESEARCH_PRESET_BROKEN = '前哨的调研预设加载不了：浏览器兜底的两个包没装，或 profile 里另开了一个 Playwright 浏览器。装上包或删掉 profile 里那一行后重启。'
+export const RESEARCH_PRESET_BROKEN = '前哨的调研预设加载不了，推荐、建档、核查和日更都跑不了。详情在桌面版的日志里。'
 /** DSH's Playwright browser provider, as the research preset composes it (cordis.patch.yml). */
 export const PLAYWRIGHT_MODULE = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
 /** The name that provider registers with browser use, which is also the MCP server name its tools are reached by. */
@@ -68,14 +80,16 @@ export const RESEARCH_TOOL_REFUSED = '前哨的调研会话不能用这个工具
 const FOLLOWUP_SESSION_PREFIX = `${SESSION_PREFIX}followup-`
 
 /**
- * Whether `agent` is built on the research preset, wherever it was made: by Outpost (`createOwned`), or by DSH reopening
- * a research session (Desktop restoring its last page at startup, the user opening one from the sidebar or 运行记录). Told
- * by the preset id DSH keeps in the session's durable header (`SessionHeader.agentPreset`, restored on resume); a session
- * whose header names none (or an agent without one to read) by its id: an Outpost session that is not a 追问 chat.
+ * Whether `agent` is built on a research preset (either of `RESEARCH_PRESETS`), wherever it was made: by Outpost
+ * (`createOwned`), or by DSH reopening a research session (Desktop restoring its last page at startup, the user opening one
+ * from the sidebar or 运行记录). The one without a browser counts too: a browser turned on for the whole profile reaches
+ * its sessions, which read pages nobody vetted all the same. Told by the preset id DSH keeps in the session's durable
+ * header (`SessionHeader.agentPreset`, restored on resume); a session whose header names none (or an agent without one to
+ * read) by its id: an Outpost session that is not a 追问 chat.
  */
 export function isResearchAgent(agent: Pick<Agent, 'id'> & { readonly session?: { readonly header?: { readonly agentPreset?: string } } }): boolean {
   const preset = agent.session?.header?.agentPreset
-  if (preset !== undefined) return preset === AGENT_PRESET
+  if (preset !== undefined) return RESEARCH_PRESETS.includes(preset)
   return agent.id.startsWith(SESSION_PREFIX) && !agent.id.startsWith(FOLLOWUP_SESSION_PREFIX)
 }
 
@@ -91,8 +105,8 @@ export interface AgentPresets {
 }
 
 /**
- * Whether a revision of the research preset that DSH holds has a module running that passes `test` (`inspectCompositions`
- * lists active rows only; a preset whose rows failed has no revision).
+ * Whether a revision of the research preset with the browser (`AGENT_PRESET`) that DSH holds has a module running that
+ * passes `test` (`inspectCompositions` lists active rows only; a preset whose rows failed has no revision).
  */
 export function researchPresetRuns(presets: AgentPresets | null | undefined, test: (moduleName: string) => boolean): boolean {
   return presets?.inspectCompositions().some(c => c.id === AGENT_PRESET && c.modules.some(m => test(m.moduleName))) ?? false
@@ -109,26 +123,65 @@ export function profileBrowserProvider(ctx: Context): string | true | null {
   return service.providerName === undefined ? null : String(service.providerName)
 }
 
-/**
- * Why the research preset cannot compose a session now, in DSH's words, or null when it can: there is no preset registry;
- * DSH's own diagnostic of the preset (`resolve`: a row that did not load, as when the browser packages are not
- * installed; a preset it does not know); or a Playwright browser registered for the whole profile beside the preset's
- * own: both would start an MCP server named `playwright-mcp` for the session, and DSH refuses the second only while
- * creating the session, after it has written it.
- */
-export async function researchPresetProblem(ctx: Context): Promise<string | null> {
-  const presets = ctx.get('agentPresets') as AgentPresets | null | undefined
-  if (!presets) return 'DSH has no agent preset registry'
+/** Which preset new research sessions are created on now, and why not the other (`chooseResearchPreset`). */
+export interface ResearchPresetChoice {
+  /** `AGENT_PRESET`, `BASIC_AGENT_PRESET`, or null when neither can compose a session: then no research runs. */
+  readonly preset: string | null
+  /** Why `AGENT_PRESET` cannot be used, in DSH's words, or null when it is the one. */
+  readonly browserProblem: string | null
+  /** Why neither can, in DSH's words, or null when one can. */
+  readonly problem: string | null
+}
+
+const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+/** DSH's own diagnostic of a preset (`resolve`: a row that did not load; a preset it does not know), or null when it composes. */
+async function presetProblem(presets: AgentPresets, id: string): Promise<string | null> {
   try {
-    const { broken } = await presets.resolve(AGENT_PRESET)
-    if (broken !== undefined) return broken
+    return (await presets.resolve(id)).broken ?? null
+  } catch (error) {
+    return messageOf(error)
+  }
+}
+
+/**
+ * Why the research preset with the browser cannot be used now, or null when it can: DSH's diagnostic of it (a row that did
+ * not load, as when the browser packages are not installed), or a Playwright browser registered for the whole profile
+ * beside the preset's own: both would start an MCP server named `playwright-mcp` for the session, and DSH refuses the
+ * second only while creating the session, after it has written it. A registry that cannot say whether they clash counts
+ * as a clash: the preset without a browser has nothing to clash with.
+ */
+async function browserPresetProblem(ctx: Context, presets: AgentPresets): Promise<string | null> {
+  const broken = await presetProblem(presets, AGENT_PRESET)
+  if (broken !== null) return broken
+  try {
     if (profileBrowserProvider(ctx) === PLAYWRIGHT_PROVIDER && researchPresetRuns(presets, name => name === PLAYWRIGHT_MODULE)) {
       return `a Playwright browser registered for the whole profile ("${PLAYWRIGHT_PROVIDER}") beside the preset's own`
     }
     return null
   } catch (error) {
-    return error instanceof Error ? error.message : String(error)
+    return messageOf(error)
   }
+}
+
+/**
+ * The preset a new research session is created on now: the one with the browser (`AGENT_PRESET`) when it can be used;
+ * else the same without it (`BASIC_AGENT_PRESET`), as when the browser packages are not installed (a plain `dsh plugin
+ * add` of Outpost) or the profile's own Playwright clashes with the preset's (whose browser then reaches the session); only
+ * when that one cannot compose either is there none, and research is broken. Asked before each new research session, so a
+ * profile fixed (and DSH restarted) is picked up without restarting Outpost; never throws.
+ */
+export async function chooseResearchPreset(ctx: Context): Promise<ResearchPresetChoice> {
+  const presets = ctx.get('agentPresets') as AgentPresets | null | undefined
+  if (!presets) {
+    const missing = 'DSH has no agent preset registry'
+    return { preset: null, browserProblem: missing, problem: missing }
+  }
+  const browserProblem = await browserPresetProblem(ctx, presets)
+  if (browserProblem === null) return { preset: AGENT_PRESET, browserProblem: null, problem: null }
+  const basicProblem = await presetProblem(presets, BASIC_AGENT_PRESET)
+  if (basicProblem === null) return { preset: BASIC_AGENT_PRESET, browserProblem, problem: null }
+  return { preset: null, browserProblem, problem: `${AGENT_PRESET}: ${browserProblem}; ${BASIC_AGENT_PRESET}: ${basicProblem}` }
 }
 
 /**
@@ -224,6 +277,11 @@ export class DshSessionDriver implements SessionDriver {
   private readonly guarded = new WeakSet<Agent>()
   /** Who hears what the 追问 chats use (`onChatUsage`); none once Outpost stops (`close`). */
   private chatUsage: ((sessionId: string, usage: Usage) => void) | undefined
+  /**
+   * Why the last research session made was not on the browser preset, as logged (`noteBrowserProblem`), or null when it
+   * was: the reason goes to DSH's log once each time it changes, not with every session of a day's run.
+   */
+  private browserProblem: string | null = null
 
   /**
    * @param ctx - the plugin's Context, which provides `sessionController`, `workspaceRegistry`, `sessionPersistence`,
@@ -232,7 +290,7 @@ export class DshSessionDriver implements SessionDriver {
    */
   constructor(private readonly ctx: Context, private readonly workspaceDir: string) {
     // DSH makes a new agent for a session on every create, resume and compaction; each gets the session's tools, and each
-    // on the research preset the guard (one DSH reopens included: Outpost did not make it, and its browser is back). A
+    // on a research preset the guard (one DSH reopens included: Outpost did not make it, and its browser is back). A
     // failure here would fail the agent's creation, so it is only logged; `open` registers the tools again and reports it.
     // The guard goes on before the agent runs anything: DSH releases its queued work only after these listeners.
     ctx.on('agent/created', ({ agent }) => {
@@ -269,7 +327,7 @@ export class DshSessionDriver implements SessionDriver {
     if (signal.aborted) return { reason: 'timeout', usage: noUsage() }
     let agent: Agent
     try {
-      agent = await this.open(spec, AGENT_PRESET, signal)
+      agent = await this.open(spec, 'research', signal)
     } catch (error) {
       if (!signal.aborted) throw error
       this.ctx.logger.warn('dsh-outpost: session %s was still being made (its browser starting, say) when its time limit ran out or Outpost stopped; given up', spec.sessionId)
@@ -288,7 +346,7 @@ export class DshSessionDriver implements SessionDriver {
   }
 
   async startInteractive(spec: SessionSpec): Promise<void> {
-    const agent = await this.open(spec, FOLLOWUP_PRESET)
+    const agent = await this.open(spec, 'followup')
     this.select(agent, spec)
     agent.followup(this.message(spec.prompt))
     await this.persist()
@@ -361,17 +419,18 @@ export class DshSessionDriver implements SessionDriver {
   }
 
   /**
-   * The live agent of the session, created (and titled) first, on `preset`, when it does not exist; its tools registered.
-   * A research session is made by this driver (`createOwned`), a 追问 chat by DSH's session controller.
+   * The live agent of the session, created (and titled) first when it does not exist; its tools registered. A research
+   * session is made by this driver (`createOwned`) on the research preset usable now (`chooseResearchPreset`); a 追问 chat by
+   * DSH's session controller, on `FOLLOWUP_PRESET`. A session that exists keeps the preset it was made on.
    *
-   * `signal` (a research run's time limit) bounds the waits of making a research session: finding it, checking its preset,
+   * `signal` (a research run's time limit) bounds the waits of making a research session: finding it, choosing its preset,
    * and DSH creating its agent. When it aborts first, or the research session cannot be made, the session's tools are taken
    * back before this throws, so that no agent made for it later (a creation finishing late, the user opening it) gets them.
    */
-  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, preset: string, signal?: AbortSignal): Promise<Agent> {
+  private async open(spec: Pick<SessionSpec, 'sessionId' | 'title' | 'tools'>, kind: 'research' | 'followup', signal?: AbortSignal): Promise<Agent> {
     const id = spec.sessionId
     if (!id.startsWith(SESSION_PREFIX)) throw new Error(`dsh-outpost: session id "${id}" must start with "${SESSION_PREFIX}"`)
-    const research = preset === AGENT_PRESET
+    const research = kind === 'research'
     // Bound before the agent exists, so that `agent/created` finds the tools.
     this.bound.set(id, spec.tools)
     if (!research) this.chats.add(id)
@@ -379,19 +438,22 @@ export class DshSessionDriver implements SessionDriver {
     try {
       agent = await abortable(this.resolve(id), signal)
       if (!agent) {
+        // Chosen before anything is written: a preset that cannot compose would fail every research session, each after
+        // DSH had already written an empty one.
+        let preset = FOLLOWUP_PRESET
         if (research) {
-          // Before anything is written: a preset that cannot compose would fail every research session, each after DSH had
-          // already written an empty one.
-          const problem = await abortable(researchPresetProblem(this.ctx), signal)
-          if (problem !== null) {
-            this.ctx.logger.warn('dsh-outpost: the research preset %s cannot compose a session: %s', AGENT_PRESET, problem)
+          const choice = await abortable(chooseResearchPreset(this.ctx), signal)
+          if (choice.preset === null) {
+            this.ctx.logger.warn('dsh-outpost: no research preset can compose a session: %s', choice.problem)
             throw new Error(RESEARCH_PRESET_BROKEN)
           }
+          this.noteBrowserProblem(choice.browserProblem)
+          preset = choice.preset
         }
         await mkdir(this.workspaceDir, { recursive: true }) // DSH makes a workspace only of an existing directory
         const workspace = await this.ctx.workspaceRegistry.create(this.workspaceDir, WORKSPACE_TITLE)
         if (research) {
-          agent = await this.createOwned(id, workspace, signal)
+          agent = await this.createOwned(id, workspace, preset, signal)
         } else {
           const created = await this.ctx.sessionController.create({ sessionId: id as SessionId, workspaceId: workspace.id, agentPreset: preset })
           if (created.sessionId !== id) throw new Error(`dsh-outpost: DSH created session "${created.sessionId}" instead of "${id}"`)
@@ -409,26 +471,39 @@ export class DshSessionDriver implements SessionDriver {
     return agent
   }
 
+  /**
+   * Logs why research sessions run without the browser preset (`problem`, from `chooseResearchPreset`) when the reason is
+   * new: once per reason, not once per session; a session on the browser preset clears it, so that a reason coming back
+   * later is logged again. 设置 says the same to the user (`browserMissing`).
+   */
+  private noteBrowserProblem(problem: string | null): void {
+    if (problem !== null && problem !== this.browserProblem) {
+      this.ctx.logger.warn('dsh-outpost: research sessions run on %s, without a browser, because %s cannot be used: %s', BASIC_AGENT_PRESET, AGENT_PRESET, problem)
+    }
+    this.browserProblem = problem
+  }
+
   /** Takes back the tools bound for a session whose making failed or was given up, even from an agent that is gone. */
   private abandon(sessionId: string): void {
     try { this.forget(sessionId) } catch { /* the agent is gone, and its tools with it */ }
   }
 
   /**
-   * A new research session whose live agent this driver holds. It is made as DSH's session controller makes one (the
-   * preset mounted during setup, the workspace's directory as its cwd, DSH's default model read anew until the spec
-   * selects one, the session put into the workspace), but through `ctx.agents.create`, which hands the caller the
-   * agent's handle: disposing it is the one way DSH has to end a session's live agent without archiving it. The session
-   * controller's own create keeps that handle until DSH stops, and with it the browser the preset launched.
+   * A new research session on `preset` (one of `RESEARCH_PRESETS`) whose live agent this driver holds. It is made as DSH's
+   * session controller makes one (the preset mounted during setup and named in the session's header, the workspace's
+   * directory as its cwd, DSH's default model read anew until the spec selects one, the session put into the workspace),
+   * but through `ctx.agents.create`, which hands the caller the agent's handle: disposing it is the one way DSH has to end
+   * a session's live agent without archiving it. The session controller's own create keeps that handle until DSH stops, and
+   * with it the browser the preset launched.
    *
    * During setup the agent is refused `UNSAFE_BROWSER_TOOL` (`refuseUnsafeBrowser`; its announcement then adds nothing).
    * `signal` is DSH's creation-only cancel (`CreateAgentOptions.signal`): DSH
    * rolls the creation back when it aborts. Should a creation finish all the same after the abort, its handle is disposed
    * at once.
    */
-  private async createOwned(id: string, workspace: Workspace, signal?: AbortSignal): Promise<Agent> {
+  private async createOwned(id: string, workspace: Workspace, preset: string, signal?: AbortSignal): Promise<Agent> {
     const presets = this.ctx.get('agentPresets') as AgentPresets | undefined
-    if (!presets) throw new Error(`dsh-outpost: DSH has no agent presets here, so the research preset "${AGENT_PRESET}" cannot compose a session`)
+    if (!presets) throw new Error(`dsh-outpost: DSH has no agent presets here, so the research preset "${preset}" cannot compose a session`)
     const defaults = this.ctx.agentDefaultModel
     const agentOptions: AgentOptions = {
       get provider() { return defaults.currentSelection().provider },
@@ -438,11 +513,11 @@ export class DshSessionDriver implements SessionDriver {
     const creation = this.ctx.agents.create({
       sessionId: id as SessionId,
       agentOptions,
-      meta: { cwd: workspace.path, agentPreset: AGENT_PRESET },
+      meta: { cwd: workspace.path, agentPreset: preset },
       ...signal ? { signal } : {},
       setup: async (agentCtx, agent) => {
         this.refuseUnsafeBrowser(agent)
-        await presets.mount(agentCtx, AGENT_PRESET)
+        await presets.mount(agentCtx, preset)
       },
     })
     const handle = await abortable(creation, signal, late => {

@@ -211,12 +211,17 @@ export function dshHost() {
       return handle
     }),
   }
+  /** DSH's diagnostic of each preset that did not load, by id (`breakPreset`); every other preset composes. */
+  const brokenPresets = new Map<string, string>()
   /**
    * DSH's preset registry: `resolve` says whether a preset can compose a session (`broken` when not), `mount` composes an
    * agent from it during its setup.
    */
   const agentPresets = {
-    resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id })),
+    resolve: vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => {
+      const broken = brokenPresets.get(id)
+      return broken === undefined ? { id } : { id, broken }
+    }),
     mount: vi.fn(async (_agentCtx: Context, id: string) => ({ id })),
     inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
   }
@@ -257,6 +262,14 @@ export function dshHost() {
      * it gives up when the creation's signal aborts and rolls the creation back, as DSH does.
      */
     stallCreation: () => { stalls.push({ held: true }) },
+    /**
+     * From now on DSH reports the preset `id` broken with `reason` (a row of it did not load, as when a package it names is
+     * not installed); null makes it compose again.
+     */
+    breakPreset: (id: string, reason: string | null = `${id}: Cannot find package`) => {
+      if (reason === null) brokenPresets.delete(id)
+      else brokenPresets.set(id, reason)
+    },
     /** The messages sent to the session, oldest first. */
     sent: (sessionId: string) => sent.get(sessionId) ?? [],
     /** A session that exists on disk with no live agent, as after a restart of DSH; `header` as it was written. */

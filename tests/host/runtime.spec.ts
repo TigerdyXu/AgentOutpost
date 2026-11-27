@@ -78,7 +78,7 @@ describe('apply', () => {
     expect(await get(dsh1.routes[0]!, 'health').then(r => [r.status, r.json()])).toEqual([200, { ok: true }])
     const state = await get(dsh1.routes[0]!, 'state')
     expect(state.status).toBe(200)
-    expect(state.json()).toMatchObject({ tracks: [], todayUnread: 0, browserAvailable: false })
+    expect(state.json()).toMatchObject({ tracks: [], todayUnread: 0, browserAvailable: false, browserMissing: false, researchBroken: false })
     expect(() => lockDataDir(host.dataDir)).toThrow() // held while it runs
 
     await fiber.dispose()
@@ -341,35 +341,46 @@ describe('Runtime', () => {
     expect(runtime.browserAvailable()).toBe(true)
   })
 
-  it('reads a Playwright browser for the whole profile beside the preset\'s own as a conflict that stops research, not as on', async () => {
+  it('reads a Playwright browser for the whole profile beside the preset\'s own as on, research moving to the preset without a browser', async () => {
     runtime = host.create()
     const research = (...moduleNames: string[]) => [{ id: 'outpost-researcher', modules: moduleNames.map(moduleName => ({ moduleName, useHostBase: true })), leakedServices: [] }]
-    const resolve = vi.fn(async (id: string): Promise<{ id: string; broken?: string }> => ({ id }))
-    const compositions = vi.fn(() => research('@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'))
-    host.services.agentPresets = { resolve, inspectCompositions: compositions }
+    const presets = host.services.agentPresets as { resolve: ReturnType<typeof vi.fn>; inspectCompositions: ReturnType<typeof vi.fn> }
+    presets.inspectCompositions.mockReturnValue(research('@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'))
     expect(runtime.browserAvailable()).toBe(true)
-    expect(await runtime.researchProblem()).toBeNull()
+    expect(await runtime.researchPreset()).toEqual({ preset: 'outpost-researcher', browserProblem: null, problem: null })
 
-    // Both would start an MCP server named playwright-mcp for a research session; DSH refuses the second.
+    // Both would start an MCP server named playwright-mcp for a research session, and DSH refuses the second. Research
+    // sessions are made on the preset without a browser instead, which the profile's Playwright reaches: the browser is on.
     host.services.browserUse = { providerName: 'playwright-mcp' }
-    expect(runtime.browserAvailable()).toBe(false)
-    expect(await runtime.researchProblem()).toContain('playwright-mcp')
+    expect(runtime.browserAvailable()).toBe(true)
+    expect(await runtime.researchPreset()).toEqual({ preset: 'outpost-researcher-basic', browserProblem: expect.stringContaining('playwright-mcp'), problem: null })
     // Another browser for the whole profile clashes with nothing.
     host.services.browserUse = { providerName: 'chrome-devtools-mcp' }
     expect(runtime.browserAvailable()).toBe(true)
-    expect(await runtime.researchProblem()).toBeNull()
+    expect(await runtime.researchPreset()).toMatchObject({ preset: 'outpost-researcher', browserProblem: null })
     // A research preset overridden without its browser: the profile's Playwright is the one research sessions use.
     host.services.browserUse = { providerName: 'playwright-mcp' }
-    compositions.mockReturnValue(research('@deepseek-ai/dsh-tool-web'))
+    presets.inspectCompositions.mockReturnValue(research('@deepseek-ai/dsh-tool-web'))
     expect(runtime.browserAvailable()).toBe(true)
-    expect(await runtime.researchProblem()).toBeNull()
+    expect(await runtime.researchPreset()).toMatchObject({ preset: 'outpost-researcher', browserProblem: null })
+  })
 
-    // DSH's own diagnostic of the preset (a row that did not load), and a preset DSH does not know.
-    resolve.mockResolvedValueOnce({ id: 'outpost-researcher', broken: 'browser-use-playwright: Cannot find package' })
-    expect(await runtime.researchProblem()).toContain('Cannot find package')
-    resolve.mockRejectedValueOnce(new Error('Unknown agent preset: outpost-researcher'))
-    expect(await runtime.researchProblem()).toContain('Unknown agent preset')
-    expect(resolve).toHaveBeenCalledWith('outpost-researcher')
+  it('moves research to the preset without a browser when the browser preset does not load, and calls it broken only when neither does', async () => {
+    runtime = host.create()
+    // The browser packages are not installed (a plain `dsh plugin add` of Outpost): DSH's own diagnostic of the preset.
+    host.breakPreset('outpost-researcher', 'browser-use-playwright: Cannot find package')
+    expect(await runtime.researchPreset()).toEqual({ preset: 'outpost-researcher-basic', browserProblem: 'browser-use-playwright: Cannot find package', problem: null })
+    expect(runtime.browserAvailable()).toBe(false) // no revision of the browser preset runs, and the profile has no browser
+    // A preset DSH does not know at all.
+    const presets = host.services.agentPresets as { resolve: ReturnType<typeof vi.fn> }
+    presets.resolve.mockRejectedValueOnce(new Error('Unknown agent preset: outpost-researcher'))
+    expect(await runtime.researchPreset()).toMatchObject({ preset: 'outpost-researcher-basic', browserProblem: 'Unknown agent preset: outpost-researcher' })
+    // Neither loads: research is broken, and DSH's words for both are kept for the log.
+    host.breakPreset('outpost-researcher-basic', 'tool-web: Cannot find package')
+    const broken = await runtime.researchPreset()
+    expect(broken).toMatchObject({ preset: null, browserProblem: 'browser-use-playwright: Cannot find package' })
+    expect(broken.problem).toContain('outpost-researcher: browser-use-playwright: Cannot find package')
+    expect(broken.problem).toContain('outpost-researcher-basic: tool-web: Cannot find package')
   })
 })
 

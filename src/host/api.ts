@@ -17,6 +17,7 @@ import type {
   Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
 import { listModelGroups } from './dsh-model.ts'
+import { BASIC_AGENT_PRESET } from './dsh-sessions.ts'
 import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
 import { ICON_TYPES } from './icons.ts'
@@ -54,7 +55,13 @@ export interface StateView {
   runTime: string
   /** A browser provider is registered with DSH's browser use, so pages behind verification walls can be opened. */
   browserAvailable: boolean
-  /** The research preset cannot compose a session (`Runtime.researchProblem`): no research runs at all until it is fixed. */
+  /**
+   * The research preset with the browser did not load (its packages are not installed) or clashes with a Playwright browser
+   * of the whole profile, so research runs on the preset without one (`Runtime.researchPreset`). With no browser of the
+   * profile's either (`browserAvailable` false), 设置 says how to install the browser packages.
+   */
+  browserMissing: boolean
+  /** Neither research preset can compose a session (`Runtime.researchPreset`): no research runs at all until it is fixed. */
   researchBroken: boolean
   /** The data directory in use (database, icons, working files), for 设置 to show; it cannot be changed while Outpost runs. */
   dataDir: string
@@ -482,7 +489,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'GET health': () => ({ ok: true }),
 
     'GET state': async () => {
-      const researchBroken = (await rt.researchProblem()) !== null
+      const { preset } = await rt.researchPreset()
       const active = repo.activeRuns()
       const { brief, shown } = today()
       const fresh = new Set([...shown.values()].filter(f => !f.read).map(f => f.productId))
@@ -498,7 +505,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         todayCostYuan: repo.spentOn(rt.today()),
         runTime: rt.settings().runTime,
         browserAvailable: rt.browserAvailable(),
-        researchBroken,
+        browserMissing: preset === BASIC_AGENT_PRESET,
+        researchBroken: preset === null,
         dataDir: rt.dataDir,
       }
     },
