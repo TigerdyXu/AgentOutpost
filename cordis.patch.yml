@@ -1,12 +1,14 @@
-# dsh-outpost bundle layer: the plugin itself, and the agent preset its research sessions run under, which carries the
-# browser fallback that opens pages plain fetching cannot read. The `outpost` row carries no dataDir: the profile supplies
-# it, and the plugin refuses to start without it. dev/overlay.cordis.yml repeats these rows for a development run, because a
-# `--patch` overlay does not apply this file; keep the two in step (tests/build.spec.ts compares the preset rows).
+# dsh-outpost bundle layer: the plugin itself, and the two agent presets its research sessions run under: one with the
+# browser fallback that opens pages plain fetching cannot read, and the same without it for a profile that lacks the browser
+# packages. The `outpost` row carries no configuration: without a dataDir in the profile, Outpost keeps its data in
+# ~/.outpost/data (the directory install.sh writes there too). dev/overlay.cordis.yml repeats these rows for a development
+# run, because a `--patch` overlay does not apply this file; keep the two in step (tests/build.spec.ts compares the preset
+# rows).
 - insert:
     - id: outpost
       name: dsh-outpost
-    # The preset of every research session (outpost-researcher). It reads the web and nothing else: no shell, no file tools,
-    # no subagents. A preset row cannot hide itself from the preset picker, so its name and description say whom it is for.
+    # The preset of research sessions (outpost-researcher). It reads the web and nothing else: no shell, no file tools, no
+    # subagents. A preset row cannot hide itself from the preset picker, so its name and description say whom it is for.
     - id: outpost-researcher-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -39,13 +41,16 @@
           #   is over, which closes both, so only the sessions running now hold one; a research session opened later in DSH
           #   starts its server again, until DSH restarts.
           # Both packages must be installed in the profile (`dsh plugin add @deepseek-ai/dsh-browser-use
-          # @deepseek-ai/dsh-experimental-browser-use-playwright-mcp`): without them this preset fails and no research runs.
-          # Do not also turn on a Playwright provider for the whole profile: research sessions then fail to start
-          # ("serverName "playwright-mcp" is already in use"). executablePath is this machine's Chrome; elsewhere, point it
-          # at a Chromium-based browser, or drop the line to let Playwright find one. To change it, or to turn the fallback
-          # off, override the `outpost-researcher-preset` row in the profile's cordis.patch.yml: an override replaces the
-          # whole `config`, so restate it from this file with the line changed, or without the `browser` group. Off, a
-          # finding whose source will not open stays 「待确认」.
+          # @deepseek-ai/dsh-experimental-browser-use-playwright-mcp`; install.sh does it). The Desktop does not ship them,
+          # so a plain `dsh plugin add` of Outpost lacks them: this preset then does not load, research runs on
+          # `outpost-researcher-basic` below, without a browser, and 设置 says how to install them. A Playwright provider
+          # turned on for the whole profile clashes with this one (DSH would refuse the session: "serverName
+          # "playwright-mcp" is already in use"); research then runs on the basic preset too, which the profile's browser
+          # reaches. executablePath is this machine's Chrome; elsewhere, point it at a Chromium-based browser, or drop the
+          # line to let Playwright find one. To change it, or to turn the fallback off, override the
+          # `outpost-researcher-preset` row in the profile's cordis.patch.yml: an override replaces the whole `config`, so
+          # restate it from this file with the line changed, or without the `browser` group. Off, a finding whose source
+          # will not open stays 「待确认」.
           - id: browser
             name: cordis:group
             group: true
@@ -60,6 +65,46 @@
                   mode: launch
                   headless: true
                   executablePath: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    # The same preset without the browser (outpost-researcher-basic), for research sessions when the one above does not
+    # load or clashes with a Playwright browser of the whole profile: src/host/dsh-sessions.ts picks between the two before
+    # each new research session. Keep its plugins those of the row above, less the `browser` group (tests/build.spec.ts
+    # checks). It too shows in the preset picker, so it too says whom it is for.
+    - id: outpost-researcher-basic-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: outpost-researcher-basic
+        name: 前哨调研员（无浏览器）
+        description: 前哨的调研会话专用，没装浏览器插件时才用，不供手动选择。只能联网搜索和读网页，没有浏览器、命令行和文件工具。
+        order: 93
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a product research analyst powered by the {{model}} model.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
           - id: compaction
             name: cordis:group
             group: true

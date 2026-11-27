@@ -24,17 +24,34 @@ it('builds the host entry as an ES module with its declarations', () => {
 })
 
 // cordis.patch.yml ships in the package; dev/overlay.cordis.yml repeats its rows for a development run.
+const PATCH_FILES = ['cordis.patch.yml', 'dev/overlay.cordis.yml']
+/** The row `id` of a patch file's insert list, without comment lines. */
+function rowOf(file: string, id: string): string {
+  const lines = readFileSync(file, 'utf8').split('\n').filter(line => !line.trimStart().startsWith('#'))
+  const start = lines.indexOf(`    - id: ${id}`)
+  expect(start, `${file}: ${id}`).toBeGreaterThan(-1)
+  const end = lines.findIndex((line, i) => i > start && /^ {4}- /.test(line))
+  return lines.slice(start, end === -1 ? undefined : end).join('\n').replace(/\n+$/, '') // the file's last row ends with it
+}
+/** The `plugins` list of a preset row, as text. */
+const pluginsOf = (row: string) => row.slice(row.indexOf('        plugins:\n'))
+/** `plugins` text without the plugin entry `id` and everything under it. */
+function withoutPlugin(plugins: string, id: string): string {
+  const lines = plugins.split('\n')
+  const start = lines.indexOf(`          - id: ${id}`)
+  expect(start, id).toBeGreaterThan(-1)
+  const end = lines.findIndex((line, i) => i > start && /^ {10}- /.test(line))
+  lines.splice(start, (end === -1 ? lines.length : end) - start)
+  return lines.join('\n')
+}
+
+it('repeats both research preset rows, unchanged, in the development overlay', () => {
+  for (const id of ['outpost-researcher-preset', 'outpost-researcher-basic-preset'])
+    expect(rowOf('dev/overlay.cordis.yml', id), id).toBe(rowOf('cordis.patch.yml', id))
+})
+
 it('keeps the browser fallback inside the research preset, on, in both patch files', () => {
-  /** The `outpost-researcher-preset` row of a patch file, without comment lines. */
-  const presetRow = (file: string) => {
-    const lines = readFileSync(file, 'utf8').split('\n').filter(line => !line.trimStart().startsWith('#'))
-    const start = lines.indexOf('    - id: outpost-researcher-preset')
-    expect(start).toBeGreaterThan(-1)
-    const end = lines.findIndex((line, i) => i > start && /^ {4}- /.test(line))
-    return lines.slice(start, end === -1 ? undefined : end).join('\n')
-  }
-  const shipped = presetRow('cordis.patch.yml')
-  expect(presetRow('dev/overlay.cordis.yml')).toBe(shipped)
+  const shipped = rowOf('cordis.patch.yml', 'outpost-researcher-preset')
   // The browser-use service and its provider in a group of their own, the service isolated to it (a preset's service
   // must be, or DSH refuses the preset), launching the local Chrome without a window; nothing in the row is off.
   expect(shipped).toContain([
@@ -55,7 +72,30 @@ it('keeps the browser fallback inside the research preset, on, in both patch fil
   ].join('\n'))
   expect(shipped).not.toMatch(/disabled:/)
   // No browser for the whole profile any more: every session of the user's own would get one.
-  for (const file of ['cordis.patch.yml', 'dev/overlay.cordis.yml']) {
+  for (const file of PATCH_FILES) {
     expect(readFileSync(file, 'utf8')).not.toMatch(/^ {4}- id: outpost-browser-use/m)
   }
+})
+
+// M1.4: research runs on this one when the browser preset does not load (its packages are not installed, as after a plain
+// `dsh plugin add` of Outpost) or clashes with a Playwright browser of the whole profile (src/host/dsh-sessions.ts).
+it('ships a research preset without the browser that is otherwise the browser preset', () => {
+  const browser = rowOf('cordis.patch.yml', 'outpost-researcher-preset')
+  const basic = rowOf('cordis.patch.yml', 'outpost-researcher-basic-preset')
+  expect(basic).toContain([
+    '    - id: outpost-researcher-basic-preset',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: outpost-researcher-basic',
+    '        name: 前哨调研员（无浏览器）',
+  ].join('\n'))
+  // It shows in the user's preset list (a preset row cannot hide itself), right after the browser one, saying whom it is for.
+  expect(browser).toContain('        order: 92\n')
+  expect(basic).toContain('        order: 93\n')
+  expect(basic).toMatch(/^ {8}description: 前哨的调研会话专用.*不供手动选择/m)
+  // No browser of its own: neither the group nor either package, so it loads in a profile that has neither.
+  expect(basic).not.toMatch(/- id: browser|dsh-browser-use|playwright/)
+  expect(basic).not.toMatch(/disabled:/)
+  // Everything else as the browser preset has it: the persona, the web tools, compaction.
+  expect(pluginsOf(basic)).toBe(withoutPlugin(pluginsOf(browser), 'browser'))
 })
