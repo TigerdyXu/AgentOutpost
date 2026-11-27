@@ -478,7 +478,7 @@ export class DshSessionDriver implements SessionDriver {
    */
   private noteBrowserProblem(problem: string | null): void {
     if (problem !== null && problem !== this.browserProblem) {
-      this.ctx.logger.warn('dsh-outpost: research sessions run on %s, without a browser, because %s cannot be used: %s', BASIC_AGENT_PRESET, AGENT_PRESET, problem)
+      this.ctx.logger.warn('dsh-outpost: research sessions run on %s, without Outpost\'s own browser, because %s cannot be used: %s', BASIC_AGENT_PRESET, AGENT_PRESET, problem)
     }
     this.browserProblem = problem
   }

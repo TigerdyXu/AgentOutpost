@@ -90,7 +90,7 @@
       config:
         id: outpost-researcher-basic
         name: 前哨调研员（无浏览器）
-        description: 前哨的调研会话专用，没装浏览器插件时才用，不供手动选择。只能联网搜索和读网页，没有浏览器、命令行和文件工具。
+        description: 前哨的调研会话专用，带浏览器的调研预设用不了时才用，不供手动选择。只能联网搜索和读网页，没有命令行和文件工具，本身也不带浏览器。
         order: 93
         plugins:
           - id: persona

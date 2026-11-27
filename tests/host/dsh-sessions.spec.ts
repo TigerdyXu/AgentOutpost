@@ -158,7 +158,7 @@ describe('DshSessionDriver.run', () => {
       host.turnEnd('outpost-daily-p1', { kind: 'completed' })
       expect(await p).toEqual({ reason: 'completed', usage: zero })
       // Why there is no browser goes to DSH's log once, not with every session.
-      const said = () => warn.mock.calls.filter(call => String(call[0]).includes('without a browser'))
+      const said = () => warn.mock.calls.filter(call => String(call[0]).includes('without Outpost\'s own browser'))
       expect(said()).toEqual([[expect.stringContaining('%s'), 'outpost-researcher-basic', 'outpost-researcher', MISSING]])
       const again = driver.run(specOf({ sessionId: 'outpost-daily-p2' }), signal)
       await host.started('outpost-daily-p2')
@@ -200,7 +200,7 @@ describe('DshSessionDriver.run', () => {
       expect(host.denial('outpost-daily-p1', UNSAFE_BROWSER_TOOL)).toEqual({ reason: RESEARCH_TOOL_REFUSED })
       host.turnEnd('outpost-daily-p1', { kind: 'completed' })
       expect(await p).toMatchObject({ reason: 'completed' })
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('without a browser'), 'outpost-researcher-basic', 'outpost-researcher', expect.stringContaining('playwright-mcp'))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('without Outpost\'s own browser'), 'outpost-researcher-basic', 'outpost-researcher', expect.stringContaining('playwright-mcp'))
     } finally {
       warn.mockRestore()
     }

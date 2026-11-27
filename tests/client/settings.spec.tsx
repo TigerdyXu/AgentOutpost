@@ -79,8 +79,8 @@ describe('the browser fallback', () => {
     const notice = document.querySelector('.op-browser')
     const COMMAND = 'curl -fsSL https://raw.githubusercontent.com/TigerdyXu/AgentOutpost/master/install.sh | sh'
     expect(notice?.textContent).toBe(
-      '浏览器兜底没开：桌面版里没装浏览器的两个插件，公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。调研照常跑。'
-      + '要打开它，先退出桌面版，再在终端运行前哨 GitHub 页面上的一行安装命令，它会把这两个插件一起装上：' + COMMAND)
+      '浏览器兜底没开：带浏览器的调研预设加载不了，多半是桌面版里没装浏览器的两个插件。公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』；调研照常跑。'
+      + '没装插件的话，先退出桌面版，再在终端运行前哨的一行安装命令，它会装上这两个插件，并把前哨更新到 GitHub 上的最新版：' + COMMAND)
     // The command on a line of its own, whole: one click selects it all for copying.
     const code = notice?.querySelector('code')
     expect(code?.textContent).toBe(COMMAND)
@@ -149,7 +149,7 @@ describe('the form', () => {
     expect(all('label').map(label => label.textContent)).not.toContain('数据目录')
     // Where it is by default, and how to move it: the profile names no dataDir unless the user (or install.sh) wrote one.
     expect(document.querySelector('.op-datadir')?.closest('.op-set-section')?.querySelector('.op-set-hint')?.textContent).toBe(
-      '数据库、产品图标和调研会话的工作文件都放在这里，默认是 ~/.outpost/data。要换地方，在 profile 的 cordis.patch.yml 里给 outpost 这一行写上 dataDir（已经有就改它），然后重启。')
+      '数据库、产品图标和调研会话的工作文件都放在这里，默认是 ~/.outpost/data。要改用别的目录，在 profile 的 cordis.patch.yml 里给 id 为 outpost 的条目写上 dataDir（没有这个条目就加一个），然后重启。数据不会自动搬过去，要沿用就先把旧目录整个拷过去。')
     // Nothing changed: nothing to save or to revert.
     expect(saveButton().disabled).toBe(true)
     expect(revertButton().disabled).toBe(true)
