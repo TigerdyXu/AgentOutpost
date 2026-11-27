@@ -83,6 +83,21 @@ describe('renderPrompt', () => {
     expect(step4).toMatch(/dimensions[^\n]*outpost_read/)
   })
 
+  it('tells the daily analyst to open a blocked page with the browser, at most 3 pages a run, and to move on without one', () => {
+    const daily = renderPrompt('daily', DAILY_VARS)
+    expect(daily).toMatch(/## 工具[^#]*browser[^\n]*浏览器工具/)
+    const step2 = daily.slice(daily.indexOf('2. '), daily.indexOf('3. '))
+    for (const said of ['web_fetch', '验证页', '登录页', '公众号', '知乎', '小红书', '浏览器打开', '最多 3 个网页', '换别的来源'])
+      expect(step2, said).toContain(said)
+  })
+
+  it('tells the profile and recommend agents the same: a blocked page goes to the browser, at most 3 pages', () => {
+    for (const text of [renderPrompt('baseline', BASELINE_VARS), renderPrompt('recommend', RECOMMEND_VARS)]) {
+      const step2 = text.slice(text.indexOf('2. '), text.indexOf('3. '))
+      for (const said of ['验证页', '登录页', 'browser', '浏览器', '最多 3 个网页']) expect(step2, said).toContain(said)
+    }
+  })
+
   it('tells the daily analyst that pages updated in place stay sources of new entries, and to skip only news already reported', () => {
     const daily = renderPrompt('daily', DAILY_VARS)
     const step1 = daily.slice(daily.indexOf('1. '), daily.indexOf('2. '))
