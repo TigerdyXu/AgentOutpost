@@ -1,6 +1,6 @@
 #!/bin/sh
 # 前哨 (Outpost) installer: puts the latest release into DeepSeek Harness desktop (macOS).
-#   gh api repos/TigerdyXu/AgentOutpost/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
+#   curl -fsSL https://raw.githubusercontent.com/TigerdyXu/AgentOutpost/master/install.sh | sh
 # Run it again to update. Settings you changed in 前哨 are kept.
 # Env: OUTPOST_HOME (default ~/.outpost: data/, packages/, backup/), OUTPOST_DATA (data dir, default $OUTPOST_HOME/data).
 set -eu
@@ -30,7 +30,7 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh release download "$TAG" --repo "$REPO" --pattern "$ASSET" --output "$PKG" --clobber
 else
   TAG=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's#.*/tag/##')
-  [ -n "$TAG" ] && [ "$TAG" != "latest" ] || die "拿不到最新版本：仓库是私有的话，先装 GitHub CLI 并 gh auth login。"
+  [ -n "$TAG" ] && [ "$TAG" != "latest" ] || die "拿不到最新版本，检查一下网络（需要能访问 github.com）。"
   PKG="$OUTPOST_HOME/packages/dsh-outpost-$TAG.tgz"
   curl -fsSL "https://github.com/$REPO/releases/download/$TAG/$ASSET" -o "$PKG"
 fi
