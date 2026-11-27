@@ -44,7 +44,9 @@ for f in package.json cordis.patch.yml pnpm-lock.yaml; do
 done
 say "✓ 备份配置到 $BACKUP"
 
-# 3. Install (remove first: the version number stays 0.1.0, so a plain add would keep the old files).
+# 3. Install. Remove first: adding a version that is already installed keeps the old files. Every release before 0.1.4
+#    said 0.1.0; since then the version changes with each milestone, so this now covers only the same release installed
+#    again (and an old 0.1.0). It costs nothing.
 INSTALLED=$("$DSH" plugin --profile desktop list 2>/dev/null || true)
 case "$INSTALLED" in *dsh-outpost@*) "$DSH" plugin --profile desktop remove dsh-outpost >/dev/null ;; esac
 MISSING=""
@@ -55,7 +57,9 @@ done
 "$DSH" plugin --profile desktop add "$PKG" $MISSING >/dev/null
 say "✓ 装进桌面版"
 
-# 4. Tell 前哨 where to keep its data, once (an existing outpost entry, with your settings, is left as it is).
+# 4. Tell 前哨 where to keep its data, once (an existing outpost entry, with your settings, is left as it is). Without the
+#    entry it would use ~/.outpost/data all the same (since 0.1.4); written, the profile shows where the data is, and
+#    OUTPOST_DATA can put it elsewhere.
 PATCH="$PROFILE/cordis.patch.yml"
 if ! grep -q '^- id: outpost$' "$PATCH" 2>/dev/null; then
   mkdir -p "$DATA_DIR"
