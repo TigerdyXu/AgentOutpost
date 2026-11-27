@@ -102,7 +102,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    报 `incompatible-version` 说明桌面版不是 0.2.3-alpha.2 系列（`package.json` 的 `engines.dsh` 是 `>=0.2.3-alpha.2 <0.3.0`），先停下来对版本，不要用版本豁免硬装。
 
-5. **给前哨配数据目录。** 包里自带的 `cordis.patch.yml` 插入的那一行 id 是 `outpost`（包名才是 `dsh-outpost`），它不带 `dataDir`，前哨没有它就不启动。在 `~/.dsh/profiles/desktop/cordis.patch.yml` 末尾追加（保留原有内容）：
+5. **给前哨配数据目录。** 包里自带的 `cordis.patch.yml` 插入的那一行 id 是 `outpost`（包名才是 `dsh-outpost`），它不带 `dataDir`；没写时前哨用 `~/.outpost/data`（M1.4 起；之前没有它就不启动）。这台机器的正式数据不在那里，所以在 `~/.dsh/profiles/desktop/cordis.patch.yml` 末尾追加（保留原有内容）：
 
    ```yaml
    - id: outpost
@@ -114,13 +114,13 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
 6. **浏览器兜底（默认打开，只给前哨的调研会话用）。** 公众号、小红书、知乎这类有验证页的原文，靠它用无界面 Chrome 打开核实。它装在包里的 `outpost-researcher` 预设里（`browser` 那一组：`@deepseek-ai/dsh-browser-use` 服务和 `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 提供方，`mode: launch`、`headless: true`、`executablePath` 指向本机 Chrome），所以只有前哨的调研会话有浏览器，你自己的会话没有。
 
-   - **两个包必须装进 profile**：桌面版 0.2.3-alpha.2 不自带它们，没装的话调研预设起不来，前哨的推荐、建档、核查、日更**全都跑不了**（每次运行立刻失败并写明原因，设置页顶上显示「调研跑不了：…」）。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
+   - **两个包要装进 profile**：桌面版 0.2.3-alpha.2 不自带它们。没装的话带浏览器的调研预设起不来，前哨改用不带浏览器的 `outpost-researcher-basic` 照常调研，只是打不开公众号这类网页，设置页顶上显示「浏览器兜底没开：…」和安装命令（M1.4 起；之前是推荐、建档、核查、日更全都跑不了）。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
 
      ```sh
      "$DSH" plugin --profile desktop add @deepseek-ai/dsh-browser-use@0.2.3-alpha.2 @deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.3-alpha.2
      ```
 
-   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，调研会话会建不起来（DSH 报 `serverName "playwright-mcp" is already in use`；前哨会在建会话之前就认出这种情况，运行直接失败，设置页同样显示「调研跑不了：…」）。M1.1 起包里已经没有 `outpost-browser-use`、`outpost-browser-use-playwright` 这两行；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
+   - **profile 里不要再开整个 profile 共用的 Playwright 提供方**：两边同时开着，带浏览器的调研会话会建不起来（DSH 报 `serverName "playwright-mcp" is already in use`）。前哨会在建会话之前就认出这种情况，改用不带浏览器的预设，调研会话用的就是 profile 自己那个浏览器（M1.4 起；之前是运行直接失败），而你自己的会话也都有了浏览器。M1.1 起包里已经没有 `outpost-browser-use`、`outpost-browser-use-playwright` 这两行；profile 补丁里针对这两个 id 的覆盖行（M1 验收后加的 `disabled: true`）删掉即可。先看一眼：
 
      ```sh
      grep -n "browser-use" ~/.dsh/profiles/desktop/cordis.patch.yml
@@ -156,7 +156,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    更省事的是在前哨的设置页「模型」一节用下拉框选：选项是 dsh 里当前能用的全部模型，按提供方分组，改完下一次调用就生效，不用重启。本机模型（Ollama 这类）和 Claude 订阅记 ¥0，不占每日预算；用 Anthropic 按量付费的 API key 时，那部分花费前哨不记。要用 Claude 订阅，先在桌面版的模型设置里添加 Anthropic、用 Claude Pro/Max 登录，它就会出现在下拉框里。
 
-8. **重新打开桌面版。** 侧栏出现「前哨」（望远镜图标；界面始终是中文，桌面版是英文时也一样），设置页显示的数据目录是 `/Users/tiger/Projects/AgentOutpost-data`，「模型」一节四个下拉框（没单独设的三个显示「跟调研一样（…）」）；两个浏览器包装好了的话，设置页顶上显示「浏览器兜底已开启」，没有红色的「调研跑不了：…」。
+8. **重新打开桌面版。** 侧栏出现「前哨」（望远镜图标；界面始终是中文，桌面版是英文时也一样），设置页显示的数据目录是 `/Users/tiger/Projects/AgentOutpost-data`，「模型」一节四个下拉框（没单独设的三个显示「跟调研一样（…）」）；两个浏览器包装好了的话，设置页顶上显示「浏览器兜底已开启」；没装的话显示「浏览器兜底没开：…」和安装命令（调研照常跑）。两种情况都不该有红色的「调研跑不了：…」。
 
 **撤回**：退出桌面版，`"$DSH" plugin --profile desktop remove dsh-outpost`（连同 `@deepseek-ai/dsh-browser-use`、`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 一起 remove），再把备份的 `package.json`、`cordis.patch.yml`（以及 `pnpm-lock.yaml`）拷回 `~/.dsh/profiles/desktop/`。数据目录里的东西不会被删。
 
