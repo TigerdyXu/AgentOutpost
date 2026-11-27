@@ -67,6 +67,15 @@ export class FakeDriver implements SessionDriver {
     this.rebound.push({ sessionId, tools })
   }
 
+  /** Who hears the chats' usage (`onChatUsage`); `chatUses` plays a reply or a search of a chat. */
+  chatListener: ((sessionId: string, usage: Usage) => void) | undefined
+  onChatUsage(listener: (sessionId: string, usage: Usage) => void): void {
+    this.chatListener = listener
+  }
+  chatUses(sessionId: string, used: Partial<Usage>): void {
+    this.chatListener?.(sessionId, usage(used))
+  }
+
   close(): void {
     this.closed = true
   }

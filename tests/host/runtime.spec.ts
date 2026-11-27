@@ -473,25 +473,62 @@ describe('models', () => {
     }
   })
 
-  it('prices by the provider of the model, DSH\'s default model when none is chosen', async () => {
+  it('adds what a 追问 chat uses to its run, priced at the time of each reply on the follow-up model', async () => {
+    // A Friday at 11:00 Beijing time: DeepSeek's peak; the chat goes on past 12:00, into the off-peak hours.
+    const other = apiHost({ now: new Date('2026-11-27T11:00:00+08:00'), config: dataDir => Config({ dataDir, model: { provider: 'deepseek-official', model: 'deepseek-flash' } }) })
+    other.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    const rt = other.create()
+    try {
+      rt.start()
+      const chat = rt.repo.createRun({ kind: 'followup', date: '2026-11-27', trackId: null, productId: null })
+      rt.repo.updateRun(chat.id, { status: 'done', sessionId: 'outpost-followup-abcd1234' })
+
+      other.driver.chatUses('outpost-followup-abcd1234', { inputTokens: 1_000_000 }) // peak: ¥2
+      other.driver.chatUses('outpost-followup-abcd1234', { searches: 1 }) // peak: 8,000 × 2 + 800 × 8 → ¥0.0224
+      other.clock.set(new Date('2026-11-27T12:30:00+08:00'))
+      other.driver.chatUses('outpost-followup-abcd1234', { outputTokens: 1_000_000 }) // off-peak: ¥8 / 2
+      other.driver.chatUses('outpost-research-zzz', { inputTokens: 1_000_000 }) // not a chat of a run: ignored
+
+      expect(rt.repo.getRun(chat.id)).toMatchObject({
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, searches: 1 },
+        costYuan: 6.0224,
+        status: 'done',
+      })
+      expect(rt.repo.spentOn('2026-11-27')).toBe(6.0224) // it counts towards the day's spending
+    } finally {
+      await rt.stop()
+      other.cleanup()
+    }
+  })
+
+  it('prices by the provider of the model, DSH\'s default model when none is chosen, and halves DeepSeek off-peak', async () => {
     const other = apiHost({ config: dataDir => Config({ dataDir, prices: { inputPerMTok: 3 } }) })
     other.ctx.llm.listProviders.mockReturnValue([{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'box', name: 'Ollama (local)' }, { id: 'anthropic', name: 'Anthropic' }])
     other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'box', model: 'qwen3:8b' })
     const rt = other.create()
+    // A Friday: 10:00 is DeepSeek's peak, 08:00 its off-peak (Beijing time).
+    const PEAK = new Date('2026-11-27T10:00:00+08:00')
+    const OFF = new Date('2026-11-27T08:00:00+08:00')
     try {
       const table = { ...DEFAULT_PRICES, inputPerMTok: 3 }
+      const half = { inputPerMTok: 1.5, outputPerMTok: DEFAULT_PRICES.outputPerMTok / 2, cacheReadPerMTok: DEFAULT_PRICES.cacheReadPerMTok / 2 }
       const { pricesOf } = rt.settings()
-      expect(pricesOf(null)).toEqual(FREE) // the default model is local, as its provider's name says
-      expect(pricesOf({ provider: 'deepseek-official', model: 'deepseek-flash' })).toEqual(table)
-      expect(pricesOf({ provider: 'anthropic', model: 'claude-sonnet-4-5' })).toEqual(FREE)
-      expect(pricesOf({ provider: 'box', model: 'qwen3:8b' })).toEqual(FREE)
-      expect(pricesOf({ provider: 'zai', model: 'glm-5' })).toEqual(table) // another metered provider: estimated with the table
+      expect(pricesOf(null, PEAK)).toEqual(FREE) // the default model is local, as its provider's name says
+      expect(pricesOf({ provider: 'deepseek-official', model: 'deepseek-flash' }, PEAK)).toEqual(table)
+      expect(pricesOf({ provider: 'deepseek-official', model: 'deepseek-flash' }, OFF)).toEqual(half)
+      expect(pricesOf({ provider: 'anthropic', model: 'claude-sonnet-4-5' }, OFF)).toEqual(FREE)
+      expect(pricesOf({ provider: 'box', model: 'qwen3:8b' }, OFF)).toEqual(FREE)
+      // another metered provider: estimated with the table, at any hour (the off-peak discount is DeepSeek's)
+      expect(pricesOf({ provider: 'zai', model: 'glm-5' }, PEAK)).toEqual(table)
+      expect(pricesOf({ provider: 'zai', model: 'glm-5' }, OFF)).toEqual(table)
 
       other.agentDefaultModel.currentSelection.mockReturnValue({ provider: 'deepseek-official', model: 'deepseek-flash' })
-      expect(pricesOf(null)).toEqual(table) // the default is read on each use
-      // DSH cannot say which model is its default: estimated with the table, so the budget still holds.
+      expect(pricesOf(null, PEAK)).toEqual(table) // the default is read on each use
+      expect(pricesOf(null, OFF)).toEqual(half)
+      // DSH cannot say which model is its default: estimated with the table (DeepSeek's prices), so the budget still holds.
       other.agentDefaultModel.currentSelection.mockImplementation(() => { throw new Error('no default model') })
-      expect(pricesOf(null)).toEqual(table)
+      expect(pricesOf(null, PEAK)).toEqual(table)
+      expect(pricesOf(null, OFF)).toEqual(half)
     } finally {
       await rt.stop()
       other.cleanup()

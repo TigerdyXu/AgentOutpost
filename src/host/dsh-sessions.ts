@@ -156,6 +156,12 @@ export function addUsage(total: Usage, usage: TokenUsage | undefined): void {
 const noUsage = (): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 })
 
 /**
+ * The event DSH's DeepSeek search provider (`@deepseek-ai/dsh-web-search-deepseek`) appends to the session whose agent
+ * searched, once per search request: a hidden model call whose usage DSH drops. Outpost counts these (`Usage.searches`).
+ */
+export const SEARCH_EVENT = 'web/deepseek-search-llm-request'
+
+/**
  * `work`, or a rejection with `signal`'s reason as soon as it aborts, whichever comes first; without a signal, `work` itself.
  * A value `work` yields after the abort is handed to `late` (to let it go), and a failure then is dropped.
  */
@@ -222,6 +228,9 @@ export class DshSessionDriver implements SessionDriver {
    *   `agents`, `agentPresets` and `agentDefaultModel`. Research sessions it makes belong to it: they end with it.
    * @param workspaceDir - absolute directory of the 「前哨」 workspace; made when missing.
    */
+  /** Who hears what the 追问 chats use (`onChatUsage`). */
+  private chatUsage: ((sessionId: string, usage: Usage) => void) | undefined
+
   constructor(private readonly ctx: Context, private readonly workspaceDir: string) {
     // DSH makes a new agent for a session on every create, resume and compaction; each gets the session's tools, and each
     // on the research preset the guard (one DSH reopens included: Outpost did not make it, and its browser is back). A
@@ -236,6 +245,20 @@ export class DshSessionDriver implements SessionDriver {
       try { this.attach(agent) } catch (error) { ctx.logger.warn('dsh-outpost: could not register the tools of session %s: %s', agent.id, String(error)) }
       return undefined
     })
+    // What a 追问 chat uses, as it goes: the user chats for as long as they like, long after Outpost opened the chat.
+    ctx.on('session/event', (session, event) => {
+      if (!this.chats.has(session.id) || !this.chatUsage) return
+      let used: Usage | undefined
+      if (event.type === 'assistant/message' && event.data.usage) { used = noUsage(); addUsage(used, event.data.usage) }
+      else if ((event.type as string) === SEARCH_EVENT) used = { ...noUsage(), searches: 1 }
+      if (!used) return
+      try { this.chatUsage(session.id, used) } catch (error) { ctx.logger.warn('dsh-outpost: could not record what chat %s used: %s', session.id, String(error)) }
+    })
+  }
+
+  /** Hears, from now on, each reply and each search of every 追问 chat (`SessionDriver.onChatUsage`). */
+  onChatUsage(listener: (sessionId: string, usage: Usage) => void): void {
+    this.chatUsage = listener
   }
 
   /**
@@ -519,6 +542,7 @@ export class DshSessionDriver implements SessionDriver {
       else if (event.type === 'user/message') { if (event.data.id === message.id) mine ??= latest }
       else if (mine === undefined) return
       else if (event.type === 'assistant/message') { if (event.data.turn === mine) addUsage(usage, event.data.usage) }
+      else if ((event.type as string) === SEARCH_EVENT) usage.searches = (usage.searches ?? 0) + 1
       else if (event.type === 'turn/end' && event.data.turn === mine) settle(outcomeOf(event.data.reason, { ...usage }))
     })
     const stop = () => { unclaimed(); unevented() }

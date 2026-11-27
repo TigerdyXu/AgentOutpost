@@ -44,6 +44,11 @@ export interface SessionDriver {
    * its model, and send the message, without waiting for an answer.
    */
   startInteractive(spec: SessionSpec): Promise<void>
+  /**
+   * Hears what every follow-up chat uses from now on, one reply or one search at a time (`usage`), for as long as the user
+   * keeps chatting: Outpost adds it to the chat's run. Research sessions are not reported here (their rounds return it).
+   */
+  onChatUsage(listener: (sessionId: string, usage: Usage) => void): void
   /** Gives an existing session (a follow-up chat, after a restart) its tools again, without sending it anything. */
   rebind(sessionId: string, tools: ToolSpec[]): void
   /** Takes back every tool registered so far: Outpost is stopping. */

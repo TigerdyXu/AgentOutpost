@@ -268,6 +268,12 @@ export function dshHost() {
     /** One step's assistant message, with its token accounting; in the latest turn unless told otherwise. */
     assistant: (sessionId: string, usage: Record<string, number> | undefined, turn = agentOf(sessionId).turn) =>
       emit(sessionId, 'assistant/message', { turn, step: 1, message: { role: 'assistant', content: [] }, stream: [], ...usage ? { usage } : {} }),
+    /**
+     * A web search the session's agent makes on a DeepSeek route: DSH's search provider records the hidden model call it
+     * sends (`web/deepseek-search-llm-request`) in the session, with no usage of its own.
+     */
+    search: (sessionId: string) =>
+      emit(sessionId, 'web/deepseek-search-llm-request', { endpoint: 'https://api.deepseek.com/anthropic/v1/messages', body: { model: 'deepseek-v4-flash' } }),
     /** The end of a turn; the latest one unless told otherwise. The end of the latest turn starts the next waiting one. */
     turnEnd: (sessionId: string, reason: Record<string, unknown> & { kind: string }, turn = agentOf(sessionId).turn) => {
       emit(sessionId, 'turn/end', { turn, reason })

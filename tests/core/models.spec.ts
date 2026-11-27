@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { billingOf, modelFor, type ModelSettings } from '../../src/core/models.ts'
+import { billingOf, modelFor, onDeepSeek, type ModelSettings } from '../../src/core/models.ts'
 
 const A = { provider: 'deepseek-official', model: 'deepseek-flash' }
 const B = { provider: 'ollama', model: 'qwen3:8b' }
@@ -48,5 +48,12 @@ describe('billingOf', () => {
     expect(billingOf('anthropic', 'Anthropic')).toBe('subscription')
     expect(billingOf('openrouter', 'Anthropic via OpenRouter')).toBe('metered')
     expect(billingOf('anthropic-bedrock')).toBe('metered')
+  })
+})
+
+describe('onDeepSeek', () => {
+  it('tells DeepSeek\'s own providers (whose prices halve off-peak) from the rest', () => {
+    for (const id of ['deepseek-official', 'deepseek', 'DeepSeek-account']) expect(onDeepSeek(id), id).toBe(true)
+    for (const id of ['zai', 'ollama', 'anthropic', 'openrouter']) expect(onDeepSeek(id), id).toBe(false)
   })
 })

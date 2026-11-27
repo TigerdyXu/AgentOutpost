@@ -11,8 +11,9 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { OutpostConfig } from '../config.ts'
 import { localDate } from '../core/calendar.ts'
-import { pricesFor } from '../core/cost.ts'
-import { billingOf, modelFor, type Billing, type ModelRef } from '../core/models.ts'
+import { costOf, pricesAt, pricesFor } from '../core/cost.ts'
+import { billingOf, modelFor, onDeepSeek, type Billing, type ModelRef } from '../core/models.ts'
+import type { Usage } from '../core/types.ts'
 import { openDb, lockDataDir, type Db } from '../store/db.ts'
 import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
@@ -145,7 +146,7 @@ export class Runtime {
       briefModel: c.briefModel.get() ?? null,
       followupModel: c.followupModel.get() ?? null,
       billingFor: model => this.billingFor(model),
-      pricesOf: model => pricesFor(this.billingFor(model), c.prices.get()),
+      pricesOf: (model, at) => this.pricesOf(model, at),
     }
   }
 
@@ -158,6 +159,15 @@ export class Runtime {
       this.log(`could not read the default model of DSH: ${messageOf(error)}`)
       return null
     }
+  }
+
+  /**
+   * The prices of `model`'s tokens at `at` (`RuntimeSettings.pricesOf`). A model DSH cannot name (its default unknown) is
+   * taken to be on DeepSeek, like the price table it is estimated with.
+   */
+  private pricesOf(model: ModelRef | null, at: Date) {
+    const route = model ?? this.defaultModel()
+    return pricesAt(pricesFor(this.billingFor(model), this.config.prices.get()), at, route === null || onDeepSeek(route.provider))
   }
 
   /**
@@ -225,6 +235,7 @@ export class Runtime {
   start(): void {
     if (this.unregister || this.stopping) return
     this.reclaimInterruptedRuns()
+    this.driver.onChatUsage((sessionId, used) => { this.chargeChat(sessionId, used) })
     this.rebindFollowups()
     this.unregister = registerRoutes(this.ctx, createApi(this))
     this.scheduler.start()
@@ -257,6 +268,23 @@ export class Runtime {
   private reclaimInterruptedRuns(): void {
     const now = this.clock.now().toISOString()
     for (const run of this.repo.activeRuns()) this.repo.updateRun(run.id, { status: 'failed', error: STOPPED_ERROR, endedAt: run.endedAt ?? now })
+  }
+
+  /**
+   * Adds one reply or one search of a 追问 chat to the chat's run, at the prices of the follow-up model at this moment (a
+   * reply off-peak costs half). The run keeps the date the chat started: a chat taken up again another day adds to it.
+   */
+  private chargeChat(sessionId: string, used: Usage): void {
+    const run = this.repo.runOfSession(sessionId)
+    if (!run || run.kind !== 'followup') return
+    const total: Usage = {
+      inputTokens: run.usage.inputTokens + used.inputTokens,
+      outputTokens: run.usage.outputTokens + used.outputTokens,
+      cacheReadTokens: run.usage.cacheReadTokens + used.cacheReadTokens,
+      searches: (run.usage.searches ?? 0) + (used.searches ?? 0),
+    }
+    const cost = costOf(used, this.pricesOf(modelFor('followup', this.settings()), this.clock.now()))
+    this.repo.updateRun(run.id, { usage: total, costYuan: Math.round((run.costYuan + cost) * 10_000) / 10_000 })
   }
 
   /** Gives each 追问 chat of the last `REBIND_FOLLOWUPS_DAYS` days its `outpost_read` again (tool bindings live in memory). */

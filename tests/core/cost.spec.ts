@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canSpend, costOf, pricesFor, type PriceTable } from '../../src/core/cost.ts'
+import { canSpend, costOf, offPeak, pricesAt, pricesFor, SEARCH_TOKENS, type PriceTable } from '../../src/core/cost.ts'
 
 // Yuan per million tokens.
 const prices: PriceTable = { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.5 }
@@ -42,6 +42,48 @@ describe('costOf', () => {
   it('returns a clean decimal, without floating-point tails', () => {
     // 0.1 + 0.2 is 0.30000000000000004 in floating point.
     expect(costOf(usage(1_000_000, 1_000_000, 0), { inputPerMTok: 0.1, outputPerMTok: 0.2, cacheReadPerMTok: 0 })).toBe(0.3)
+  })
+})
+
+describe('costOf with searches', () => {
+  it('charges each search as the hidden model call it is: SEARCH_TOKENS of uncached input and output', () => {
+    expect(SEARCH_TOKENS).toEqual({ inputTokens: 8000, outputTokens: 800 })
+    // 2 searches * (8,000 * 2 + 800 * 8) / 1e6 = 2 * 0.0224
+    expect(costOf({ ...usage(0, 0, 0), searches: 2 }, prices)).toBe(0.0448)
+    // on top of the session's own tokens
+    expect(costOf({ ...usage(1_000_000, 0, 0), searches: 1 }, prices)).toBe(2.0224)
+  })
+
+  it('counts no searches when the record has none (runs stored before searches were counted)', () => {
+    expect(costOf(usage(1_000_000, 0, 0), prices)).toBe(2)
+  })
+})
+
+describe('offPeak / pricesAt', () => {
+  // Beijing time is UTC+8 all year. 2026-11-27 is a Friday, 2026-11-28 a Saturday.
+  const beijing = (day: string, hhmm: string) => new Date(`${day}T${hhmm}:00+08:00`)
+
+  it('is peak on weekdays 9:00-12:00 and 14:00-18:00 Beijing time, off-peak otherwise', () => {
+    for (const t of ['09:00', '11:59', '14:00', '17:59']) expect(offPeak(beijing('2026-11-27', t)), t).toBe(false)
+    for (const t of ['00:00', '08:00', '08:59', '12:00', '13:59', '18:00', '23:59']) expect(offPeak(beijing('2026-11-27', t)), t).toBe(true)
+  })
+
+  it('is off-peak all weekend', () => {
+    for (const t of ['10:00', '15:00']) expect(offPeak(beijing('2026-11-28', t)), t).toBe(true)
+    expect(offPeak(beijing('2026-11-29', '10:00'))).toBe(true)
+  })
+
+  it('reads the clock in Beijing time whatever the machine\'s time zone: 01:30 UTC on a Friday is 09:30 in Beijing', () => {
+    expect(offPeak(new Date('2026-11-27T01:30:00Z'))).toBe(false)
+  })
+
+  it('halves a DeepSeek price table off-peak and leaves it whole at peak', () => {
+    expect(pricesAt(prices, beijing('2026-11-27', '08:00'), true)).toEqual({ inputPerMTok: 1, outputPerMTok: 4, cacheReadPerMTok: 0.25 })
+    expect(pricesAt(prices, beijing('2026-11-27', '10:00'), true)).toEqual(prices)
+  })
+
+  it('leaves other providers\' prices as they are at any hour', () => {
+    expect(pricesAt(prices, beijing('2026-11-27', '08:00'), false)).toEqual(prices)
   })
 })
 

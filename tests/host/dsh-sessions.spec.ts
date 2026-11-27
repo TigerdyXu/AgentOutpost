@@ -197,6 +197,17 @@ describe('DshSessionDriver.run', () => {
     expect(await p).toEqual({ reason: 'completed', usage: { inputTokens: 137, outputTokens: 25, cacheReadTokens: 40 } })
   })
 
+  it('counts the web searches its turn makes, each a hidden model call DSH reports no usage for', async () => {
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.assistant('outpost-daily-p1', { inputTokens: 100, outputTokens: 20 })
+    host.search('outpost-daily-p1')
+    host.search('outpost-daily-p1')
+    host.search('outpost-other') // another session's search
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    expect(await p).toEqual({ reason: 'completed', usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, searches: 2 } })
+  })
+
   it('waits for the turn that takes its message, not one that was already running', async () => {
     const first = driver.run(specOf(), signal)
     await host.started('outpost-daily-p1')
@@ -551,6 +562,46 @@ describe('DshSessionDriver.startInteractive', () => {
     // null: DSH's own choice for the session stands.
     await driver.startInteractive({ sessionId: 'outpost-followup-2', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
     expect(host.agent('outpost-followup-2').model.select).not.toHaveBeenCalled()
+  })
+})
+
+describe('DshSessionDriver.onChatUsage', () => {
+  it('reports what a 追问 chat uses, reply by reply and search by search, for as long as the user keeps chatting', async () => {
+    const seen: [string, unknown][] = []
+    driver.onChatUsage((sessionId, usage) => { seen.push([sessionId, usage]) })
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
+    host.assistant('outpost-followup-1', { inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, cacheWriteTokens: 5 })
+    host.search('outpost-followup-1')
+    host.assistant('outpost-followup-1', undefined) // a step that reported no usage: nothing to add
+    host.assistant('outpost-followup-1', { inputTokens: 7, outputTokens: 3 }, 5) // a later turn: the user asked again
+    expect(seen).toEqual([
+      ['outpost-followup-1', { inputTokens: 105, outputTokens: 20, cacheReadTokens: 40 }],
+      ['outpost-followup-1', { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, searches: 1 }],
+      ['outpost-followup-1', { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0 }],
+    ])
+  })
+
+  it('reports nothing of research sessions (their runs count their own) or of sessions that are not Outpost\'s', async () => {
+    const seen: string[] = []
+    driver.onChatUsage(sessionId => { seen.push(sessionId) })
+    const p = driver.run(specOf(), signal)
+    await host.started('outpost-daily-p1')
+    host.assistant('outpost-daily-p1', { inputTokens: 100, outputTokens: 20 })
+    host.search('outpost-daily-p1')
+    host.turnEnd('outpost-daily-p1', { kind: 'completed' })
+    await p
+    await host.spawn('chat-of-the-user')
+    host.assistant('chat-of-the-user', { inputTokens: 100, outputTokens: 20 })
+    expect(seen).toEqual([])
+  })
+
+  it('reports a chat given its tools again after a restart', async () => {
+    const seen: string[] = []
+    driver.onChatUsage(sessionId => { seen.push(sessionId) })
+    await host.spawn('outpost-followup-live')
+    driver.rebind('outpost-followup-live', [probe('outpost_read').tool])
+    host.assistant('outpost-followup-live', { inputTokens: 1, outputTokens: 1 })
+    expect(seen).toEqual(['outpost-followup-live'])
   })
 })
 

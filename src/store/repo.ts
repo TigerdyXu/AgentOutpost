@@ -337,6 +337,11 @@ export class Repo {
 
   getRun(id: Id): Run | null { return this.get(RUN, id) ?? null }
 
+  /** The run whose session is `sessionId` (the latest, should there be more than one), or null. */
+  runOfSession(sessionId: string): Run | null {
+    return this.select(RUN, 'WHERE session_id = ? ORDER BY rowid DESC LIMIT 1', sessionId)[0] ?? null
+  }
+
   /** Runs dated `sinceDate` or later, newest first (the run log reads top-down). */
   listRuns(sinceDate: string): Run[] { return this.select(RUN, 'WHERE date >= ? ORDER BY rowid DESC', sinceDate) }
 

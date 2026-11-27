@@ -67,7 +67,7 @@ describe('the page', () => {
     // The second: the one-sentence request that may be left out, the button, and what a round costs.
     expect(document.querySelector('.op-add-again')!.textContent).toContain('一句话要求（可不填）')
     expect(find('再推荐一批').hasAttribute('disabled')).toBe(false)
-    expect(text()).toContain('约 ¥0.5、3–4 分钟')
+    expect(text()).toContain('约 ¥0.5–1、3–4 分钟')
     // Nothing has happened yet: no result, no way to the suggestions.
     expect(results()).toHaveLength(0)
     expect(() => find('去「候选推荐」看')).toThrow()

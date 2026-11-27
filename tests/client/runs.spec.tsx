@@ -59,6 +59,15 @@ describe('the list', () => {
     expect([...days[0]!.querySelectorAll('.op-run-object')].map(object => object.textContent)).toEqual(['豆包·小豆', 'Meta Muse'])
   })
 
+  it('says on the cost how many web searches it includes, each priced as an estimate', async () => {
+    await show([
+      run('r2', 'p1', 'done', { kind: 'daily', costYuan: 0.5, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, searches: 37 }, productName: '豆包·小豆' }),
+      run('r1', 'p2', 'done', { kind: 'daily', costYuan: 0.3, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0 }, productName: 'Meta Muse' }),
+    ])
+    expect(rowOf('豆包·小豆').querySelector('.op-run-cost')?.getAttribute('title')).toBe('含 37 次联网搜索，按每次约 8000 输入、800 输出 token 估算')
+    expect(rowOf('Meta Muse').querySelector('.op-run-cost')?.hasAttribute('title')).toBe(false) // none, or a run from before searches were counted
+  })
+
   it('shows the kind, the object, the state, how long it took and what it cost', async () => {
     await show([
       run('r6', null, 'done', { kind: 'synthesize', startedAt: at('2026-11-25', '08:40'), endedAt: at('2026-11-25', '08:40', 20), costYuan: 0.04 }),

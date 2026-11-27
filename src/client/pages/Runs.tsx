@@ -145,7 +145,9 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
     <span className="op-run-status" data-status={shown}>{t(`runs.status.${shown}`)}</span>
     <span className="op-run-figures">
       <span className="op-run-time">{took}</span>
-      <span className="op-run-cost">{run.costYuan > 0 ? costText(t, run.costYuan) : t('runs.none')}</span>
+      <span className="op-run-cost" title={run.usage.searches ? t('runs.searches', { count: run.usage.searches }) : undefined}>
+        {run.costYuan > 0 ? costText(t, run.costYuan) : t('runs.none')}
+      </span>
     </span>
   </>
   return <li className="op-run" data-status={shown} data-kind={run.kind}>

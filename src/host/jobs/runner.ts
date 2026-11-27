@@ -28,10 +28,11 @@ export interface RuntimeSettings extends ModelSettings {
    */
   billingFor(model: ModelRef | null): Billing
   /**
-   * The prices of tokens used on `model` (null: DSH's default model): the configured price table for a metered provider,
-   * all 0 for a local or subscription one (`pricesFor`).
+   * The prices of tokens used on `model` (null: DSH's default model) at `at`: the configured price table for a metered
+   * provider, halved in DeepSeek's off-peak hours on a DeepSeek route (`pricesAt`); all 0 for a local or subscription one
+   * (`pricesFor`).
    */
-  pricesOf(model: ModelRef | null): PriceTable
+  pricesOf(model: ModelRef | null, at: Date): PriceTable
 }
 
 /** What the recommendation and baseline jobs (and the jobs after them) work with. */
@@ -238,13 +239,15 @@ export class JobRunner {
       plan = build(id)
       const tools = plan.tools(() => { done = true })
       const sessionId = `outpost-${run.kind}-${id.slice(0, 8)}`
-      this.repo.updateRun(id, { status: 'running', startedAt: this.clock.now().toISOString(), sessionId })
+      const started = this.clock.now()
+      this.repo.updateRun(id, { status: 'running', startedAt: started.toISOString(), sessionId })
       opened = sessionId
       const spec: SessionSpec = { sessionId, title: plan.title, prompt: plan.prompt, tools, model }
       const used = noUsage()
-      let outcome = await this.round(id, model, used, signal => this.driver.run(spec, signal))
+      const priced = { model, at: started }
+      let outcome = await this.round(id, priced, used, signal => this.driver.run(spec, signal))
       if (!done && CONTINUABLE.has(outcome.reason) && !this.stopped)
-        outcome = await this.round(id, model, used, signal => this.driver.nudge(sessionId, NUDGE_TEXT, signal))
+        outcome = await this.round(id, priced, used, signal => this.driver.nudge(sessionId, NUDGE_TEXT, signal))
       if (done) return finish('done', null)
       if (this.stopped) return finish('failed', STOPPED_ERROR)
       if (CONTINUABLE.has(outcome.reason)) return finish('done', NOT_DONE) // what it handed in stands; it goes to the check like any other
@@ -276,16 +279,18 @@ export class JobRunner {
   }
 
   /**
-   * One round (the first message or the nudge), tried again after transient failures. Usage and cost are stored after
-   * every try, the cost at the prices of `model`, the model the session runs on.
+   * One round (the first message or the nudge), tried again after transient failures. Usage (with the searches) and cost
+   * are stored after every try, the cost at the prices of `priced.model`, the model the session runs on, as they were when
+   * the run started (`priced.at`): a run is priced as peak or off-peak as a whole.
    */
-  private async round(runId: Id, model: ModelRef | null, used: Usage, send: (signal: AbortSignal) => Promise<SessionOutcome>): Promise<SessionOutcome> {
+  private async round(runId: Id, priced: { model: ModelRef | null; at: Date }, used: Usage, send: (signal: AbortSignal) => Promise<SessionOutcome>): Promise<SessionOutcome> {
     for (let retry = 0; ; retry++) {
       const outcome = await this.attempt(send)
       used.inputTokens += outcome.usage.inputTokens
       used.outputTokens += outcome.usage.outputTokens
       used.cacheReadTokens += outcome.usage.cacheReadTokens
-      this.repo.updateRun(runId, { usage: { ...used }, costYuan: costOf(used, this.settings().pricesOf(model)) })
+      used.searches = (used.searches ?? 0) + (outcome.usage.searches ?? 0)
+      this.repo.updateRun(runId, { usage: { ...used }, costYuan: costOf(used, this.settings().pricesOf(priced.model, priced.at)) })
       if (!isTransient(outcome)) return outcome
       if (retry >= TRANSIENT_RETRIES) return { ...outcome, error: `${outcome.error}（已重试 ${retry} 次）` }
       if (this.stopped) return outcome

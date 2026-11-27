@@ -166,7 +166,7 @@ async function writeGist(deps: BriefDeps, date: string, main: Finding[]): Promis
     const timeout = AbortSignal.timeout(GIST_TIMEOUT_MS)
     const { text, usage } = await model.complete({ system: renderPrompt('synthesize', {}), user }, deps.stop ? AbortSignal.any([timeout, deps.stop]) : timeout)
     const gist = cleanGist(text)
-    end({ status: 'done', usage, costYuan: costOf(usage, settings().pricesOf(writer)), error: gist === null ? UNUSABLE_GIST : null })
+    end({ status: 'done', usage, costYuan: costOf(usage, settings().pricesOf(writer, clock.now())), error: gist === null ? UNUSABLE_GIST : null })
     return gist ?? fallback
   } catch (error) {
     // Cut short by a stop: interrupted, not broken (the brief is written again on the next start).

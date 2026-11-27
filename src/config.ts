@@ -6,8 +6,8 @@ import s from '@deepseek-ai/schemastery'
 /**
  * Default unit prices, yuan per million tokens, of DeepSeek's default model `deepseek-flash` (DeepSeek-V4.1-Flash), from
  * https://api-docs.deepseek.com/zh-cn/quick_start/pricing as read on 2026-11-25. These are the peak-hour prices (weekdays
- * 9:00–12:00 and 14:00–18:00 Beijing time); off-peak prices are half, so a run that starts at 08:00 usually costs less.
- * Every cost the panel shows from them is labelled 「估算」.
+ * 9:00–12:00 and 14:00–18:00 Beijing time); off-peak prices are half, and Outpost halves them itself for a DeepSeek route
+ * (`pricesAt`, src/core/cost.ts). Every cost the panel shows from them is labelled 「估算」.
  */
 export const DEFAULT_PRICES = { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 } as const
 

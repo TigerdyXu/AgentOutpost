@@ -292,19 +292,34 @@ describe('sessions', () => {
     expect(driver.nudges.filter(n => n.sessionId === prompt.sessionId)).toHaveLength(0)
   })
 
-  it('records cost from usage and prices', async () => {
+  it('records cost from usage, searches and prices', async () => {
     driver.script['outpost-daily-'] = async r => {
-      if (r.kind === 'run') return completed({ inputTokens: 1_000_000, outputTokens: 250_000, cacheReadTokens: 3_000_000 })
+      if (r.kind === 'run') return completed({ inputTokens: 1_000_000, outputTokens: 250_000, cacheReadTokens: 3_000_000, searches: 30 })
       await r.done()
-      return completed({ inputTokens: 100_000, outputTokens: 50_000 })
+      return completed({ inputTokens: 100_000, outputTokens: 50_000, searches: 7 })
     }
     const run = await runner.session('daily', { productId: 'p1' }, build)
 
-    const total = { inputTokens: 1_100_000, outputTokens: 300_000, cacheReadTokens: 3_000_000 }
+    const total = { inputTokens: 1_100_000, outputTokens: 300_000, cacheReadTokens: 3_000_000, searches: 37 }
     expect(run.usage).toEqual(total)
     expect(run.costYuan).toBe(costOf(total, PRICES))
-    expect(run.costYuan).toBe(4.72) // 1.1 × 2 + 0.3 × 8 + 3 × 0.04
-    expect(repo.spentOn(TODAY, 'p1')).toBe(4.72)
+    // 1.1 × 2 + 0.3 × 8 + 3 × 0.04 = 4.72, and 37 searches × (8,000 × 2 + 800 × 8) / 1e6 = 0.8288
+    expect(run.costYuan).toBe(5.5488)
+    expect(repo.spentOn(TODAY, 'p1')).toBe(5.5488)
+  })
+
+  it('prices a run as a whole at the time it started, even when a round ends later', async () => {
+    const asked: Date[] = []
+    settings = { ...settings, pricesOf: (_model, at) => { asked.push(at); return PRICES } }
+    const start = time.clock.now()
+    driver.script['outpost-daily-'] = async r => {
+      time.set(new Date(start.getTime() + 90 * 60_000)) // the round ends an hour and a half later
+      await r.done()
+      return completed({ inputTokens: 1_000 })
+    }
+    await runner.session('daily', { productId: 'p1' }, build)
+    expect(asked.length).toBeGreaterThan(0)
+    for (const at of asked) expect(at).toEqual(start)
   })
 
   it('settles a run in the step that stores it as over, before its session is let go of, and logs a settle that fails', async () => {
