@@ -222,15 +222,14 @@ export class DshSessionDriver implements SessionDriver {
   private readonly chats = new Set<string>()
   /** The agents already refused `UNSAFE_BROWSER_TOOL` (`refuseUnsafeBrowser`), so that none is guarded twice. */
   private readonly guarded = new WeakSet<Agent>()
+  /** Who hears what the 追问 chats use (`onChatUsage`); none once Outpost stops (`close`). */
+  private chatUsage: ((sessionId: string, usage: Usage) => void) | undefined
 
   /**
    * @param ctx - the plugin's Context, which provides `sessionController`, `workspaceRegistry`, `sessionPersistence`,
    *   `agents`, `agentPresets` and `agentDefaultModel`. Research sessions it makes belong to it: they end with it.
    * @param workspaceDir - absolute directory of the 「前哨」 workspace; made when missing.
    */
-  /** Who hears what the 追问 chats use (`onChatUsage`). */
-  private chatUsage: ((sessionId: string, usage: Usage) => void) | undefined
-
   constructor(private readonly ctx: Context, private readonly workspaceDir: string) {
     // DSH makes a new agent for a session on every create, resume and compaction; each gets the session's tools, and each
     // on the research preset the guard (one DSH reopens included: Outpost did not make it, and its browser is back). A
@@ -319,6 +318,7 @@ export class DshSessionDriver implements SessionDriver {
     }
     this.attached.clear()
     this.bound.clear()
+    this.chatUsage = undefined // a chat the user goes on with after Outpost stopped is not charged to a closed store
   }
 
   /**

@@ -39,6 +39,11 @@ export type Billing = 'metered' | 'local' | 'subscription'
 
 const LOCAL = /ollama|lm-?studio|llama\.?cpp|local/i
 
+/** Whether `provider` is one of DeepSeek's own routes, whose prices are half in DeepSeek's off-peak hours (`pricesAt`). */
+export function onDeepSeek(provider: string): boolean {
+  return /deepseek/i.test(provider)
+}
+
 /**
  * How a provider is billed: a local service (its id or name says Ollama, LM Studio, llama.cpp or local) costs nothing;
  * `anthropic` is DSH's Claude Pro/Max sign-in, paid by the subscription; every other provider is estimated with
@@ -47,11 +52,6 @@ const LOCAL = /ollama|lm-?studio|llama\.?cpp|local/i
  * @param provider - the provider's id, as DSH routes it.
  * @param providerName - its display name, from `ctx.llm.listProviders()`, when known.
  */
-/** Whether `provider` is one of DeepSeek's own routes, whose prices are half in DeepSeek's off-peak hours (`pricesAt`). */
-export function onDeepSeek(provider: string): boolean {
-  return /deepseek/i.test(provider)
-}
-
 export function billingOf(provider: string, providerName?: string): Billing {
   if (LOCAL.test(provider) || (providerName !== undefined && LOCAL.test(providerName))) return 'local'
   if (provider === 'anthropic') return 'subscription'

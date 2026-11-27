@@ -595,6 +595,16 @@ describe('DshSessionDriver.onChatUsage', () => {
     expect(seen).toEqual([])
   })
 
+  it('stops reporting once Outpost stops', async () => {
+    const seen: string[] = []
+    driver.onChatUsage(sessionId => { seen.push(sessionId) })
+    await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })
+    driver.close()
+    host.assistant('outpost-followup-1', { inputTokens: 1, outputTokens: 1 })
+    host.search('outpost-followup-1')
+    expect(seen).toEqual([])
+  })
+
   it('reports a chat given its tools again after a restart', async () => {
     const seen: string[] = []
     driver.onChatUsage(sessionId => { seen.push(sessionId) })
