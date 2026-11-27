@@ -64,19 +64,46 @@ describe('the browser fallback', () => {
   it('explains how to enable the browser fallback when it is off', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: false }) })
     expect(text()).toContain('没开浏览器兜底')
-    // The browser comes with the research preset (cordis.patch.yml), on: it is off only where the profile overrides the
-    // preset without it (missing packages break the preset: that is the message below).
+    // The browser comes with the research preset (cordis.patch.yml), on: it is off here because the profile overrides the
+    // preset without it (missing packages make research run on the preset without a browser: that is the next message).
     expect(document.querySelector('.op-browser')?.textContent).toBe(
       '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。浏览器在前哨的调研预设里，默认是开的；profile 里覆盖了这个预设、去掉了浏览器时就会这样，删掉那条覆盖后重启即可打开。')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBeNull()
     expect(text()).not.toContain('浏览器兜底已开启')
+    expect(document.querySelector('.op-browser code')).toBeNull()
   })
 
-  it('says research cannot run when the research preset does not load, instead of the browser notice', async () => {
-    await mount(<Settings />, { state: state({ browserAvailable: false, researchBroken: true }) })
+  // M1.4: a plain `dsh plugin add` of Outpost lacks the two browser plugins; research runs on the preset without a browser.
+  it('says the browser plugins are not installed, that research still runs, and gives the command that installs them', async () => {
+    await mount(<Settings />, { state: state({ browserAvailable: false, browserMissing: true }) })
     const notice = document.querySelector('.op-browser')
+    const COMMAND = 'curl -fsSL https://raw.githubusercontent.com/TigerdyXu/AgentOutpost/master/install.sh | sh'
     expect(notice?.textContent).toBe(
-      '调研跑不了：前哨的调研预设加载不了，推荐、建档、核查和日更都会失败。多半是浏览器兜底的两个包没装，或 profile 里另开了一个 Playwright 浏览器；装上包或删掉 profile 里那一行后重启。')
+      '浏览器兜底没开：桌面版里没装浏览器的两个插件，公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。调研照常跑。'
+      + '要打开它，先退出桌面版，再在终端运行前哨 GitHub 页面上的一行安装命令，它会把这两个插件一起装上：' + COMMAND)
+    // The command on a line of its own, whole: one click selects it all for copying.
+    const code = notice?.querySelector('code')
+    expect(code?.textContent).toBe(COMMAND)
+    expect(code?.className).toBe('op-browser-command')
+    expect(notice?.getAttribute('role')).toBe('status')
+    expect(notice?.getAttribute('data-on')).toBeNull()
+    expect(notice?.getAttribute('data-broken')).toBeNull()
+    expect(text()).not.toContain('删掉那条覆盖')
+    expect(text()).not.toContain('调研跑不了')
+  })
+
+  it('says the browser is on when research runs without its own but the profile\'s browser reaches it', async () => {
+    // The profile's Playwright clashed with the preset's own: research runs on the preset without a browser, with the profile's.
+    await mount(<Settings />, { state: state({ browserAvailable: true, browserMissing: true }) })
+    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启')
+    expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBe('')
+  })
+
+  it('says research cannot run when neither research preset loads, instead of the browser notice', async () => {
+    await mount(<Settings />, { state: state({ browserAvailable: false, browserMissing: false, researchBroken: true }) })
+    const notice = document.querySelector('.op-browser')
+    // No longer the browser packages' fault (research runs without them): what stops, and where the details are.
+    expect(notice?.textContent).toBe('调研跑不了：前哨的调研预设加载不了，推荐、建档、核查和日更都会失败。详情在桌面版的日志里。')
     expect(notice?.getAttribute('role')).toBe('alert')
     expect(notice?.getAttribute('data-broken')).toBe('')
     expect(notice?.getAttribute('data-on')).toBeNull()
@@ -120,6 +147,9 @@ describe('the form', () => {
     expect(document.querySelector('.op-datadir')?.textContent).toBe('/Users/tiger/Projects/AgentOutpost-data')
     expect(all<HTMLInputElement>('input').map(input => input.value)).not.toContain('/Users/tiger/Projects/AgentOutpost-data')
     expect(all('label').map(label => label.textContent)).not.toContain('数据目录')
+    // Where it is by default, and how to move it: the profile names no dataDir unless the user (or install.sh) wrote one.
+    expect(document.querySelector('.op-datadir')?.closest('.op-set-section')?.querySelector('.op-set-hint')?.textContent).toBe(
+      '数据库、产品图标和调研会话的工作文件都放在这里，默认是 ~/.outpost/data。要换地方，在 profile 的 cordis.patch.yml 里给 outpost 这一行写上 dataDir（已经有就改它），然后重启。')
     // Nothing changed: nothing to save or to revert.
     expect(saveButton().disabled).toBe(true)
     expect(revertButton().disabled).toBe(true)

@@ -417,18 +417,40 @@ export function SettingsForm({ t, form, known }: { t: T; form: ConfigPageForm | 
 }
 
 /**
- * The browser fallback's standing: when it is off, why that matters and how to turn it on. When the research preset does
- * not load at all, that comes first, as an alert: then no research runs, browser or not.
+ * The one-line install of Outpost (README, install.sh): it installs the two browser plugins with Outpost. Not translated:
+ * it is typed as it is.
  */
-function BrowserFallback({ t, available, broken }: { t: T; available: boolean; broken: boolean }): ReactNode {
+const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/TigerdyXu/AgentOutpost/master/install.sh | sh'
+
+/**
+ * The browser fallback's standing (`GET state`). When neither research preset loads, that comes first, as an alert: then
+ * no research runs, browser or not. Otherwise it is on when research sessions have a browser, their preset's or the
+ * profile's. When they have none because research runs on the preset without one (`browserMissing`: the browser plugins
+ * are not installed, as after a plain `dsh plugin add` of Outpost), it says research still runs and gives the command that
+ * installs the plugins, whole and selectable in one click. Else the profile overrides the preset without its browser.
+ */
+function BrowserFallback({ t, available, missing, broken }: { t: T; available: boolean; missing: boolean; broken: boolean }): ReactNode {
   if (broken) {
     return <section className="op-browser" data-broken="" role="alert">
       <span>{t('settings.browser.broken')}</span>
     </section>
   }
-  return <section className="op-browser" data-on={available ? '' : undefined} role="status">
-    {available && <CheckIcon size={16} />}
-    <span>{t(available ? 'settings.browser.on' : 'settings.browser.off')}</span>
+  if (available) {
+    return <section className="op-browser" data-on="" role="status">
+      <CheckIcon size={16} />
+      <span>{t('settings.browser.on')}</span>
+    </section>
+  }
+  if (missing) {
+    return <section className="op-browser" role="status">
+      <div className="op-browser-body">
+        <span>{t('settings.browser.missing')}</span>
+        <code className="op-browser-command">{INSTALL_COMMAND}</code>
+      </div>
+    </section>
+  }
+  return <section className="op-browser" role="status">
+    <span>{t('settings.browser.off')}</span>
   </section>
 }
 
@@ -436,7 +458,7 @@ export function Settings(): ReactNode {
   const { t, state, configForm } = useShell()
   return <div className="op-page op-settings">
     <h1 className="op-page-title">{t('nav.settings')}</h1>
-    {state && <BrowserFallback t={t} available={state.browserAvailable} broken={state.researchBroken} />}
+    {state && <BrowserFallback t={t} available={state.browserAvailable} missing={state.browserMissing} broken={state.researchBroken} />}
     <SettingsForm t={t} form={configForm} {...state ? { known: { runTime: state.runTime, dataDir: state.dataDir } } : {}} />
   </div>
 }

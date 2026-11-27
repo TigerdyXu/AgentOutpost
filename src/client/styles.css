@@ -2540,6 +2540,29 @@ button.op-run-open {
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
 }
 
+.op-browser-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The install command, whole: one click selects it all for copying; it wraps anywhere rather than widen the page. */
+.op-browser-command {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
 .op-browser[data-on] .op-glyph {
   flex: none;
   color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 70%, var(--dsw-alias-label-primary));
