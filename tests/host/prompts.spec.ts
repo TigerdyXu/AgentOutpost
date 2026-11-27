@@ -95,6 +95,8 @@ describe('renderPrompt', () => {
     for (const text of [renderPrompt('baseline', BASELINE_VARS), renderPrompt('recommend', RECOMMEND_VARS)]) {
       const step2 = text.slice(text.indexOf('2. '), text.indexOf('3. '))
       for (const said of ['验证页', '登录页', 'browser', '浏览器', '最多 3 个网页']) expect(step2, said).toContain(said)
+      // Only when the session has one: research on the preset without a browser (M1.4) has none.
+      expect(step2).toMatch(/有[^，。\n]*browser[^，。\n]*浏览器工具就用/)
     }
   })
 
