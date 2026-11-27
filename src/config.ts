@@ -2,6 +2,16 @@
 // Lets the emitted declaration of Config name Schemastery's `Dict` through this package's own dependency (TS2883 otherwise).
 import type {} from '@deepseek-ai/cosmokit'
 import s from '@deepseek-ai/schemastery'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * Where Outpost keeps its data when the profile names no `dataDir`: `~/.outpost/data`, the directory install.sh has always
+ * written into the profile. A plain `dsh plugin add` (npm, the plugin market, a Git URL) applies only the package's own
+ * cordis.patch.yml, whose `outpost` row carries no configuration, so without a default the plugin would refuse to start
+ * there. It is absolute (Outpost does not expand `~`), read from the home directory of the process DSH runs in.
+ */
+export const DEFAULT_DATA_DIR = join(homedir(), '.outpost', 'data')
 
 /**
  * Default unit prices, yuan per million tokens, of DeepSeek's default model `deepseek-flash` (DeepSeek-V4.1-Flash), from
@@ -22,8 +32,8 @@ const modelRef = (description: string) => s.union([
 ]).description(description).volatile()
 
 export const Config = s.object({
-  dataDir: s.string().pattern(/^\//).required()
-    .description('Directory for the database (outpost.sqlite), product icons (icons/) and research working files (workspace/). Absolute path.'),
+  dataDir: s.string().pattern(/^\//).default(DEFAULT_DATA_DIR)
+    .description('Directory for the database (outpost.sqlite), product icons (icons/) and research working files (workspace/). Absolute path; ~/.outpost/data when left out.'),
   runTime: s.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).default('08:00')
     .description('Local time of the daily update, HH:MM (00:00 to 23:59).').volatile(),
   maxParallel: s.number().min(1).max(8).step(1).default(3)

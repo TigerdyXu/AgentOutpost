@@ -1,10 +1,20 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { Config } from '../src/config.ts'
+import { Config, DEFAULT_DATA_DIR } from '../src/config.ts'
 
-it('requires an absolute dataDir', () => {
-  expect(() => Config({} as never)).toThrow()
-  expect(() => Config({ dataDir: 'relative/dir' })).toThrow()
+// Only the computed path is checked: nothing here makes the directory (a Runtime would), so the real home is not touched.
+it('keeps the data in ~/.outpost/data when the profile names no dataDir, as the installer does', () => {
+  expect(DEFAULT_DATA_DIR).toBe(join(homedir(), '.outpost', 'data'))
+  expect(DEFAULT_DATA_DIR.startsWith('/')).toBe(true)
+  expect(Config({}).dataDir).toBe(DEFAULT_DATA_DIR)
+  expect(Config({ dataDir: undefined }).dataDir).toBe(DEFAULT_DATA_DIR)
+})
+
+it('uses a dataDir the profile names instead, and requires it to be absolute', () => {
   expect(Config({ dataDir: '/srv/outpost' }).dataDir).toBe('/srv/outpost')
+  expect(() => Config({ dataDir: 'relative/dir' })).toThrow()
+  expect(() => Config({ dataDir: '~/outpost' })).toThrow() // Outpost does not expand ~; the default is already absolute
 })
 
 it('fills the defaults behind volatile references', () => {
