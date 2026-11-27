@@ -6,7 +6,7 @@ A plugin for the DeepSeek Harness desktop app that keeps watch on the products y
 
 Tell it what you're following. It recommends products and builds a sourced dossier for each one. Every morning it checks them for news, verifies the sources, and writes you a short brief, 「今日哨报」 (Today's brief).
 
-![Today's brief](docs/images/today.png)
+![Outpost demo: today's brief, a product dossier, a new track](docs/images/demo.gif)
 
 > The interface is in Chinese.
 
