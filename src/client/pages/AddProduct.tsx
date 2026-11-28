@@ -16,6 +16,7 @@ import { ApiError, call, describeError, usePoll } from '../api.ts'
 import type { T } from '../locales.ts'
 import { useShell } from '../shell/context.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
+import { told } from '../words.ts'
 
 // Limits the host checks (src/host/api.ts): a longer text is a 400 there.
 const MAX_NAME = 30
@@ -71,7 +72,7 @@ const otherTracks = (state: StateView | undefined, trackId: Id, id: Id): string[
  */
 function joinedLine(t: T, status: Product['status'], tracks: string[]): string {
   if (status !== 'paused' && status !== 'tracking') return t('add.building')
-  const named = tracks.length > 0 ? tracks.join('、') : t('add.otherTracks')
+  const named = tracks.length > 0 ? tracks.join(t('today.list')) : t('add.otherTracks')
   return t(status === 'paused' ? 'add.pausedElsewhere' : 'add.linked', { tracks: named })
 }
 
@@ -86,7 +87,7 @@ function joinedLine(t: T, status: Product['status'], tracks: string[]): string {
  */
 async function conclude(t: T, run: RunRow, attempt: Attempt, track: Track, state: StateView | undefined): Promise<Outcome> {
   if (run.productId === null) {
-    return { ok: false, line: run.error ? t('add.notAdded', { reason: run.error }) : t('add.notAddedNoReason'), product: null }
+    return { ok: false, line: run.error ? t('add.notAdded', { reason: told(t, run.error) }) : t('add.notAddedNoReason'), product: null }
   }
   const was = attempt.before.get(run.productId)
   if (was) return { ok: true, line: t('add.already', { track: track.name }), product: was }
@@ -221,8 +222,8 @@ function AddProductPage({ view }: { view: TrackView }): ReactNode {
   }, [rows, track.id])
   const lastRound = rows?.find(run => run.id === watched.at(-1))
   const roundNote = searching || !lastRound ? null
-    : lastRound.status === 'skipped' ? (lastRound.error ? t('pick.skipped', { reason: lastRound.error }) : t('pick.skippedNoReason'))
-    : lastRound.status === 'failed' ? (lastRound.error ? t('pick.failed', { reason: lastRound.error }) : t('pick.failedNoReason'))
+    : lastRound.status === 'skipped' ? (lastRound.error ? t('pick.skipped', { reason: told(t, lastRound.error) }) : t('pick.skippedNoReason'))
+    : lastRound.status === 'failed' ? (lastRound.error ? t('pick.failed', { reason: told(t, lastRound.error) }) : t('pick.failedNoReason'))
     : null
 
   const ask = async (event: FormEvent) => {

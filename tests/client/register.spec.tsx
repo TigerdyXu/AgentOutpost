@@ -52,13 +52,25 @@ it('registers main, sidebar entry, trailing count and plugin config row', () => 
   expect(Object.keys(dictionaries)).toEqual(['outpost'])
 })
 
-it('registers the Chinese dictionary for both locales', () => {
+it('registers a Chinese and an English dictionary, so the panel follows the language of DSH’s settings', () => {
   const { dictionaries } = fixture()
-  // The panel is always Chinese, whatever the Desktop's language: the English column is given the Chinese one.
-  const { zh, en } = dictionaries.outpost as { zh: Record<string, unknown>; en: Record<string, unknown> }
+  const { zh, en } = dictionaries.outpost as { zh: Record<string, string>; en: Record<string, string> }
   expect(zh.panel).toBe('前哨')
-  expect(en.panel).toBe('前哨')
-  expect(en).toBe(zh)
+  expect(en.panel).toBe('Outpost')
+  expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort())
+  // The host's fixed sentences come along, under `said.`, in both languages.
+  expect(zh['said.budgetTotal']).toBe('今日总预算已用完')
+  expect(en['said.budgetTotal']).toBe('Today’s total budget is used up')
+})
+
+it('keeps every English text free of CJK characters and its placeholders the same as the Chinese one’s', () => {
+  const { dictionaries } = fixture()
+  const { zh, en } = dictionaries.outpost as { zh: Record<string, string>; en: Record<string, string> }
+  const names = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort()
+  for (const key of Object.keys(zh)) {
+    expect(en[key], key).not.toMatch(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/)
+    expect(names(en[key]!), key).toEqual(names(zh[key]!))
+  }
 })
 
 it('shows the two-column panel in main and a telescope in the sidebar', async () => {

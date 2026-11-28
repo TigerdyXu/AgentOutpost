@@ -1,5 +1,6 @@
 import { canonicalUrl } from './url.ts'
 import type { ClaimKind, FindingStatus, OpenedVia } from './types.ts'
+import { say } from './messages.ts'
 
 /** What one source contributed to one finding, as recorded by the verify step. */
 export interface Evidence {
@@ -43,7 +44,7 @@ export function judge(input: { claimKind: ClaimKind; evidence: Evidence[]; first
 
   // With no source at all there is nothing to hold on to: spec §8.1 says a claim without one is not taken in.
   if (evidence.length === 0 || evidence.every(isVoidEvidence)) {
-    return { status: 'withdrawn', note: '引句在原文中找不到或不支持结论', unconfirmedUntil: null }
+    return { status: 'withdrawn', note: say('quoteUnsupported'), unconfirmedUntil: null }
   }
 
   const independent = new Set(valid.map((e) => e.syndicationGroup ?? canonicalUrl(e.url))).size
@@ -56,7 +57,7 @@ export function judge(input: { claimKind: ClaimKind; evidence: Evidence[]; first
   const deadline = new Date(firstSeen.getTime() + WINDOW_MS)
   return {
     status: now.getTime() > deadline.getTime() ? 'unproven' : 'unconfirmed',
-    note: evidence.some(unseen) ? '原文打不开' : '只有一个来源',
+    note: evidence.some(unseen) ? say('unopened') : say('oneSource'),
     unconfirmedUntil: deadline.toISOString(),
   }
 }

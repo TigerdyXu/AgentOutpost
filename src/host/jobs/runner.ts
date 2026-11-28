@@ -16,6 +16,7 @@ import { modelFor, type Billing, type ModelRef, type ModelSettings } from '../..
 import type { Id, Run, RunKind, RunStatus, Usage } from '../../core/types.ts'
 import type { Repo } from '../../store/repo.ts'
 import type { Clock, IconFetcher, SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from '../ports.ts'
+import { say } from '../../core/messages.ts'
 
 /** The settings a run reads when it needs them (they can change while Outpost runs), the models of the four roles among them. */
 export interface RuntimeSettings extends ModelSettings {
@@ -85,9 +86,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const ARCHIVED_THROUGH = 'archivedSessionsThrough'
 const DEFAULT_TIMEOUT_MIN = 30
 /** The `error` of a run that failed only because Outpost was stopping: it was interrupted, not broken, and is run again. */
-export const STOPPED_ERROR = '前哨已停止'
-const INVALID_BUDGET = '每日预算设置无效'
-const NOT_DONE = '提醒后仍没有调用 outpost_done，按已提交的内容收尾'
+export const STOPPED_ERROR = say('stopped')
+const INVALID_BUDGET = say('budgetInvalid')
+const NOT_DONE = say('notDone')
 /**
  * Kinds that neither wait for nor take one of the `maxParallel` places: the user is watching a recommendation (§5.3
  * promises candidates in 1–3 minutes), or the confirmation of a product they added by name, and queued behind the daily
@@ -292,7 +293,7 @@ export class JobRunner {
       used.searches = (used.searches ?? 0) + (outcome.usage.searches ?? 0)
       this.repo.updateRun(runId, { usage: { ...used }, costYuan: costOf(used, this.settings().pricesOf(priced.model, priced.at)) })
       if (!isTransient(outcome)) return outcome
-      if (retry >= TRANSIENT_RETRIES) return { ...outcome, error: `${outcome.error}（已重试 ${retry} 次）` }
+      if (retry >= TRANSIENT_RETRIES) return { ...outcome, error: say('retried', { reason: outcome.error ?? '', count: retry }) }
       if (this.stopped) return outcome
       await this.sleep(RETRY_DELAY_MS)
       if (this.stopped) return outcome
@@ -311,10 +312,10 @@ export class JobRunner {
 
   private describe(outcome: SessionOutcome): string {
     switch (outcome.reason) {
-      case 'timeout': return `超过 ${this.timeoutMin()} 分钟没有结束，已停止`
-      case 'blocked': return '会话被拦下，没有继续'
-      case 'aborted': return '会话被取消'
-      default: return outcome.error || '会话出错'
+      case 'timeout': return say('timeout', { minutes: this.timeoutMin() })
+      case 'blocked': return say('blocked')
+      case 'aborted': return say('aborted')
+      default: return outcome.error || say('sessionError')
     }
   }
 

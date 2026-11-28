@@ -7,15 +7,18 @@ import { createRoot, type Root } from 'react-dom/client'
 import { expect, vi } from 'vitest'
 import type { Brief, CardVersion, Facts, Finding, Product, Run, Source, Track } from '../../src/core/types.ts'
 import type { Api, BriefView, ProductView, StateView, TrackProductView, TrackView } from '../../src/host/api.ts'
-import { zh, type T } from '../../src/client/locales.ts'
+import { en, zh, type T } from '../../src/client/locales.ts'
 import { ShellContext, type Shell } from '../../src/client/shell/context.ts'
 
 declare global { var IS_REACT_ACT_ENVIRONMENT: boolean }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-/** Chinese dictionary lookup with `{name}` substitution, as the locale service's bound `t` does. */
-export const t = ((key: keyof typeof zh, params: Record<string, unknown> = {}) =>
-  (zh[key] ?? key).replace(/\{(\w+)\}/g, (match, name: string) => name in params ? String(params[name]) : match)) as T
+/** A dictionary lookup with `{name}` substitution, as the locale service's bound `t` does. */
+const lookup = (dictionary: typeof zh) => ((key: keyof typeof zh, params: Record<string, unknown> = {}) =>
+  (dictionary[key] ?? key).replace(/\{(\w+)\}/g, (match, name: string) => name in params ? String(params[name]) : match)) as T
+/** The Chinese `t` (most tests read the panel in Chinese), and the English one (the Desktop set to English). */
+export const t = lookup(zh)
+export const tEn = lookup(en)
 
 // ---- a fake client context ----
 

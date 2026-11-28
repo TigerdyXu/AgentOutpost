@@ -29,6 +29,7 @@ import { mkdir } from 'node:fs/promises'
 import { z } from 'zod'
 import type { Usage } from '../core/types.ts'
 import type { SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from './ports.ts'
+import { say } from '../core/messages.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -63,7 +64,7 @@ export const WORKSPACE_TITLE = '前哨'
  * browser no longer stops research (it runs without one), so this is something deeper, which the user cannot fix from a
  * sentence here: it says what stops and where the details are (what DSH said of each preset is in the log).
  */
-export const RESEARCH_PRESET_BROKEN = '前哨的调研预设加载不了，推荐、建档、核查和日更都跑不了。详情在桌面版的日志里。'
+export const RESEARCH_PRESET_BROKEN = say('presetBroken')
 /** DSH's Playwright browser provider, as the research preset composes it (cordis.patch.yml). */
 export const PLAYWRIGHT_MODULE = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
 /** The name that provider registers with browser use, which is also the MCP server name its tools are reached by. */

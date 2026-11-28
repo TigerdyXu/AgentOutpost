@@ -17,6 +17,7 @@ import { FindingCard } from '../ui/FindingCard.tsx'
 import { ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { Tag } from '../ui/Tag.tsx'
+import { labelOf, told } from '../words.ts'
 
 /** How often an open page reads the brief again (a late finding, a brief written while it is open). */
 const POLL_MS = 5000
@@ -39,12 +40,12 @@ function skippedNotes(t: T, skipped: Brief['skipped'], nameOf: (id: Id) => strin
   for (const entry of skipped) {
     const name = nameOf(entry.productId)
     if (name === undefined) continue
-    if (entry.failed) failed.push(t('today.failed', { name, reason: entry.reason }))
+    if (entry.failed) failed.push(t('today.failed', { name, reason: told(t, entry.reason) }))
     else if (entry.reason === VERIFY_BUDGET) unchecked.push(t('today.verifyBudget', { name }))
     else stopped.set(entry.reason, [...stopped.get(entry.reason) ?? [], name])
   }
   return [
-    ...[...stopped].map(([reason, names]) => t('today.skipped', { names: names.join(t('today.list')), reason })),
+    ...[...stopped].map(([reason, names]) => t('today.skipped', { names: names.join(t('today.list')), reason: told(t, reason) })),
     ...unchecked,
     ...failed,
   ]
@@ -125,12 +126,12 @@ export function Today(): ReactNode {
     const product = index.products.get(finding.productId)
     if (!product) return null
     const tracks = tracksOf(product.id)
-    const labels = new Map(tracks.flatMap(track => track.dimensions).map(dimension => [dimension.key, dimension.label] as const))
+    const labels = new Map(tracks.flatMap(track => track.dimensions).map(dimension => [dimension.key, labelOf(t, dimension)] as const))
     // Only what the check verified went into the profile (design §8), and only where a card took a version resting on it.
     // A dimension that no track of the product lists is not on its profile: not named, and not what 看改动 opens.
     const changed = finding.status === 'verified' ? (view.changed?.[finding.id] ?? []).flatMap(key => labels.has(key) ? [{ key, label: labels.get(key)! }] : []) : []
     // The track the brief is filtered to, else every track the product is in (in the track list's order).
-    const trackName = tracks.find(track => track.id === trackId)?.name ?? (tracks.map(track => track.name).join('、') || undefined)
+    const trackName = tracks.find(track => track.id === trackId)?.name ?? (tracks.map(track => track.name).join(t('today.list')) || undefined)
     return <FindingCard key={finding.id} finding={finding} product={product} trackName={trackName}
       sources={finding.sourceIds.flatMap(id => index.sources.get(id) ?? [])} changed={changed} read={finding.read || read.has(finding.id)}
       promoted={finding.verifiedOn === brief!.date && finding.statusNote === PROMOTED}
@@ -170,7 +171,7 @@ export function Today(): ReactNode {
     {!brief && <p className="op-day-empty">{past ? t('today.noBriefThatDay') : state ? t('today.noBrief', { time: state.runTime }) : t('today.noBriefAnyTime')}</p>}
     {brief && noNews && <p className="op-day-empty">{t('today.noNews')}</p>}
     {brief && !noNews && <>
-      {brief.gist && <div className="op-gist"><Tag kind="ai" /><span>{brief.gist}</span></div>}
+      {brief.gist && <div className="op-gist"><Tag kind="ai" /><span>{told(t, brief.gist)}</span></div>}
       {state && main.length > 0 && state.tracks.some(entry => entry.products.length > 0) && <div className="op-filter" role="group" aria-label={t('today.filter')}>
         <button type="button" aria-pressed={trackId === null} onClick={() => { setTrackId(null) }}>{t('today.all', { count: main.length })}</button>
         {state.tracks.filter(entry => entry.products.length > 0).map(({ track }) => <button key={track.id} type="button" aria-pressed={trackId === track.id}

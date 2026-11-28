@@ -26,6 +26,7 @@ import { renderPrompt } from '../prompts.ts'
 import { VERIFY_BUDGET_NOTE } from './daily.ts'
 import { budgetRefusal, STOPPED_ERROR, type RuntimeSettings } from './runner.ts'
 import { PROMOTED_NOTE } from './verify.ts'
+import { say } from '../../core/messages.ts'
 
 export interface BriefDeps {
   repo: Repo
@@ -45,7 +46,7 @@ export interface BriefDeps {
 export const GIST_MAX_CHARS = 60
 const GIST_TIMEOUT_MS = 2 * 60_000
 /** The note on a synthesize run whose answer could not be used. */
-const UNUSABLE_GIST = `模型给的总结是空的或超过 ${GIST_MAX_CHARS} 字，改用第一条发现的标题`
+const UNUSABLE_GIST = say('unusableGist', { max: GIST_MAX_CHARS })
 const IMPORTANCE = { major: '重要', notable: '值得留意', minor: '小更新' } as const
 
 /**
@@ -137,8 +138,8 @@ function dayProducts(repo: Repo, date: string): { tracked: Id[]; skipped: Brief[
     if (ofProduct.some(r => r.status === 'done' && r.error !== VERIFY_BUDGET_NOTE)) { tracked.push(productId); continue }
     if (ofProduct.some(r => r.status === 'done')) { skipped.push({ productId, reason: VERIFY_BUDGET_NOTE }); continue }
     const last = ofProduct.at(-1)!
-    if (last.status === 'skipped') skipped.push({ productId, reason: last.error ?? '今日预算已用完' })
-    else if (last.status === 'failed' && last.error !== STOPPED_ERROR) skipped.push({ productId, reason: last.error ?? '运行失败', failed: true })
+    if (last.status === 'skipped') skipped.push({ productId, reason: last.error ?? say('budgetToday') })
+    else if (last.status === 'failed' && last.error !== STOPPED_ERROR) skipped.push({ productId, reason: last.error ?? say('runFailed'), failed: true })
     // queued, running, or interrupted by a stop: not finished yet
   }
   return { tracked, skipped }

@@ -12,9 +12,10 @@ import type { Usage } from '../core/types.ts'
 import type { ModelsView } from './api.ts'
 import { addUsage } from './dsh-sessions.ts'
 import type { ModelClient } from './ports.ts'
+import { say } from '../core/messages.ts'
 
 /** What a provider's group says when it did not list its models in time, or failed to (Ollama not running, say). */
-export const UNREADABLE_MODELS = '读取失败'
+export const UNREADABLE_MODELS = say('modelsUnreadable')
 
 /**
  * Every provider DSH has (`ctx.llm.listProviders()`, in its order) with its models (`listModels`), as 设置 offers them.
@@ -91,7 +92,7 @@ export class DshModelClient implements ModelClient {
   }
 }
 
-const aborted = (signal: AbortSignal) => new Error('模型调用已中止（超时或前哨停止）', { cause: signal.reason })
+const aborted = (signal: AbortSignal) => new Error(say('modelAborted'), { cause: signal.reason })
 
 /**
  * The chunks of `stream` until it ends or `signal` aborts, whichever comes first; on abort it throws and lets go of the

@@ -18,6 +18,7 @@ import { joinTrack, type JoinDeps } from '../join.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
+import { say } from '../../core/messages.ts'
 
 export interface IdentifyDeps extends JobDeps {
   /** What baselines or tops up the product once it joins (`Scheduler`). */
@@ -25,9 +26,9 @@ export interface IdentifyDeps extends JobDeps {
 }
 
 /** The `error` of a confirmation that ended without a candidate. */
-export const NOT_FOUND = '没有找到这个产品'
+export const NOT_FOUND = say('identifyNotFound')
 /** The `error` of a confirmation whose outcome could not be acted on (the store failed, say); nothing joined. */
-export const SETTLE_FAILED = '处理结果时出错'
+export const SETTLE_FAILED = say('settleFailed')
 
 /**
  * Starts confirming the product named `ask.name` (with the official site the user gave, if any) for the track, and

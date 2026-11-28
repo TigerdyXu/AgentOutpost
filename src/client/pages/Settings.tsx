@@ -12,6 +12,7 @@ import { call, describeError } from '../api.ts'
 import type { OutpostKey, T } from '../locales.ts'
 import { useShell } from '../shell/context.ts'
 import { CheckIcon, ChevronIcon } from '../ui/icons.tsx'
+import { told } from '../words.ts'
 
 /** `ConfigForm.mutate`'s operations. */
 type Op = Parameters<ConfigPageForm['mutate']>[0][number]
@@ -202,7 +203,7 @@ function firstChoice(t: T, view: ModelsView | undefined, key: ModelKey, first: O
  */
 function choicesOf(t: T, view: ModelsView | undefined, kept: readonly string[]): ChoiceGroup[] {
   const groups: ChoiceGroup[] = (view?.groups ?? []).map(group => ({
-    key: group.provider, label: group.name, error: group.error,
+    key: group.provider, label: group.name, error: group.error === null ? null : told(t, group.error),
     choices: group.models.map(model => ({ value: encodeRef(group.provider, model.id), label: sourced(group.name, model.name || model.id) })),
   }))
   for (const value of new Set(kept)) {
@@ -253,7 +254,7 @@ function ModelsStatus({ t, models }: { t: T; models: ModelList }): ReactNode {
   }
   const failed = (models.view?.groups ?? []).filter(group => group.error !== null)
   if (failed.length === 0) return null
-  return <p className="op-set-hint op-models-status" role="status">{failed.map(group => `${group.name}：${group.error}`).join('；')} {retry}</p>
+  return <p className="op-set-hint op-models-status" role="status">{failed.map(group => t('settings.model.groupProblem', { name: group.name, error: told(t, group.error!) })).join(t('list.semi'))} {retry}</p>
 }
 
 function Section({ title, tag, hint, children }: { title: string; tag?: string; hint?: string; children: ReactNode }): ReactNode {

@@ -10,6 +10,7 @@ import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
 import { localDate } from '../core/calendar.ts'
+import { say } from '../core/messages.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
@@ -273,7 +274,7 @@ function shiftDate(date: string, days: number): string {
 }
 
 /** Why a product cannot be taken out of its only track. */
-const ONLY_TRACK = '这是它唯一的赛道。不想跟了就用「暂停跟踪」。'
+const ONLY_TRACK = say('onlyTrack')
 const isShown = (f: Finding) => f.status === 'verified' || f.status === 'unconfirmed'
 const isActive = (r: Run) => r.status === 'queued' || r.status === 'running'
 /** Kinds of run that work on one product: what 「立即更新」 and a retry of them start, and wait for. */
@@ -338,8 +339,8 @@ type Handler<K extends keyof Api> = (req: ApiRequestParts) => Promise<ApiRespons
 export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) => Promise<unknown> {
   const { repo } = rt
 
-  const track = (id: string) => repo.listTracks().find(t => t.id === id) ?? notFound('找不到这个赛道')
-  const product = (id: string) => repo.getProduct(id) ?? notFound('找不到这个产品')
+  const track = (id: string) => repo.listTracks().find(t => t.id === id) ?? notFound(say('trackNotFound'))
+  const product = (id: string) => repo.getProduct(id) ?? notFound(say('productNotFound'))
   const products = (ids: Iterable<Id>) => [...new Set(ids)].flatMap(id => repo.getProduct(id) ?? [])
   /** The newest baseline of the product that still runs: its progress is what 建档中 shows. */
   const progressOf = (productId: Id, active: Run[]) => active.find(r => r.productId === productId && r.kind === 'baseline')?.progress ?? null
@@ -370,11 +371,11 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    * @throws 409 when the product is not one Outpost follows, or the track is unknown or archived or has the product already.
    */
   const joinableTrack = (p: Product, trackId: Id): Track => {
-    if (!FOLLOWED.includes(p.status)) throw new ApiError(409, '这个产品没有在跟踪')
+    if (!FOLLOWED.includes(p.status)) throw new ApiError(409, say('notFollowed'))
     const target = repo.listTracks().find(t => t.id === trackId)
-    if (!target) throw new ApiError(409, '找不到这个赛道')
-    if (target.status === 'archived') throw new ApiError(409, '这个赛道已归档')
-    if (repo.productsOfTrack(target.id).some(here => here.id === p.id)) throw new ApiError(409, '它已经在这个赛道里了')
+    if (!target) throw new ApiError(409, say('trackNotFound'))
+    if (target.status === 'archived') throw new ApiError(409, say('trackArchived'))
+    if (repo.productsOfTrack(target.id).some(here => here.id === p.id)) throw new ApiError(409, say('alreadyInTrack'))
     return target
   }
   /** How many cards a product that joined a track is asked for at once: those it lacks, if it is worked on (not paused). */
@@ -528,14 +529,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     },
 
     'POST findings/:id/read': ({ params }) => {
-      if (!repo.getFinding(params.id!)) notFound('找不到这条发现')
+      if (!repo.getFinding(params.id!)) notFound(say('findingNotFound'))
       repo.updateFinding(params.id!, { read: true })
       return { ok: true }
     },
 
     'POST brief/read-all': async req => {
       const date = day(ReadAll.parse(await req.body()).date, 'date')
-      const brief = repo.getBrief(date) ?? notFound('这一天没有哨报')
+      const brief = repo.getBrief(date) ?? notFound(say('noBriefThatDay'))
       for (const id of [...brief.findingIds, ...brief.minorIds]) if (repo.getFinding(id)) repo.updateFinding(id, { read: true })
       return { ok: true }
     },
@@ -565,7 +566,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST tracks/:id/recommend': async req => {
       const t = track(req.params.id!)
       const { refine } = Recommend.parse(await req.body() ?? {})
-      if (recommending(t.id)) throw new ApiError(409, '上一轮推荐还在进行，稍等它结束再调整')
+      if (recommending(t.id)) throw new ApiError(409, say('recommending'))
       return { batchId: await startRecommendation(rt.jobs, t.id, refine) }
     },
 
@@ -595,7 +596,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const t = track(req.params.id!)
       const { candidateIds } = Start.parse(await req.body())
       const ofTrack = new Map(repo.listCandidates(t.id).map(c => [c.id, c]))
-      const chosen = [...new Set(candidateIds)].map(id => ofTrack.get(id) ?? badRequest(`候选 ${id} 不是这个赛道的`))
+      const chosen = [...new Set(candidateIds)].map(id => ofTrack.get(id) ?? badRequest(say('candidateNotOfTrack', { id })))
       const picked = new Set(chosen.map(c => c.id))
       for (const batch of new Set(chosen.map(c => c.batchId)))
         for (const c of repo.listCandidates(t.id, batch)) repo.setCandidateSelected(c.id, picked.has(c.id))
@@ -614,7 +615,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST tracks/:id/add-product': async req => {
       const t = track(req.params.id!)
       const { name, officialUrl } = AddProduct.parse(await req.body())
-      if (t.status === 'archived') throw new ApiError(409, '这个赛道已归档')
+      if (t.status === 'archived') throw new ApiError(409, say('trackArchived'))
       const followed = repo.findFollowedByName(name)
       if (followed.length === 1) {
         const p = followed[0]!
@@ -641,7 +642,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const p = product(req.params.id!)
       const { trackId } = TrackRef.parse(await req.body())
       const tracks = tracksOf(p.id)
-      if (!tracks.some(t => t.id === trackId)) throw new ApiError(409, '它不在这个赛道里')
+      if (!tracks.some(t => t.id === trackId)) throw new ApiError(409, say('notInTrack'))
       // A track that is archived keeps nothing running: leaving the product there alone is leaving it in none.
       if (!tracks.some(t => t.id !== trackId && t.status !== 'archived')) throw new ApiError(409, ONLY_TRACK)
       repo.unlinkProduct(trackId, p.id)
@@ -652,7 +653,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const p = product(req.params.id!)
       const { from, to } = Move.parse(await req.body())
       const target = joinableTrack(p, to)
-      if (!tracksOf(p.id).some(t => t.id === from)) throw new ApiError(409, '它不在这个赛道里')
+      if (!tracksOf(p.id).some(t => t.id === from)) throw new ApiError(409, say('notInTrack'))
       return { toppedUp: toppedUp(joinTrack(rt, target.id, [p.id], from)[0]) }
     },
 
@@ -683,7 +684,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const p = product(req.params.id!)
       const body = ProductPatch.parse(await req.body())
       if (body.status !== undefined && body.status !== p.status) {
-        if (p.status !== 'tracking' && p.status !== 'paused') throw new ApiError(409, '建档完成后才能暂停或恢复跟踪')
+        if (p.status !== 'tracking' && p.status !== 'paused') throw new ApiError(409, say('pauseAfterBaseline'))
         repo.setProductStatus(p.id, body.status)
       }
       if (body.dailyBudgetYuan !== undefined) repo.setProductBudget(p.id, body.dailyBudgetYuan)
@@ -692,7 +693,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
 
     'POST products/:id/update-now': async ({ params }) => {
       const p = product(params.id!)
-      if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, '这个产品没有在跟踪，先恢复跟踪再更新')
+      if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, say('resumeFirst'))
       return { runId: await updateNow(p) }
     },
 
@@ -702,16 +703,16 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const name = p.iconPath === null ? null : basename(p.iconPath)
       const ext = name?.startsWith(`${p.id}.`) ? name.slice(p.id.length + 1) : null
       const type = ext !== null && Object.hasOwn(ICON_TYPES, ext) ? ICON_TYPES[ext]! : null
-      if (type === null || !/^[\w-]+$/.test(p.id)) notFound('这个产品没有图标')
+      if (type === null || !/^[\w-]+$/.test(p.id)) notFound(say('noIcon'))
       let bytes: Buffer
       try { bytes = await readFile(join(rt.iconsDir, `${p.id}.${ext}`)) }
-      catch { notFound('这个产品没有图标') }
+      catch { notFound(say('noIcon')) }
       return new RawReply(bytes, { 'content-type': type, 'cache-control': 'max-age=86400' })
     },
 
     'POST followup': async req => {
       const { findingId } = Followup.parse(await req.body())
-      if (!repo.getFinding(findingId)) notFound('找不到这条发现')
+      if (!repo.getFinding(findingId)) notFound(say('findingNotFound'))
       return startFollowup({ repo, driver: rt.driver, clock: rt.clock, icons: rt.icons, settings: () => rt.settings() }, findingId)
     },
 
@@ -730,19 +731,19 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     },
 
     'POST runs/:id/retry': async ({ params }) => {
-      const run = repo.getRun(params.id!) ?? notFound('找不到这次运行')
-      if (run.status !== 'failed') throw new ApiError(409, '只有失败的运行可以重试')
-      if (redone(run)) throw new ApiError(409, '已经重新跑过了')
+      const run = repo.getRun(params.id!) ?? notFound(say('runNotFound'))
+      if (run.status !== 'failed') throw new ApiError(409, say('retryFailedOnly'))
+      if (redone(run)) throw new ApiError(409, say('alreadyRetried'))
       switch (run.kind) {
         case 'recommend': {
-          if (!run.trackId) throw new ApiError(409, '这次推荐不属于任何赛道，没法重试')
+          if (!run.trackId) throw new ApiError(409, say('recommendNoTrack'))
           const t = track(run.trackId)
-          if (recommending(t.id)) throw new ApiError(409, '上一轮推荐还在进行，稍等它结束再调整')
+          if (recommending(t.id)) throw new ApiError(409, say('recommending'))
           return { runId: await startRecommendation(rt.jobs, t.id) }
         }
         case 'baseline': case 'daily': case 'verify': {
           const p = product(run.productId ?? '')
-          if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, '这个产品没有在跟踪，先恢复跟踪再更新')
+          if (p.status !== 'tracking' && p.status !== 'baselining') throw new ApiError(409, say('resumeFirst'))
           // A failed baseline is retried as one (for a tracked product too: the 7-day limit on top-ups is for the daily
           // runs, not for the user asking); a failed update as 「立即更新」, which re-baselines a product in 建档中; a failed
           // check of a tracked product, or an update that failed only because its check did not finish (「核查没有完成：」),
@@ -760,9 +761,9 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           return { runId: runId ?? run.id }
         }
         case 'followup':
-          throw new ApiError(409, '追问不能重试，请从哨报里重新点「追问」')
+          throw new ApiError(409, say('followupNoRetry'))
         default:
-          throw new ApiError(409, '这种运行不能重试')
+          throw new ApiError(409, say('noRetry'))
       }
     },
   }

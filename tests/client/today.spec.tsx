@@ -11,7 +11,7 @@ import { App } from '../../src/client/shell/App.tsx'
 import { SessionNavigationError } from '../../src/client/navigation.ts'
 import { PROMOTED, UNOPENED, VERIFY_BUDGET } from '../../src/client/notes.ts'
 import type { Shell } from '../../src/client/shell/context.ts'
-import { all, brief, briefView, click, fail, finding, mount, product, settle, source, state, stubApi, t, text, track, tracked, unmount } from '../fixtures/client.tsx'
+import { all, brief, briefView, click, fail, finding, mount, product, settle, source, state, stubApi, t, tEn, text, track, tracked, unmount } from '../fixtures/client.tsx'
 
 // ---- a day to read: five products in two tracks ----
 
@@ -517,6 +517,19 @@ describe('the rest of the day', () => {
       '因预算未跑：蚂蚁灵光（今日总预算已用完）',
       'Meta Muse的新消息核查因预算未完成，明天继续',
       '未能更新：OpenAI Dots（核查没有完成：模型超时）',
+    ])
+  })
+
+  it('speaks English when DSH does: the host’s reasons too, nested ones included, and English list commas', async () => {
+    await show(view([finding('f1', 'p1')], { briefExtra: { skipped: [
+      { productId: 'p4', reason: '今日总预算已用完' }, { productId: 'p6', reason: '今日总预算已用完' },
+      { productId: 'p3', reason: '核查没有完成：前哨已停止', failed: true },
+      { productId: 'p5', reason: '429 Too Many Requests', failed: true },
+    ] } }), { t: tEn })
+    expect(notes()).toEqual([
+      'Not run, over budget: 蚂蚁灵光, Ray-Ban Meta (Today’s total budget is used up)',
+      'Could not update: OpenAI Dots (The check did not finish: Outpost was stopping)',
+      'Could not update: Grok Bots (429 Too Many Requests)',
     ])
   })
 

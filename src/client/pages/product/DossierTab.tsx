@@ -12,6 +12,7 @@ import { localDay, shortDay } from '../../time.ts'
 import { SourceChip } from '../../ui/SourceChip.tsx'
 import { Tag } from '../../ui/Tag.tsx'
 import { RichText } from './richText.tsx'
+import { labelOf } from '../../words.ts'
 
 /**
  * What the strip says of `facts`: five cells, 「—」 for what is not known. The facts cite no source and no check looks at
@@ -157,7 +158,7 @@ export function DossierTab({ view, expanded, onToggle, focus, now }: DossierProp
     <div className="op-dgrid" role="group" aria-label={t('dossier.cards')}>
       {rows.map(({ key, label }) => {
         const card = byDimension.get(key)
-        return <DimensionCard key={key} dimension={key} label={label} card={card} history={view.history[key]} sources={sources}
+        return <DimensionCard key={key} dimension={key} label={labelOf(t, { key, label })} card={card} history={view.history[key]} sources={sources}
           open={card !== undefined && expanded.has(key)} baselining={baselining} fresh={card !== undefined && isFresh(card, now)}
           changedToday={card !== undefined && card.version > 1 && localDay(card.createdAt) === localDay(now)}
           onToggle={() => { onToggle(key) }} register={element => { if (element) elements.current.set(key, element); else elements.current.delete(key) }} />

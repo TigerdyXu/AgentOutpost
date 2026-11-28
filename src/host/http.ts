@@ -3,13 +3,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
+import { say } from '../core/messages.ts'
 
 const PREFIX = '/outpost'
 const API = `${PREFIX}/api/`
 /** Largest request body accepted, in bytes. */
 const MAX_BODY_BYTES = 128 * 1024
 /** What the client is told of a failure nobody expected; the details go to the DSH log. */
-export const INTERNAL_ERROR = '前哨内部出错，详情见 DSH 日志'
+export const INTERNAL_ERROR = say('internal')
 
 /** One API request as the route handler hands it on. `route` is `<METHOD> <path>`, the path relative to `/outpost/api/`. */
 export interface ApiRequestParts {
@@ -52,7 +53,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 /** Methods that only read: everything else changes something and must come as JSON. */
 const READS = new Set(['GET', 'HEAD', 'OPTIONS'])
 /** What a change is refused with when it is not sent as JSON. */
-export const NOT_JSON = '请求必须是 JSON'
+export const NOT_JSON = say('notJson')
 
 /**
  * Whether the request says its body is JSON (`application/json`, any parameters, any case). A cross-site form or a

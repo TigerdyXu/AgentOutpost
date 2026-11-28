@@ -15,6 +15,7 @@ import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
 import { ProductMenu, type ProductChange, type ProductTracks, type TrackChange } from './product/ProductMenu.tsx'
 import { citations, SourcesTab } from './product/SourcesTab.tsx'
+import { told } from '../words.ts'
 
 /** How often the profile is read, and how often while something works on it; and how often a run is asked about. */
 const POLL_MS = 5000
@@ -66,8 +67,8 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       if (!active) return
       if (found && (found.status === 'queued' || found.status === 'running')) { timer = setTimeout(() => { void check() }, RUN_MS); return }
       setRunId(null)
-      if (found?.status === 'failed') setUpdateNote(t('product.updateFailed', { reason: found.error || t('product.updateUnknown') }))
-      else if (found?.status === 'skipped') setUpdateNote(t('product.updateSkipped', { reason: found.error || t('product.updateUnknown') }))
+      if (found?.status === 'failed') setUpdateNote(t('product.updateFailed', { reason: found.error ? told(t, found.error) : t('product.updateUnknown') }))
+      else if (found?.status === 'skipped') setUpdateNote(t('product.updateSkipped', { reason: found.error ? told(t, found.error) : t('product.updateUnknown') }))
       void reloadProfile()
       void reloadFeed()
       refresh()

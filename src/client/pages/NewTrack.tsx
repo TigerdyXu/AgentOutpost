@@ -19,6 +19,7 @@ import { useShell } from '../shell/context.ts'
 import { duration } from '../time.ts'
 import { CheckIcon, ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
+import { labelOf, told } from '../words.ts'
 
 // Limits the host checks (src/host/api.ts): a longer text is a 400 there.
 const MAX_NAME = 20
@@ -92,7 +93,8 @@ function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSub
   /** The custom labels with the draft added, unless it is empty, already there, or one too many. */
   const withDraft = () => {
     const label = draft.trim()
-    const known = new Set([...DEFAULT_LABELS, ...extra].map(sameLabel))
+    // A default dimension is known by its name in either language: 「Positioning」 is 定位, not another one.
+    const known = new Set([...DEFAULT_LABELS, ...DEFAULT_DIMENSIONS.map(dimension => labelOf(t, dimension)), ...extra].map(sameLabel))
     return label && !known.has(sameLabel(label)) && extra.length < MAX_EXTRA_DIMENSIONS ? [...extra, label] : extra
   }
   const addDimension = () => {
@@ -127,7 +129,7 @@ function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSub
     <div className="op-field">
       <div className="op-field-head"><span id={`${ids}-dimensions`}>{t('new.dimensions')}</span></div>
       <div className="op-chips" role="group" aria-labelledby={`${ids}-dimensions`}>
-        {DEFAULT_LABELS.map(label => <span key={label} className="op-chip">{label}</span>)}
+        {DEFAULT_DIMENSIONS.map(dimension => <span key={dimension.key} className="op-chip">{labelOf(t, dimension)}</span>)}
         {extra.map(label => <span key={label} className="op-chip" data-custom="">
           {label}
           <button type="button" className="op-chip-remove" aria-label={t('new.dimensionRemove', { label })}
@@ -194,7 +196,7 @@ function Summary({ track }: { track: Track }): ReactNode {
         {track.brief && <p className="op-track-brief">{track.brief}</p>}
         <div className="op-chips">
           <span className="op-chips-label">{t('new.following')}</span>
-          {track.dimensions.map(dimension => <span key={dimension.key} className="op-chip">{dimension.label}</span>)}
+          {track.dimensions.map(dimension => <span key={dimension.key} className="op-chip">{labelOf(t, dimension)}</span>)}
         </div>
       </div>
       <button type="button" className="op-button" data-size="small" onClick={() => { setEditing(true) }}>{t('new.edit')}</button>
@@ -258,7 +260,7 @@ function HeatLine({ heat }: { heat: Heat }): ReactNode {
   const top = Math.max(...heat.datedWeekly, 1)
   const trend = bars && heat.trend !== 'unknown' ? t(`pick.trend.${heat.trend}`) : null
   return <span className="op-heat">
-    {bars && <span className="op-heat-bars" role="img" aria-label={t('pick.heatWeeks', { counts: heat.datedWeekly.join('、') })}>
+    {bars && <span className="op-heat-bars" role="img" aria-label={t('pick.heatWeeks', { counts: heat.datedWeekly.join(t('today.list')) })}>
       {heat.datedWeekly.map((count, i) => <i key={i} data-empty={count === 0 ? '' : undefined} style={{ '--op-bar': count / top } as CSSProperties} />)}
     </span>}
     <span>{t('pick.heatFound', { count: heat.foundCount })}</span>
@@ -286,7 +288,7 @@ function PickCard({ candidate, picked, tracked, compact, onToggle }: {
     {tracked && <span className="op-pick-tracked">{t('pick.tracked')}</span>}
     {/* Followed elsewhere: it joins this track as it is. A paused one neither runs nor gets the missing dimensions. */}
     {candidate.trackedIn.length > 0 && <span className="op-pick-tracked">
-      {t(candidate.trackedStatus === 'paused' ? 'pick.pausedElsewhere' : 'pick.trackedElsewhere', { tracks: candidate.trackedIn.join('、') })}
+      {t(candidate.trackedStatus === 'paused' ? 'pick.pausedElsewhere' : 'pick.trackedElsewhere', { tracks: candidate.trackedIn.join(t('today.list')) })}
     </span>}
     {!compact && candidate.oneLiner && <span className="op-pick-one">{candidate.oneLiner}</span>}
     {!compact && <HeatLine heat={candidate.heat} />}
@@ -380,7 +382,7 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
     : candidates.length > 0 ? [t('pick.found', { count: candidates.length }), t('pick.took', { time: duration(t, data.elapsedSec) })].join(' · ')
     : null
   // Why there may be nothing to pick (or a failure after some), from how the round ended.
-  const reason = data?.error ?? ''
+  const reason = data?.error ? told(t, data.error) : ''
   const runNote = !data || data.running ? null
     : data.status === 'skipped' ? (reason ? t('pick.skipped', { reason }) : t('pick.skippedNoReason'))
     : data.status === 'failed' ? (reason ? t('pick.failed', { reason }) : t('pick.failedNoReason'))

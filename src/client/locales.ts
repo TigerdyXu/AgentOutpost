@@ -1,7 +1,11 @@
-/** Bilingual UI dictionaries (`[zh, en]`) of the `outpost` locale namespace. */
+/**
+ * Bilingual UI dictionaries (`[zh, en]`) of the `outpost` locale namespace. The panel follows the language of DSH's
+ * settings; a language without its own column here falls back to English, as DSH's lookup does.
+ */
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { SAID, type SaidKey } from '../core/messages.ts'
 
-const TEXT = {
+const OWN = {
   panel: ['前哨', 'Outpost'],
   unreadAria: ['今日哨报有 {count} 条新发现未读', '{count} unread findings in today’s brief'],
   configSummary: ['每天定时调研你跟踪的产品，出一份今日哨报。', 'Researches the products you track every day and writes today’s brief.'],
@@ -9,7 +13,7 @@ const TEXT = {
   // The middle column (design §5.1).
   'nav.label': ['前哨导航', 'Outpost navigation'],
   'nav.toggle': ['前哨菜单', 'Outpost menu'],
-  'nav.newTrack': ['＋ 新赛道', '＋ New track'],
+  'nav.newTrack': ['＋ 新赛道', '+ New track'],
   'nav.today': ['今日哨报', 'Today’s brief'],
   'nav.todayNew': ['{count} 条新', '{count} new'],
   'nav.todayNone': ['还没有', 'None yet'],
@@ -34,7 +38,7 @@ const TEXT = {
   // The right column before the first track, and pages still to come.
   'welcome.title': ['先建一个赛道', 'Start with a track'],
   'welcome.body': ['说说你关注哪个领域，前哨会推荐值得盯的产品，每天早上给你一份今日哨报。', 'Name a field you follow; Outpost suggests the products worth watching and writes you a brief every morning.'],
-  'welcome.action': ['＋ 新建第一个赛道', '＋ Create your first track'],
+  'welcome.action': ['＋ 新建第一个赛道', '+ Create your first track'],
   'page.newTrack': ['新建赛道', 'New track'],
   'page.product': ['产品档案', 'Product profile'],
 
@@ -52,6 +56,15 @@ const TEXT = {
   'tag.unchecked': ['AI 整理 · 未核查', 'Compiled by AI · unchecked'],
 
   'source.open': ['打开原文：{title}', 'Open the source: {title}'],
+
+  // The six default dimensions (src/core/dimensions.ts), shown in the reader's language while a track keeps their label.
+  'dimension.positioning': ['定位', 'Positioning'],
+  'dimension.audience': ['目标人群', 'Audience'],
+  'dimension.scenarios': ['价值场景', 'Use cases'],
+  'dimension.experience': ['体验', 'Experience'],
+  'dimension.technology': ['关键技术', 'Key technology'],
+  'dimension.business': ['商业化', 'Business model'],
+
 
   // 今日哨报 (design §5.2).
   'weekday.0': ['周日', 'Sun'],
@@ -75,6 +88,7 @@ const TEXT = {
   'today.why': ['为什么值得注意：', 'Why it matters: '],
   'today.changed': ['改了档案：', 'Changed in the profile: '],
   'today.list': ['、', ', '],
+  'list.semi': ['；', '; '],
   'today.look': ['看改动 →', 'See the change →'],
   'today.followup': ['追问', 'Ask more'],
   'today.minor': ['另有 {count} 条小更新，点开看', '{count} more minor updates, open to read'],
@@ -101,7 +115,7 @@ const TEXT = {
   'new.focusPlaceholder': ['比如：能替人跨 App 办事、有长期记忆的个人代理；国内外都看', 'For example: personal agents that act across apps and remember; domestic and overseas'],
   'new.count': ['{count}/{max}', '{count}/{max}'],
   'new.dimensions': ['每个产品都从这几方面看', 'Every product is read along these'],
-  'new.addDimension': ['＋ 维度', '＋ Dimension'],
+  'new.addDimension': ['＋ 维度', '+ Dimension'],
   'new.dimensionName': ['维度名', 'Dimension name'],
   'new.dimensionAdd': ['添加', 'Add'],
   'new.dimensionRemove': ['去掉维度「{label}」', 'Remove “{label}”'],
@@ -158,9 +172,35 @@ const TEXT = {
   'pick.starting': ['正在开始…', 'Starting…'],
   'pick.early': ['推荐还在进行，之后找到的候选会放进「候选推荐」', 'The search is still running; what it finds later goes under “Suggestions”'],
 
+  // 编辑赛道 (M1.5): a track's own settings page, from the 「⋯」 beside its name in the middle column.
+  'nav.trackSettings': ['「{track}」的设置', 'Settings of “{track}”'],
+  'track.title': ['编辑赛道', 'Edit track'],
+  'track.notFound': ['找不到这个赛道', 'Cannot find this track'],
+  'track.dimensions': ['维度', 'Dimensions'],
+  'track.dimensionsHint': ['改名不会丢掉已有的卡片；删掉的维度，卡片还留着，只是不显示；新加的维度，正在跟踪的产品会马上补上卡片，要花一点钱。',
+    'Renaming keeps the existing cards. A removed dimension’s cards are kept but hidden. For a new dimension, the products being tracked get their cards filled in right away, which costs a little.'],
+  'track.dimensionLabel': ['第 {n} 个维度的名字', 'Name of dimension {n}'],
+  'track.dimensionRemove': ['删掉维度「{label}」', 'Remove “{label}”'],
+  'track.dimensionAdd': ['＋ 加一个维度', '+ Add a dimension'],
+  'track.dimensionEmpty': ['维度名不能为空', 'A dimension needs a name'],
+  'track.save': ['保存', 'Save'],
+  'track.saving': ['正在保存…', 'Saving…'],
+  'track.saved': ['已保存', 'Saved'],
+  'track.toppedUp': ['已保存 · {count} 个产品马上补新维度的卡片', 'Saved · {count} products get the new dimensions’ cards now'],
+  'track.delete': ['删除赛道', 'Delete track'],
+  'track.deleteStart': ['删除这个赛道…', 'Delete this track…'],
+  'track.deleteIntro': ['删除这个赛道和它的推荐记录，不能恢复。', 'Deletes this track and its suggestions. This cannot be undone.'],
+  'track.deleteProducts': ['只在这个赛道里的 {count} 个产品会一起删掉：{names}。它们的档案、发现和在哨报里的条目都会删掉；花费记录保留。想留下哪个，先把它移到别的赛道。',
+    'The {count} products that are only in this track are deleted with it: {names}. Their profiles, findings and items in past briefs go too; spending records stay. To keep one, move it to another track first.'],
+  'track.deleteNone': ['没有只在这个赛道里的产品，不会删掉任何产品。', 'No product is only in this track, so no product is deleted.'],
+  'track.deleteShared': ['同时在别的赛道里的 {names} 会留下。', 'Also in other tracks, so they stay: {names}.'],
+  'track.deleteConfirm': ['确认删除', 'Delete for good'],
+  'track.deleteCancel': ['取消', 'Cancel'],
+  'track.deleting': ['正在删除…', 'Deleting…'],
+
   // 「＋ 添加产品」 (M1.2): a track's own page to add a product by its name, or to ask for another round of suggestions.
-  'add.row': ['＋ 添加产品', '＋ Add a product'],
-  'add.title': ['给「{track}」添加产品', 'Add a product to 「{track}」'],
+  'add.row': ['＋ 添加产品', '+ Add a product'],
+  'add.title': ['给「{track}」添加产品', 'Add a product to “{track}”'],
   'add.notFound': ['找不到这个赛道', 'Cannot find this track'],
   'add.byName': ['知道名字', 'I know its name'],
   'add.byNameHint': ['先确认这个产品真的存在、属于这个赛道，再加进来建档；已在别的赛道跟踪的，直接加进来。',
@@ -175,9 +215,9 @@ const TEXT = {
   'add.confirming': ['正在确认这个产品…', 'Confirming this product…'],
   'add.confirmingHint': ['约 1–2 分钟，可以先去看别的', 'About 1–2 minutes; look at something else meanwhile'],
   'add.building': ['已加入，正在建档', 'Added; building its profile'],
-  'add.linked': ['已在「{tracks}」跟踪，直接加进来了 · 只补缺的维度', 'Followed in 「{tracks}」; added here at once · only the missing dimensions are filled in'],
-  'add.pausedElsewhere': ['已在「{tracks}」暂停，加进来了 · 仍是暂停', 'Paused in 「{tracks}」; added here · still paused'],
-  'add.already': ['已经在「{track}」里了', 'Already in 「{track}」'],
+  'add.linked': ['已在「{tracks}」跟踪，直接加进来了 · 只补缺的维度', 'Followed in “{tracks}”; added here at once · only the missing dimensions are filled in'],
+  'add.pausedElsewhere': ['已在「{tracks}」暂停，加进来了 · 仍是暂停', 'Paused in “{tracks}”; added here · still paused'],
+  'add.already': ['已经在「{track}」里了', 'Already in “{track}”'],
   'add.notAdded': ['没加进来：{reason}', 'Not added: {reason}'],
   'add.notAddedNoReason': ['没加进来', 'Not added'],
   'add.otherTracks': ['其他赛道', 'another track'],
@@ -220,6 +260,20 @@ const TEXT = {
   'product.moved': ['已移到「{track}」', 'Moved to “{track}”'],
   'product.added': ['已加到「{track}」', 'Added to “{track}”'],
   'product.toppedUp': [' · 补 {count} 张卡', ' · {count} cards filled in'],
+  'product.edit': ['编辑名称和官网…', 'Edit name and site…'],
+  'product.name': ['名称', 'Name'],
+  'product.company': ['公司', 'Company'],
+  'product.site': ['官网', 'Official site'],
+  'product.siteHint': ['网址或域名，多个用逗号隔开', 'A web address or domain; separate several with commas'],
+  'product.renameHint': ['以后的调研、核查都用新名字；以前的发现和卡片不改。', 'Research and checks use the new name from now on; earlier findings and cards stay as written.'],
+  'product.nameRequired': ['请填名称', 'Enter a name'],
+  'product.editSave': ['保存', 'Save'],
+  'product.editCancel': ['取消', 'Cancel'],
+  'product.delete': ['删除产品…', 'Delete product…'],
+  'product.deleteAsk': ['删除「{name}」？档案、发现和它在哨报里的条目都会删掉，不能恢复。花费记录保留。',
+    'Delete “{name}”? Its profile, findings and its items in past briefs are deleted and cannot be brought back. Spending records stay.'],
+  'product.deleteConfirm': ['删除', 'Delete'],
+  'product.deleting': ['正在删除…', 'Deleting…'],
   'product.updateNow': ['立即更新', 'Update now'],
   'product.updating': ['更新中…', 'Updating…'],
   'product.updateFailed': ['这次更新没有成功：{reason}', 'The update did not succeed: {reason}'],
@@ -234,7 +288,7 @@ const TEXT = {
   'dossier.fact.platforms': ['平台', 'Platforms'],
   'dossier.fact.price': ['价格', 'Price'],
   'dossier.fact.first': ['首发', 'Released'],
-  'dossier.fact.rivals': ['对标', 'Benchmarks'],
+  'dossier.fact.rivals': ['对标', 'Rivals'],
   'dossier.fact.none': ['—', '—'],
   'dossier.cards': ['各个维度的结论', 'Conclusions by dimension'],
   'dossier.expand': ['展开', 'Expand'],
@@ -297,6 +351,7 @@ const TEXT = {
   'runs.none': ['—', '—'],
   'runs.interrupted': ['前哨退出时这次还没跑完', 'Outpost quit before this one finished'],
   'runs.noReason': ['原因不明', 'Reason unknown'],
+  'runs.deleted': ['{name}（已删除）', '{name} (deleted)'],
   'runs.retry': ['重试', 'Retry'],
   'runs.retrying': ['重试中…', 'Retrying…'],
   'runs.retried': ['已重试', 'Retried'],
@@ -344,6 +399,7 @@ const TEXT = {
     'Local models and a Claude subscription count as ¥0 and do not use the daily budget; with a pay-as-you-go Anthropic API key, Outpost does not count that spending.'],
   'settings.model.listFailed': ['没读到可选的模型：{reason}', 'Could not read the models to choose from: {reason}'],
   'settings.model.reload': ['重新读取', 'Read again'],
+  'settings.model.groupProblem': ['{name}：{error}', '{name}: {error}'],
   'settings.model.loading': ['正在读取可用的模型…', 'Reading the models that can be used…'],
   'settings.model.withTarget': ['{choice}（{model}）', '{choice} ({model})'],
   'settings.section.prices': ['价格表', 'Prices'],
@@ -367,6 +423,10 @@ const TEXT = {
     'Not saved: the settings were changed elsewhere, or one value did not pass its check. The latest values are loaded and your edits are kept; check them and save again.'],
   'settings.failed': ['没有保存：{reason}', 'Not saved: {reason}'],
 } as const satisfies Record<string, readonly [string, string]>
+
+/** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */
+const SAID_TEXT = Object.fromEntries(Object.entries(SAID).map(([key, pair]) => [`said.${key}`, pair])) as { readonly [K in SaidKey as `said.${K}`]: readonly [string, string] }
+const TEXT = { ...OWN, ...SAID_TEXT }
 export type OutpostKey = keyof typeof TEXT
 const language = (index: 0 | 1) => Object.fromEntries(Object.entries(TEXT).map(([key, pair]) => [key, pair[index]])) as Record<OutpostKey, string>
 export const zh = language(0), en = language(1)

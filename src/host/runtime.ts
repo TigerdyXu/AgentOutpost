@@ -32,6 +32,7 @@ import { verifyProduct } from './jobs/verify.ts'
 import type { Clock, IconFetcher, ModelClient, SessionDriver } from './ports.ts'
 import { Scheduler, type SchedulerSettings } from './scheduler.ts'
 import { researchTools } from './tools.ts'
+import { say } from '../core/messages.ts'
 
 /** DSH's browser providers (`@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` and its siblings), not the service. */
 const BROWSER_PROVIDER = /^@deepseek-ai\/dsh-(?:experimental-)?browser-use-./
@@ -40,7 +41,7 @@ const BROWSER_PROVIDER = /^@deepseek-ai\/dsh-(?:experimental-)?browser-use-./
 export const REBIND_FOLLOWUPS_DAYS = 30
 
 /** What the plugin says when another Outpost (another DSH, or a second copy of the plugin) holds the data directory. */
-export const lockedMessage = (dataDir: string) => `数据目录被另一个前哨进程占用：${dataDir}`
+export const lockedMessage = (dataDir: string) => say('dataDirLocked', { dir: dataDir })
 
 /** The parts a test puts in place of the real ones; each one left out is built on DSH (or the wall clock). */
 export interface RuntimeParts {

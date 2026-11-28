@@ -12,14 +12,15 @@ import type { Repo } from '../../store/repo.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
+import { say } from '../../core/messages.ts'
 
 export type VerifyScope = 'baseline' | 'daily'
 
 /** The note of a finding that was 「待确认」 and has now been confirmed (design §7.4: it shows as 「已证实」). */
-export const PROMOTED_NOTE = '已证实'
+export const PROMOTED_NOTE = say('promoted')
 
 /** Why a check whose session ended without `outpost_done` (out of room, or it just stopped) decides nothing. */
-export const STOPPED_EARLY = '会话没有调用 outpost_done 就停了，这次不下结论'
+export const STOPPED_EARLY = say('stoppedEarly')
 
 /**
  * The check did not run to its end, so nothing was judged: its run was skipped (budget), failed (error, time-out, stop),
@@ -28,7 +29,7 @@ export const STOPPED_EARLY = '会话没有调用 outpost_done 就停了，这次
 export class VerifyNotRun extends Error {
   /** @param run - the `verify` run as it ended; its `error` is the reason. */
   constructor(readonly run: Run) {
-    super(run.error ?? (run.status === 'skipped' ? '核查被跳过' : '核查失败'))
+    super(run.error ?? (run.status === 'skipped' ? say('checkSkipped') : say('checkFailed')))
     this.name = 'VerifyNotRun'
   }
 }

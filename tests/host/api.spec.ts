@@ -1161,7 +1161,7 @@ describe('moving products between tracks', () => {
     followed('p1', 'Cursor', a.id)
     const reply = await host.call('POST', 'products/p1/unlink', { trackId: a.id })
     expect(reply.status).toBe(409)
-    expect(reply.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」。' })
+    expect(reply.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」或「删除产品」。' })
     expect(inTracks('p1')).toEqual(['赛道A'])
 
     // An archived track is no track to keep a product in: nothing runs there.
@@ -1169,7 +1169,7 @@ describe('moving products between tracks', () => {
     repo.linkProduct(old.id, 'p1')
     const again = await host.call('POST', 'products/p1/unlink', { trackId: a.id })
     expect(again.status).toBe(409)
-    expect(again.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」。' })
+    expect(again.json()).toEqual({ error: '这是它唯一的赛道。不想跟了就用「暂停跟踪」或「删除产品」。' })
     expect(inTracks('p1')).toEqual(['赛道A', '旧赛道'])
     // Leaving the archived one is fine: it stays in the track that runs.
     ok(await host.call('POST', 'products/p1/unlink', { trackId: old.id }))

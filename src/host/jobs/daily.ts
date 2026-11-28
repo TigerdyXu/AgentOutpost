@@ -11,14 +11,15 @@ import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import { STOPPED_ERROR, type JobDeps } from './runner.ts'
 import { VerifyNotRun, verifyProduct } from './verify.ts'
+import { say } from '../../core/messages.ts'
 
 /** How far back the prompt looks for the product's last finished run. */
 const LOOKBACK_DAYS = 30
 
 /** The note on a daily run that did its work but whose check the budget did not allow: its findings wait, unshown, for the next check. */
-export const VERIFY_BUDGET_NOTE = '核查因预算未完成'
+export const VERIFY_BUDGET_NOTE = say('verifyBudget')
 /** How the error of a daily run that did its work but whose check failed begins (the check's own reason follows). */
-export const CHECK_NOT_DONE = '核查没有完成：'
+export const CHECK_NOT_DONE = say('checkNotDone', { reason: '' })
 
 /**
  * Runs the daily session for the product, counted toward `date` (`YYYY-MM-DD`: its findings belong to that day's brief,

@@ -14,6 +14,7 @@ import type { ToolSpec } from '../ports.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps, JobRunner } from './runner.ts'
+import { say } from '../../core/messages.ts'
 
 /** Checks what a product's sessions handed in (Task 9). It must reject when the check could not be done. */
 export type VerifyProduct = (productId: Id, scope: 'baseline' | 'daily') => Promise<void>
@@ -23,7 +24,7 @@ export interface BaselineDeps extends JobDeps {
 }
 
 /** The error of a baseline run whose session ended without handing in a single card. */
-export const NO_CARDS_ERROR = '没有提交任何档案卡'
+export const NO_CARDS_ERROR = say('noCards')
 
 /**
  * Baselines in flight, per runner (one runner lives as long as Outpost does): a second request for a product whose
@@ -106,7 +107,7 @@ async function baseline(deps: BaselineDeps, productId: Id): Promise<void> {
   try {
     await deps.verifyProduct(productId, 'baseline')
   } catch (error) {
-    if (runId) repo.updateRun(runId, { status: 'failed', error: `核查没有完成：${error instanceof Error ? error.message : String(error)}` })
+    if (runId) repo.updateRun(runId, { status: 'failed', error: say('checkNotDone', { reason: error instanceof Error ? error.message : String(error) }) })
     throw error
   }
   repo.setProductStatus(productId, 'tracking')

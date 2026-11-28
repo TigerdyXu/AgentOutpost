@@ -12,6 +12,7 @@ import { SourceChip } from './SourceChip.tsx'
 import { Tag } from './Tag.tsx'
 import { useFollowup } from './useFollowup.ts'
 import { useLeaveViewport } from './useLeaveViewport.ts'
+import { told } from '../words.ts'
 
 export interface FindingCardProps {
   finding: Finding
@@ -42,7 +43,7 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
   const unproven = finding.status === 'unproven'
   // A chip that says 原文打不开 already tells it; the finding says it only when none does.
   const sayUnopened = (unconfirmed || unproven) && finding.statusNote === UNOPENED && !pages.some(source => source.openedVia === 'unopened')
-  const plainNote = (unconfirmed || unproven) && finding.statusNote !== null && finding.statusNote !== UNOPENED ? finding.statusNote : null
+  const plainNote = (unconfirmed || unproven) && finding.statusNote !== null && finding.statusNote !== UNOPENED ? told(t, finding.statusNote) : null
   return <article ref={card} className="op-card" data-read={read ? '' : undefined} data-minor={minor ? '' : undefined} data-importance={finding.importance}>
     <div className="op-card-head">
       <ProductIcon product={product} size={22} />

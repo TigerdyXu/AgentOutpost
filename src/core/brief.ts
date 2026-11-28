@@ -1,7 +1,8 @@
 import type { Brief, Finding, Id } from './types.ts'
+import { say } from './messages.ts'
 
 /** The gist of a brief on a day when nothing is worth looking at. */
-export const NO_NEWS_GIST = '今天没有值得看的变化'
+export const NO_NEWS_GIST = say('noNews')
 
 /** Only checked findings reach the reader: verified ones, and unconfirmed ones (shown with the "待确认" mark). */
 const isShown = (f: Finding) => f.status === 'verified' || f.status === 'unconfirmed'

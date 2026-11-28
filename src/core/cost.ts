@@ -1,5 +1,6 @@
 import type { Billing } from './models.ts'
 import type { Usage } from './types.ts'
+import { say } from './messages.ts'
 
 /** Yuan per million tokens. */
 export interface PriceTable { inputPerMTok: number; outputPerMTok: number; cacheReadPerMTok: number }
@@ -61,7 +62,7 @@ export function pricesAt(table: PriceTable, at: Date, onDeepSeek: boolean): Pric
  * checked first; a product with no budget of its own (`productBudget: null`) is limited by the daily total only.
  */
 export function canSpend(a: { spentToday: number; dailyBudget: number; productSpentToday: number; productBudget: number | null }): { ok: true } | { ok: false; reason: string } {
-  if (a.spentToday >= a.dailyBudget) return { ok: false, reason: '今日总预算已用完' }
-  if (a.productBudget !== null && a.productSpentToday >= a.productBudget) return { ok: false, reason: '该产品今日预算已用完' }
+  if (a.spentToday >= a.dailyBudget) return { ok: false, reason: say('budgetTotal') }
+  if (a.productBudget !== null && a.productSpentToday >= a.productBudget) return { ok: false, reason: say('budgetProduct') }
   return { ok: true }
 }

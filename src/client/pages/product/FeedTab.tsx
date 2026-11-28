@@ -8,6 +8,7 @@ import { PROMOTED } from '../../notes.ts'
 import { useShell } from '../../shell/context.ts'
 import { FindingCard } from '../../ui/FindingCard.tsx'
 import { ChevronIcon } from '../../ui/icons.tsx'
+import { labelOf } from '../../words.ts'
 
 /** Newest first; one with no readable time goes last. */
 const byNewest = (a: Finding, b: Finding) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)
@@ -20,8 +21,8 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {} }
   const { t, state } = useShell()
   const [open, setOpen] = useState(false)
   // Every track the product is in, in the track list's order, as the unfiltered brief names them.
-  const trackName = state?.tracks.filter(view => view.products.some(item => item.product.id === product.id)).map(view => view.track.name).join('、') || undefined
-  const labels = new Map(dimensions.map(dimension => [dimension.key, dimension.label] as const))
+  const trackName = state?.tracks.filter(view => view.products.some(item => item.product.id === product.id)).map(view => view.track.name).join(t('today.list')) || undefined
+  const labels = new Map(dimensions.map(dimension => [dimension.key, labelOf(t, dimension)] as const))
   const known = new Map(sources.map(source => [source.id, source] as const))
 
   const sorted = [...findings].sort(byNewest)

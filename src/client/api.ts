@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Id } from '../core/types.ts'
 import type { Api, ApiRequest, ApiResponse } from '../host/api.ts'
 import type { T } from './locales.ts'
+import { told } from './words.ts'
 
 /**
  * A failed request. `message` is the server's sentence when it sent one (`{ error }`), else empty. `starting` says the
@@ -17,9 +18,9 @@ export class ApiError extends Error {
 /** What the panel says about a failure: the server's sentence, 「前哨正在启动…」 while it does not answer, 「请求超时」, else the status. */
 export function describeError(t: T, error: Error): string {
   if (error instanceof ApiError) {
-    return error.timedOut ? t('error.timeout') : error.starting ? t('error.starting') : error.message || t('error.request', { status: error.status })
+    return error.timedOut ? t('error.timeout') : error.starting ? t('error.starting') : error.message ? told(t, error.message) : t('error.request', { status: error.status })
   }
-  return error.message
+  return told(t, error.message)
 }
 
 /** Methods that change nothing; every other request is sent as JSON, body or not (the server answers 415 otherwise). */
