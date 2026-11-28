@@ -17,6 +17,8 @@ const TITLES = {
   topic: ['前哨 · 专题 {question}', 'Outpost · topic · {question}'],
   topicCheck: ['前哨 · 专题核查 {question}', 'Outpost · topic check · {question}'],
   followup: ['追问 · {name} {headline}', 'Follow-up · {name} · {headline}'],
+  // Not a session: the card of one outpost_lookup call in another chat (M3.1).
+  lookup: ['查前哨 · {subject}', 'Outpost lookup · {subject}'],
 } as const satisfies Record<string, readonly [string, string]>
 export type TitleKey = keyof typeof TITLES
 

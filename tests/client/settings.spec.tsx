@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { ModelsView } from '../../src/host/api.ts'
 import { Settings, SettingsForm, usePageForm } from '../../src/client/pages/Settings.tsx'
-import { all, click, fail, find, mount, settle, state, stubApi, t, text, type, unmount } from '../fixtures/client.tsx'
+import { all, click, fail, find, mount, settle, state, stubApi, t, tEn, text, type, unmount } from '../fixtures/client.tsx'
 
 /** What DSH offers: DeepSeek (metered) and a local Ollama, DeepSeek being its default. */
 const MODELS: ModelsView = {
@@ -107,6 +107,22 @@ describe('the browser fallback', () => {
     expect(notice?.getAttribute('data-on')).toBeNull()
     expect(text()).not.toContain('没开浏览器兜底')
     expect(text()).not.toContain('浏览器兜底已开启')
+  })
+
+  it('says whether other chats can look Outpost up, and switches it, in no warning colours (M3.1)', async () => {
+    const api = stubApi({ 'POST lookup': { ok: true } })
+    const { refresh } = await mount(<Settings />, { state: state({ browserAvailable: true }) })
+    const section = () => document.querySelectorAll('.op-browser')[1]!
+    expect(section().getAttribute('data-plain')).toBe('')
+    expect(section().textContent).toContain('其他对话能查前哨')
+    await click(section().querySelector('button')!)
+    expect(api.requests.filter(r => r.method === 'POST').map(r => [r.path, r.body])).toEqual([['lookup', { on: false }]])
+    expect(refresh).toHaveBeenCalled()
+    unmount()
+    await mount(<Settings />, { state: state({ browserAvailable: true, lookupOff: true }), t: tEn })
+    expect(section().textContent).toBe('Other chats cannot look Outpost up: turned off, so the Desktop’s other chats do not see what Outpost has.Turn on')
+    await click(section().querySelector('button')!)
+    expect(api.requests.filter(r => r.method === 'POST').map(r => r.body).at(-1)).toEqual({ on: true })
   })
 
   it('says it is on, with a switch to turn it off, and turns it off and on (M2.4)', async () => {

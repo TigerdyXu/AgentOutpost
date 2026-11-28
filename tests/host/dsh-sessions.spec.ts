@@ -748,6 +748,48 @@ describe('DshSessionDriver.rebind', () => {
   })
 })
 
+describe('DshSessionDriver.share', () => {
+  it('offers the tool to every chat of the user\'s, 追问 included, but never to a research session', async () => {
+    const { tool, calls } = probe('outpost_lookup', () => ({ product: { name: 'Muse' } }))
+    driver.share(tool)
+    const shared = host.profileTool('outpost_lookup')!
+    expect(shared.description).toBe('outpost_lookup 的说明')
+    await host.spawn('chat-1') // a chat the user opens in DSH
+    await host.spawn('outpost-followup-1a2b3c4d')
+    await host.spawn('outpost-daily-p1', { agentPreset: 'outpost-researcher' })
+    await host.spawn('outpost-verify-p1') // no preset recorded: told by its id
+    await host.spawn('a-chat-on-the-research-preset', { agentPreset: 'outpost-researcher-basic' })
+    expect(await host.offers('chat-1', 'outpost_lookup')).toBe(true)
+    expect(await host.offers('outpost-followup-1a2b3c4d', 'outpost_lookup')).toBe(true)
+    expect(await host.offers('outpost-daily-p1', 'outpost_lookup')).toBe(false)
+    expect(await host.offers('outpost-verify-p1', 'outpost_lookup')).toBe(false)
+    expect(await host.offers('a-chat-on-the-research-preset', 'outpost_lookup')).toBe(false)
+    // DSH calls it as any tool, and reads back its answer as JSON.
+    const value = await shared.execute({ summary: 'Muse' }, { signal })
+    expect(calls).toEqual([{ summary: 'Muse' }])
+    expect(shared.output.render({}, value)).toEqual([{ type: 'text', text: '{"product":{"name":"Muse"}}' }])
+    expect(shared.presentCall).toBeUndefined() // no title of its own: DSH's card names the tool
+  })
+
+  it('gives a call its own title on DSH\'s card, when the tool has one and the arguments parse', () => {
+    const { tool } = probe('outpost_lookup')
+    driver.share({ ...tool, title: args => `查前哨 · ${(args as { summary: string }).summary}` })
+    const shared = host.profileTool('outpost_lookup')!
+    expect(shared.presentCall!({ summary: 'Muse' })).toEqual({ card: 'generic', title: '查前哨 · Muse', kind: 'read' })
+    expect(shared.presentCall!({ nothing: 1 })).toBeUndefined()
+  })
+
+  it('takes the tool back when asked, or when the driver closes, once', () => {
+    const unshare = driver.share(probe('outpost_lookup').tool)
+    unshare()
+    expect(host.profileTool('outpost_lookup')).toBeUndefined()
+    unshare() // again: nothing to do
+    driver.share(probe('outpost_lookup').tool) // offered again, as when the user turns it back on
+    driver.close()
+    expect(host.profileTool('outpost_lookup')).toBeUndefined()
+  })
+})
+
 describe('DshSessionDriver.close', () => {
   it('takes every tool it registered off the live agents, and registers none afterwards', async () => {
     await driver.startInteractive({ sessionId: 'outpost-followup-1', title: '追问 · Cursor', prompt: '团队版多少钱？', tools: [probe('outpost_read').tool], model: null })

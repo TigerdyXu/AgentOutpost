@@ -13,6 +13,8 @@ export interface ToolSpec<S extends z.ZodType = z.ZodType> {
   description: string
   schema: S
   execute(args: z.infer<S>): Promise<unknown>
+  /** What a UI calls one call of it (DSH's tool-call card), from its arguments; the tool's name when absent. */
+  title?(args: z.infer<S>): string
 }
 
 /**
@@ -51,6 +53,11 @@ export interface SessionDriver {
   onChatUsage(listener: (sessionId: string, usage: Usage) => void): void
   /** Gives an existing session (a follow-up chat, after a restart) its tools again, without sending it anything. */
   rebind(sessionId: string, tools: ToolSpec[]): void
+  /**
+   * Offers `tool` to every chat of the user's in the host (M3.1: `outpost_lookup`): any session but a research one, 追问 chats
+   * included, those already open as well as new ones, until the returned function is called.
+   */
+  share(tool: ToolSpec): () => void
   /** Takes back every tool registered so far: Outpost is stopping. */
   close(): void
   /**

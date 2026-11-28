@@ -10,6 +10,19 @@ export const DEFAULT_DIMENSIONS: Dimension[] = [
   { key: 'business', label: '商业化' },
 ]
 
+/**
+ * The English names of the default dimensions (the panel's `dimension.<key>` in src/client/locales.ts, which a test keeps
+ * in step): what a chat in English may call them when it looks a dimension up (`outpost_lookup`).
+ */
+export const DEFAULT_DIMENSION_EN: Readonly<Record<string, string>> = {
+  positioning: 'Positioning',
+  audience: 'Audience',
+  scenarios: 'Use cases',
+  experience: 'Experience',
+  technology: 'Key technology',
+  business: 'Business model',
+}
+
 const CUSTOM_PREFIX = 'custom-'
 const CUSTOM_HEX_CHARS = 8
 

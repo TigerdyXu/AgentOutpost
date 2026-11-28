@@ -2660,6 +2660,13 @@ button.op-run-open {
   background: var(--dsw-alias-state-success-tertiary);
 }
 
+/* A setting that is the user's choice either way (M3.1, other chats looking Outpost up): no warning colours. */
+.op-browser[data-plain] {
+  align-items: baseline;
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
 .op-browser[data-broken] {
   border-color: var(--dsw-alias-state-error-secondary);
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);

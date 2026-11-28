@@ -2083,6 +2083,18 @@ describe('the track page (M2.1)', () => {
     expect(repo.getSetting('uiLanguage')).toBe('zh')
   })
 
+  it('turns outpost_lookup off and on for the other chats, and says which in the state (M3.1)', async () => {
+    rt.start()
+    expect(ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().lookupOff).toBe(false)
+    expect(host.driver.shared.has('outpost_lookup')).toBe(true)
+    expect(ok(await host.call('POST', 'lookup', { on: false })).json()).toEqual({ ok: true })
+    expect(host.driver.shared.has('outpost_lookup')).toBe(false)
+    expect(ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().lookupOff).toBe(true)
+    ok(await host.call('POST', 'lookup', { on: true }))
+    expect(host.driver.shared.has('outpost_lookup')).toBe(true)
+    expect((await host.call('POST', 'lookup', { on: 'yes' })).status).toBe(400)
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())

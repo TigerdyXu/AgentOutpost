@@ -24,6 +24,7 @@ import {
 } from './dsh-sessions.ts'
 import { BROWSER_OFF, browserPackagesInstalled, browserPresetDefinition } from './browser-preset.ts'
 import { registerRoutes } from './http.ts'
+import { LOOKUP_OFF, lookupTool } from './lookup.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
 import { runDailyProduct } from './jobs/daily.ts'
@@ -95,6 +96,8 @@ export class Runtime {
   private readonly db: Db
   private readonly unlock: () => void
   private unregister: (() => void) | null = null
+  /** Takes `outpost_lookup` back from the user's chats; null while it is not offered. */
+  private unshareLookup: (() => void) | null = null
   private stopping: Promise<void> | null = null
 
   /**
@@ -346,6 +349,33 @@ export class Runtime {
   /** Whether the user turned the browser fallback off. */
   browserTurnedOff(): boolean { return this.repo.getSetting<boolean>(BROWSER_OFF) === true }
 
+  /**
+   * Offers `outpost_lookup` to the user's chats in DSH (M3.1), unless it is offered already or the user turned it off. A
+   * failure is logged: Outpost runs on without it.
+   */
+  private shareLookup(): void {
+    if (this.unshareLookup || this.lookupTurnedOff()) return
+    try { this.unshareLookup = this.driver.share(lookupTool(this.repo, () => this.clock.now())) }
+    catch (error) { this.log(`could not offer outpost_lookup to other chats: ${messageOf(error)}`) }
+  }
+
+  /** Takes `outpost_lookup` back from the user's chats. */
+  private unshareLookupNow(): void {
+    const unshare = this.unshareLookup
+    this.unshareLookup = null
+    try { unshare?.() } catch (error) { this.log(`could not take outpost_lookup back: ${messageOf(error)}`) }
+  }
+
+  /** Offers `outpost_lookup` to the user's chats, or takes it back (设置, M3.1), at once; remembered across restarts. */
+  setLookup(on: boolean): void {
+    this.repo.setSetting(LOOKUP_OFF, on ? undefined : true)
+    if (on) this.shareLookup()
+    else this.unshareLookupNow()
+  }
+
+  /** Whether the user turned `outpost_lookup` off. */
+  lookupTurnedOff(): boolean { return this.repo.getSetting<boolean>(LOOKUP_OFF) === true }
+
   /** Writes to DSH's log. */
   log(message: string): void {
     this.ctx.logger.warn('dsh-outpost: %s', message)
@@ -368,6 +398,7 @@ export class Runtime {
     this.repo.rejectTopicDrafts(STOPPED_ERROR) // a round the last Outpost did not see to its end
     this.driver.onChatUsage((sessionId, used) => { this.chargeChat(sessionId, used) })
     this.rebindFollowups()
+    this.shareLookup()
     this.unregister = registerRoutes(this.ctx, createApi(this))
     this.scheduler.start()
   }
@@ -377,6 +408,7 @@ export class Runtime {
     this.stopping ??= (async () => {
       this.unregister?.()
       this.unregister = null
+      this.unshareLookupNow() // before the store it reads is closed
       this.scheduler.stop()
       try {
         await this.runner.stop()

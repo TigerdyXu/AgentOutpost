@@ -21,6 +21,7 @@ export interface RegisteredTool {
   parameters: Record<string, unknown>
   output: { schema: unknown; render(args: unknown, value: unknown): { type: string; text?: string }[] }
   execute(args: unknown, exec: { signal: AbortSignal }): Promise<unknown>
+  presentCall?(args: unknown): unknown
 }
 
 export interface SentMessage { id: string; role: string; content: { type: string; text: string }[]; source: { kind: string; form?: string } }
@@ -226,7 +227,18 @@ export function dshHost() {
     inspectCompositions: vi.fn((): { id: string; modules: { moduleName: string; useHostBase: boolean }[]; leakedServices: string[] }[] => []),
   }
 
-  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agentPresets, agents: agentRegistry }))
+  /** Tools registered for the whole profile (`ctx.tools.register`), with the condition DSH checks at each step of an agent. */
+  const profileTools = new Map<string, { tool: RegisteredTool; when?: (context: { agent: FakeAgent }) => boolean | Promise<boolean> }>()
+  const rootTools = {
+    register: vi.fn((tool: RegisteredTool, options: { when?: (context: { agent: FakeAgent }) => boolean | Promise<boolean> } = {}) => {
+      if (profileTools.has(tool.name)) throw new Error(`tool "${tool.name}" is already registered in this scope`)
+      const entry = { tool, ...options.when ? { when: options.when } : {} }
+      profileTools.set(tool.name, entry)
+      return () => { if (profileTools.get(tool.name) === entry) profileTools.delete(tool.name) }
+    }),
+  }
+
+  for (const [name, service] of Object.entries({ sessionController, workspaceRegistry, sessionPersistence, llm, agentDefaultModel, agentPresets, agents: agentRegistry, tools: rootTools }))
     ctx.reflect.provide(name, service)
 
   const agentOf = (sessionId: string): FakeAgent => {
@@ -244,6 +256,13 @@ export function dshHost() {
     workspace: (path: string) => workspaces.get(path),
     /** The tools registered on the session's current agent, by name. */
     tools: (sessionId: string) => tools.get(sessionId) ?? new Map<string, RegisteredTool>(),
+    /** A tool registered for the whole profile, by name, or undefined. */
+    profileTool: (name: string) => profileTools.get(name)?.tool,
+    /** Whether the profile's tool `name` takes part in a step of the session's current agent, as DSH decides it (`when`). */
+    offers: async (sessionId: string, name: string) => {
+      const entry = profileTools.get(name)
+      return entry !== undefined && (entry.when === undefined || await entry.when({ agent: agentOf(sessionId) }))
+    },
     /** The guards installed on the session's current agent. */
     guards: (sessionId: string) => [...guards.get(sessionId) ?? []],
     /**

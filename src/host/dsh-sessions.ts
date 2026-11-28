@@ -245,12 +245,22 @@ function jsonObject(value: unknown): Record<string, unknown> {
 
 /** A tool of Outpost as DSH registers it: the arguments go to `execute` as the model sent them, the answer back as JSON text. */
 function definitionOf(spec: ToolSpec): ToolDefinition {
+  const { title } = spec
   return {
     name: spec.name,
     description: spec.description,
     parameters: toolParameters(spec.schema),
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async args => jsonObject(await spec.execute(args)),
+    // A title of its own on the call's card (a read: Outpost's tools change nothing of the user's); DSH's generic card, with
+    // the tool's name, when the arguments do not parse or the title cannot be made.
+    ...title ? {
+      presentCall: (args: unknown) => {
+        const parsed = spec.schema.safeParse(args)
+        if (!parsed.success) return undefined
+        try { return { card: 'generic' as const, title: title(parsed.data), kind: 'read' as const } } catch { return undefined }
+      },
+    } : {},
   }
 }
 
@@ -270,6 +280,8 @@ function outcomeOf(reason: TurnEndReason, usage: Usage): SessionOutcome {
 export class DshSessionDriver implements SessionDriver {
   /** The tools of each session, by id, until it is archived. */
   private readonly bound = new Map<string, ToolSpec[]>()
+  /** How to take back each tool offered to the user's chats (`share`) and not taken back yet. */
+  private readonly shared = new Set<() => void>()
   /** The agent each session's tools are registered on now, and how to take them off again. */
   private readonly attached = new Map<string, { agent: Agent; specs: ToolSpec[]; dispose(): void }>()
   /** The research sessions this driver made and whose live agent it still holds, by id (see `release`). */
@@ -376,6 +388,9 @@ export class DshSessionDriver implements SessionDriver {
   close(): void {
     for (const { dispose } of this.attached.values()) {
       try { dispose() } catch { /* the agent is gone, and its tools with it */ }
+    }
+    for (const unshare of [...this.shared]) {
+      try { unshare() } catch { /* already gone with the plugin's scope */ }
     }
     this.attached.clear()
     this.bound.clear()
@@ -556,6 +571,23 @@ export class DshSessionDriver implements SessionDriver {
   /** Puts the session on the spec's model, before it is told anything; with none (null), DSH's choice stands. */
   private select(agent: Agent, spec: Pick<SessionSpec, 'model'>): void {
     if (spec.model) agent.model.select({ provider: spec.model.provider, model: spec.model.model })
+  }
+
+  /**
+   * Registers `tool` with DSH's tools for the whole profile, with a condition DSH checks at each step of every agent: not
+   * for a research session (`isResearchAgent`), which has its own tools and reads pages nobody vetted.
+   */
+  share(tool: ToolSpec): () => void {
+    const unregister = this.ctx.tools.register(definitionOf(tool), { when: ({ agent }) => !isResearchAgent(agent) })
+    let done = false
+    const unshare = () => {
+      if (done) return
+      done = true
+      this.shared.delete(unshare)
+      unregister()
+    }
+    this.shared.add(unshare)
+    return unshare
   }
 
   /** Registers the session's tools on `agent`, replacing those of an earlier round; a session without tools is left alone. */

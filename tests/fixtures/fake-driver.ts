@@ -3,7 +3,7 @@
  * keyed by session id prefix (`'outpost-recommend-'`, `'outpost-baseline-'` …; the longest matching key wins); its entry
  * gets each round of a matching session and plays it, calling the session's tools as the agent would, and says how the
  * round ended. A session no entry matches ends every round `completed` without calling a tool. Every `run`, `nudge`,
- * `release`, `archive`, `startInteractive` and `rebind` is recorded.
+ * `release`, `archive`, `startInteractive` and `rebind` is recorded; tools `share`d are kept in `shared`.
  */
 import type { Usage } from '../../src/core/types.ts'
 import type { Clock, SessionDriver, SessionOutcome, SessionSpec, ToolSpec } from '../../src/host/ports.ts'
@@ -65,6 +65,14 @@ export class FakeDriver implements SessionDriver {
 
   rebind(sessionId: string, tools: ToolSpec[]): void {
     this.rebound.push({ sessionId, tools })
+  }
+
+  /** Tools offered to the user's chats (`share`), by name, until taken back. */
+  readonly shared = new Map<string, ToolSpec>()
+  share(tool: ToolSpec): () => void {
+    if (this.shared.has(tool.name)) throw new Error(`tool "${tool.name}" is already shared`)
+    this.shared.set(tool.name, tool)
+    return () => { if (this.shared.get(tool.name) === tool) this.shared.delete(tool.name) }
   }
 
   /** Who hears the chats' usage (`onChatUsage`); `chatUses` plays a reply or a search of a chat. */

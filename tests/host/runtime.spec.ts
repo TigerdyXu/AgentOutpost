@@ -60,7 +60,7 @@ describe('apply', () => {
     const fake = dshHost()
     const routes: CapturedRoute[] = []
     fake.ctx.reflect.provide('webServer', { register: (route: CapturedRoute) => { routes.push(route); return () => { routes.splice(routes.indexOf(route), 1) } } })
-    for (const name of ['tools', 'systemPrompt', 'web']) fake.ctx.reflect.provide(name, {})
+    for (const name of ['systemPrompt', 'web']) fake.ctx.reflect.provide(name, {})
     return { ...fake, routes }
   }
   async function get(route: CapturedRoute, path: string) {
@@ -82,9 +82,11 @@ describe('apply', () => {
     expect(state.status).toBe(200)
     expect(state.json()).toMatchObject({ tracks: [], todayUnread: 0, browserAvailable: false, browserMissing: false, researchBroken: false })
     expect(() => lockDataDir(host.dataDir)).toThrow() // held while it runs
+    expect(dsh1.profileTool('outpost_lookup')).toBeDefined() // the other chats can look Outpost up (M3.1)
 
     await fiber.dispose()
     expect(dsh1.routes).toHaveLength(0)
+    expect(dsh1.profileTool('outpost_lookup')).toBeUndefined()
     lockDataDir(host.dataDir)() // free again: taken and given back
 
     // And it loads again on the same directory, as after a restart of DSH.
@@ -363,6 +365,39 @@ describe('Runtime', () => {
     runtime.start()
     await runtime.researchPreset()
     expect(register).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers outpost_lookup to the other chats while it runs, unless the user turned it off (M3.1)', async () => {
+    runtime = host.create()
+    runtime.start()
+    const lookup = host.driver.shared.get('outpost_lookup')!
+    expect(lookup).toBeDefined()
+    await expect(lookup.execute({ query: '没有的东西' })).resolves.toMatchObject({ notFound: expect.any(String) })
+    runtime.setLookup(false)
+    expect(host.driver.shared.has('outpost_lookup')).toBe(false)
+    expect(runtime.lookupTurnedOff()).toBe(true)
+    runtime.setLookup(false) // already off: nothing more
+    runtime.setLookup(true)
+    expect(host.driver.shared.has('outpost_lookup')).toBe(true)
+    runtime.setLookup(true) // already offered: not twice (the fake driver would throw)
+    // Turned off, it stays off when Outpost starts again; stopping takes it back.
+    runtime.setLookup(false)
+    await runtime.stop()
+    runtime = host.create()
+    runtime.start()
+    expect(host.driver.shared.has('outpost_lookup')).toBe(false)
+    runtime.setLookup(true)
+    await runtime.stop()
+    expect(host.driver.shared.has('outpost_lookup')).toBe(false)
+    runtime = undefined
+  })
+
+  it('runs on when outpost_lookup cannot be offered, and says so in the log', () => {
+    const share = vi.spyOn(host.driver, 'share').mockImplementation(() => { throw new Error('tool "outpost_lookup" is already registered in this scope') })
+    runtime = host.create()
+    runtime.start()
+    expect(share).toHaveBeenCalledOnce()
+    expect(host.logger.warn.mock.calls.flat().map(String).join(' ')).toContain('already registered')
   })
 
   it('finds the browser packages above the profile, or above Outpost’s own files', () => {

@@ -476,11 +476,35 @@ function BrowserFallback({ t, available, missing, broken, off }: { t: T; availab
   </section>
 }
 
+/**
+ * Whether the other chats in DSH can look Outpost up (`outpost_lookup`, M3.1), with the switch; on unless turned off. Not
+ * a warning either way: it is the user's choice.
+ */
+function Lookup({ t, off }: { t: T; off: boolean }): ReactNode {
+  const { refresh } = useShell()
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const toggle = async (on: boolean) => {
+    setBusy(true)
+    setProblem(null)
+    try { await call('POST lookup', { body: { on } }); refresh() }
+    catch (failure) { setProblem(describeError(t, failure instanceof Error ? failure : new Error(String(failure)))) }
+    finally { setBusy(false) }
+  }
+  return <section className="op-browser" data-plain="" role="status">
+    <span>{t(off ? 'settings.lookup.off' : 'settings.lookup.on')}</span>
+    <button type="button" className="op-link" disabled={busy} onClick={() => { void toggle(off) }}>
+      {t(off ? 'settings.browser.turnOn' : 'settings.browser.turnOff')}</button>
+    {problem && <span className="op-form-problem" role="alert">{problem}</span>}
+  </section>
+}
+
 export function Settings(): ReactNode {
   const { t, state, configForm } = useShell()
   return <div className="op-page op-settings">
     <h1 className="op-page-title">{t('nav.settings')}</h1>
     {state && <BrowserFallback t={t} available={state.browserAvailable} missing={state.browserMissing} broken={state.researchBroken} off={state.browserOff} />}
+    {state && <Lookup t={t} off={state.lookupOff} />}
     <SettingsForm t={t} form={configForm} {...state ? { known: { runTime: state.runTime, dataDir: state.dataDir } } : {}} />
   </div>
 }

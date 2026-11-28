@@ -474,6 +474,10 @@ const OWN = {
   'settings.browser.broken': ['调研跑不了：前哨的调研预设加载不了，推荐、建档、核查和日更都会失败。详情在桌面版的日志里。',
     'Research cannot run: Outpost’s research presets do not load, so recommendations, profiles, checks and daily updates all fail. The details are in the Desktop’s log.'],
   'settings.browser.on': ['浏览器兜底已开启', 'Browser fallback is on'],
+  // M3.1: whether the other chats in DSH can look Outpost up (outpost_lookup).
+  'settings.lookup.on': ['其他对话能查前哨：在桌面版的任何对话里问到前哨跟踪的产品或赛道，AI 会用 outpost_lookup 查前哨的资料（只读，不花前哨的钱）。',
+    'Other chats can look Outpost up: in any chat of the Desktop, when you ask about a product or track Outpost follows, the AI uses outpost_lookup to read what Outpost has (read-only; Outpost pays nothing).'],
+  'settings.lookup.off': ['其他对话查不了前哨：已关掉，桌面版的其他对话看不到前哨的资料。', 'Other chats cannot look Outpost up: turned off, so the Desktop’s other chats do not see what Outpost has.'],
   'settings.section.daily': ['每天的运行', 'Daily run'],
   'settings.runTime': ['每天几点跑', 'Daily run time'],
   'settings.runTimeHint': ['本机时间，所有赛道一起跑；改动一分钟内生效', 'Local time; all tracks run together; a change takes effect within a minute'],

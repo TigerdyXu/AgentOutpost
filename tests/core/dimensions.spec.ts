@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_DIMENSIONS, slugDimension } from '../../src/core/dimensions.ts'
+import { en } from '../../src/client/locales.ts'
+import { DEFAULT_DIMENSION_EN, DEFAULT_DIMENSIONS, slugDimension } from '../../src/core/dimensions.ts'
 
 it('lists the six default dimensions in order', () => {
   expect(DEFAULT_DIMENSIONS).toEqual([
@@ -23,4 +24,9 @@ it('names a Chinese label custom- plus the hex codes of its first 8 characters',
   // Mixed labels and different labels with a shared start stay distinct.
   expect(slugDimension('AI 能力')).not.toBe(slugDimension('AI 体验'))
   expect(slugDimension('AI 能力')).toMatch(/^custom-[0-9a-f]+$/)
+})
+
+it('knows the default dimensions by the English names the panel shows', () => {
+  expect(Object.keys(DEFAULT_DIMENSION_EN)).toEqual(DEFAULT_DIMENSIONS.map(d => d.key))
+  for (const d of DEFAULT_DIMENSIONS) expect(DEFAULT_DIMENSION_EN[d.key]).toBe((en as Record<string, string>)[`dimension.${d.key}`])
 })

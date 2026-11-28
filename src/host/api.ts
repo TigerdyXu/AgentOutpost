@@ -70,6 +70,8 @@ export interface StateView {
   browserMissing: boolean
   /** The user turned the browser fallback off on 设置 (M2.4): research runs on the preset without it. */
   browserOff: boolean
+  /** The user turned off `outpost_lookup` on 设置 (M3.1): other chats in DSH cannot look Outpost up. */
+  lookupOff: boolean
   /** Neither research preset can compose a session (`Runtime.researchPreset`): no research runs at all until it is fixed. */
   researchBroken: boolean
   /** The data directory in use (database, icons, working files), for 设置 to show; it cannot be changed while Outpost runs. */
@@ -255,6 +257,8 @@ export interface Api {
   'GET products/:id/topics': { response: { topics: TopicRow[] } }
   /** Turns the browser fallback on or off (设置, M2.4); it is on unless turned off. */
   'POST browser': { body: { on: boolean }; response: { ok: true } }
+  /** Offers `outpost_lookup` to the other chats in DSH, or takes it back (设置, M3.1); it is offered unless turned off. */
+  'POST lookup': { body: { on: boolean }; response: { ok: true } }
   /** The tracks in the order the user dragged them into (M2.4): those named first, in that order; the rest after. */
   'POST tracks/reorder': { body: { trackIds: Id[] }; response: { ok: true } }
   /** The track's products in the order the user dragged them into (M2.4), likewise. */
@@ -744,6 +748,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         browserAvailable: rt.browserAvailable(),
         browserMissing: preset === BASIC_AGENT_PRESET && !rt.browserTurnedOff(),
         browserOff: rt.browserTurnedOff(),
+        lookupOff: rt.lookupTurnedOff(),
         researchBroken: preset === null,
         dataDir: rt.dataDir,
       }
@@ -912,6 +917,12 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST browser': async req => {
       const { on } = Weekly.parse(await req.body()) // { on: boolean }, as for the weekly suggestions
       await rt.setBrowserFallback(on)
+      return { ok: true as const }
+    },
+
+    'POST lookup': async req => {
+      const { on } = Weekly.parse(await req.body()) // { on: boolean }
+      rt.setLookup(on)
       return { ok: true as const }
     },
 
