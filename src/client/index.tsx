@@ -126,12 +126,23 @@ export function apply(ctx: ClientContext): void {
   // The panel speaks the language of DSH's settings, and switches with it; other languages fall back to English.
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-outpost: dictionaries')
   const t = ctx.locale.bind(NS) as T
+  // The background names the sessions it opens in DSH in the panel's language (src/host/titles.ts): it is told now, on
+  // every switch, and once more when it first answers (it may still be starting now).
+  let reported: string | undefined
+  const reportLanguage = () => {
+    const language = ctx.locale.getSnapshot().active.startsWith('zh') ? 'zh' : 'en'
+    if (language === reported) return
+    reported = language
+    call('POST language', { body: { language } }).catch(() => { reported = undefined })
+  }
+  ctx.effect(() => ctx.locale.subscribe(reportLanguage), 'dsh-outpost: the language of session titles')
+  reportLanguage()
   const count = unreadCount()
   ctx.effect(() => () => { count.close() }, 'dsh-outpost: unread count')
   // DSH's session catalog and workspace, for opening a session from the panel (追问).
   const sessions: SessionAccess = { catalog: ctx.sessions, open: id => { ctx.uiWorkspace.openSession(id) } }
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS },
-    (props: { t: T }) => <Panel ctx={ctx} t={props.t} sessions={sessions} onState={state => { count.set(state.todayUnread) }} />))
+    (props: { t: T }) => <Panel ctx={ctx} t={props.t} sessions={sessions} onState={state => { count.set(state.todayUnread); reportLanguage() }} />))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist', id: PANEL_ID, order: 20, label: () => t('panel'), locale: NS,
   }, SidebarIcon))

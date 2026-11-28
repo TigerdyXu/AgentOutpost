@@ -16,6 +16,7 @@ import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
 import { sourceVerdicts, STOPPED_EARLY, withoutVoidClaims } from './verify.ts'
+import { sessionTitle } from '../titles.ts'
 
 /** A weekly topic gets a new round this many days after its newest version. */
 export const TOPIC_EVERY_DAYS = 7
@@ -53,7 +54,7 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
   const research = await runner.session('topic', scope, runId => {
     repo.updateTopicVersion(draft.id, { runId })
     return {
-      title: `前哨 · 专题 ${chars(topic.question).slice(0, 20).join('')}`,
+      title: sessionTitle(repo, 'topic', { question: chars(topic.question).slice(0, 20).join('') }),
       prompt: renderPrompt('topic', {
         question: topic.question,
         products: products.map(p => `${p.name}（${p.company}）`).join('、'),
@@ -74,7 +75,7 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
 
   const companies = [...new Set(products.map(p => p.company).filter(Boolean))]
   const check = await runner.session('topicCheck', scope, runId => ({
-    title: `前哨 · 专题核查 ${chars(topic.question).slice(0, 20).join('')}`,
+    title: sessionTitle(repo, 'topicCheck', { question: chars(topic.question).slice(0, 20).join('') }),
     // The dossier's checker, told the topic in place of one product: whose own pages count as official is these companies'.
     prompt: renderPrompt('verify', {
       productName: `专题「${topic.question}」涉及的产品`,

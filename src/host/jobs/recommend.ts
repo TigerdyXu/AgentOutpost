@@ -9,6 +9,7 @@ import type { CandidateTier, Id, Run } from '../../core/types.ts'
 import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
+import { sessionTitle } from '../titles.ts'
 
 const TIER_LABEL: Record<CandidateTier, string> = { strong: '强烈推荐', consider: '可以考虑', excluded: '没推荐' }
 
@@ -69,7 +70,7 @@ function beginRecommendation(deps: JobDeps, trackId: Id, refine?: string, subjec
   })
 
   const started = runner.start('recommend', { trackId, ...subject ? { subject } : {} }, runId => ({
-    title: `前哨 · 推荐 ${track.name}`,
+    title: sessionTitle(repo, 'recommend', { track: track.name }),
     prompt,
     tools: onDone => researchTools('recommend', { repo, runId, trackId, productId: null, now: () => clock.now(), icons, onDone }),
   }))

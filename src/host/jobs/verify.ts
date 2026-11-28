@@ -13,6 +13,7 @@ import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
 import { say } from '../../core/messages.ts'
+import { sessionTitle } from '../titles.ts'
 
 export type VerifyScope = 'baseline' | 'daily'
 
@@ -75,7 +76,7 @@ export async function verifyProduct(deps: JobDeps, productId: Id, scope: VerifyS
     today: day,
   })
   const run = await runner.session('verify', { productId, date: day }, runId => ({
-    title: scope === 'baseline' ? `前哨 · ${product.name} 建档核查` : `前哨 · ${product.name} 核查 ${day}`,
+    title: scope === 'baseline' ? sessionTitle(repo, 'baselineCheck', { name: product.name }) : sessionTitle(repo, 'verify', { name: product.name, date: day }),
     prompt,
     tools: onDone => researchTools('verify', { repo, runId, trackId: null, productId, now: () => clock.now(), icons, onDone }),
   }))

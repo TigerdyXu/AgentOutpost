@@ -12,6 +12,7 @@ import { researchTools } from '../tools.ts'
 import { STOPPED_ERROR, type JobDeps } from './runner.ts'
 import { VerifyNotRun, verifyProduct } from './verify.ts'
 import { say } from '../../core/messages.ts'
+import { sessionTitle } from '../titles.ts'
 
 /** How far back the prompt looks for the product's last finished run. */
 const LOOKBACK_DAYS = 30
@@ -51,7 +52,7 @@ export async function runDailyProduct(deps: JobDeps, productId: Id, date: string
     lastRun: last ?? '（没有记录，查近 14 天的）',
   })
   const run = await runner.session('daily', { productId, date }, runId => ({
-    title: `前哨 · ${product.name} 日更 ${date}`,
+    title: sessionTitle(repo, 'daily', { name: product.name, date }),
     prompt,
     tools: onDone => researchTools('daily', { repo, runId, trackId: null, productId, now: () => clock.now(), icons, onDone }),
   }))

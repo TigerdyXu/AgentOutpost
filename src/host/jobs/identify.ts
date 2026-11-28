@@ -19,6 +19,7 @@ import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps } from './runner.ts'
 import { say } from '../../core/messages.ts'
+import { sessionTitle } from '../titles.ts'
 
 export interface IdentifyDeps extends JobDeps {
   /** What baselines or tops up the product once it joins (`Scheduler`). */
@@ -56,7 +57,7 @@ export async function startIdentify(deps: IdentifyDeps, trackId: Id, ask: { name
   })
 
   const { run, finished } = runner.start('identify', { trackId, subject: name }, runId => ({
-    title: `前哨 · 确认产品 ${name}`,
+    title: sessionTitle(repo, 'identify', { name }),
     prompt,
     tools: onDone => researchTools('identify', { repo, runId, trackId, productId: null, now: () => clock.now(), icons, onDone }),
     settle: ended => { settle(deps, ended) },

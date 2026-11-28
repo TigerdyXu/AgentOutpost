@@ -29,6 +29,7 @@ import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/lan
 import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
 import { topicSchedule } from './jobs/topic.ts'
 import { LAST_COMPLETED } from './scheduler.ts'
+import { UI_LANGUAGE } from './titles.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
@@ -250,6 +251,8 @@ export interface Api {
   'POST topics/:id/delete': { response: { ok: true } }
   /** The 专题 about the product, oldest first (its 专题 tab). */
   'GET products/:id/topics': { response: { topics: TopicRow[] } }
+  /** The panel's language (`zh` for Chinese, else English), in which the sessions Outpost opens are named (src/host/titles.ts). */
+  'POST language': { body: { language: string }; response: { ok: true } }
   /** Turns the track's weekly suggestions (M2.2) on or off; they are on unless turned off. */
   'POST tracks/:id/weekly': { body: { on: boolean }; response: WeeklyState }
   /**
@@ -381,6 +384,7 @@ const TrackRef = z.object({ trackId: z.string().min(1) })
 const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const axisEnd = text(AXIS_LABEL_MAX).min(1, '轴的两端都要写')
 const Weekly = z.object({ on: z.boolean() })
+const Language = z.object({ language: z.string().max(40) })
 const MAX_QUESTION = 60
 const MAX_TOPIC_PRODUCTS = 8
 const cadence = z.enum(['once', 'weekly'])
@@ -891,6 +895,12 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const { on } = Weekly.parse(await req.body())
       repo.setSetting(weeklyOffKey(t.id), on ? undefined : true)
       return weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today())
+    },
+
+    'POST language': async req => {
+      const { language } = Language.parse(await req.body())
+      repo.setSetting(UI_LANGUAGE, language.toLowerCase().startsWith('zh') ? 'zh' : 'en')
+      return { ok: true as const }
     },
 
     'POST tracks/:id/dismiss': ({ params }) => {

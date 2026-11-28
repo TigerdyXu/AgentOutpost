@@ -15,6 +15,7 @@ import { renderPrompt } from '../prompts.ts'
 import { researchTools } from '../tools.ts'
 import type { JobDeps, JobRunner } from './runner.ts'
 import { say } from '../../core/messages.ts'
+import { sessionTitle } from '../titles.ts'
 
 /** Checks what a product's sessions handed in (Task 9). It must reject when the check could not be done. */
 export type VerifyProduct = (productId: Id, scope: 'baseline' | 'daily') => Promise<void>
@@ -94,7 +95,7 @@ async function baseline(deps: BaselineDeps, productId: Id): Promise<void> {
     const total = wanted.length
     const handedIn = new Set<string>()
     const { run, finished } = runner.start('baseline', { productId }, id => ({
-      title: `前哨 · ${product.name} 建档`,
+      title: sessionTitle(repo, 'baseline', { name: product.name }),
       prompt,
       tools: onDone => countCards(researchTools('baseline', { repo, runId: id, trackId: null, productId, now: () => clock.now(), icons, onDone }), dimension => {
         if (!wanted.some(d => d.key === dimension) || handedIn.has(dimension)) return

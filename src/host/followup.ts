@@ -13,6 +13,7 @@ import type { Repo } from '../store/repo.ts'
 import type { Clock, IconFetcher, SessionDriver } from './ports.ts'
 import { renderPrompt } from './prompts.ts'
 import { researchTools } from './tools.ts'
+import { sessionTitle } from './titles.ts'
 
 export interface FollowupDeps {
   repo: Repo
@@ -46,7 +47,7 @@ export async function startFollowup(deps: FollowupDeps, findingId: Id): Promise<
   try {
     await driver.startInteractive({
       sessionId,
-      title: `追问 · ${product.name} ${finding.headline}`,
+      title: sessionTitle(repo, 'followup', { name: product.name, headline: finding.headline }),
       prompt,
       tools: researchTools('followup', { repo, runId: run.id, trackId: null, productId: product.id, now: () => clock.now(), icons, onDone: () => {} }),
       model: modelFor('followup', settings()),

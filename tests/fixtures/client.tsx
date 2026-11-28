@@ -33,19 +33,27 @@ export function fakeCtx(get: (name: string) => unknown = () => undefined) {
   const entries: Entry[] = []
   const dictionaries: Record<string, unknown> = {}
   const disposers: (() => void)[] = []
+  /** DSH's language now (`switchLanguage` changes it and tells the subscribers, as DSH's locale runtime does). */
+  let active = 'zh-CN'
+  const listeners = new Set<() => void>()
   const ctx = {
     slots: {
       inject: (_name: string, register: () => () => void) => { disposers.push(register()) },
       register: (options: Options, component: Entry['component']) => { entries.push({ options, component }); return () => {} },
     },
-    locale: { register: (ns: string, value: unknown) => { dictionaries[ns] = value; return () => {} }, bind: () => t },
+    locale: {
+      register: (ns: string, value: unknown) => { dictionaries[ns] = value; return () => {} }, bind: () => t,
+      getSnapshot: () => ({ active }),
+      subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    },
     effect: (effect: () => unknown) => { const dispose = effect(); if (typeof dispose === 'function') disposers.push(dispose as () => void) },
     sessions: {},
     uiWorkspace: { openSession: () => {} },
     get,
   }
   const entry = (name: string) => entries.find(item => item.options.name === name)!
-  return { ctx, entries, dictionaries, entry, dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
+  const switchLanguage = (id: string) => { active = id; for (const listener of [...listeners]) listener() }
+  return { ctx, entries, dictionaries, entry, switchLanguage, dispose: () => { for (const dispose of disposers.splice(0)) dispose() } }
 }
 
 // ---- a stubbed API ----

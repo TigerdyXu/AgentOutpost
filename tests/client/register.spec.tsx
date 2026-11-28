@@ -52,6 +52,19 @@ it('registers main, sidebar entry, trailing count and plugin config row', () => 
   expect(Object.keys(dictionaries)).toEqual(['outpost'])
 })
 
+it('tells the background the panel’s language now and on every switch, for the titles of its sessions', async () => {
+  const api = stubApi({ 'POST language': { ok: true } })
+  const { ctx, switchLanguage, dispose } = fakeCtx()
+  apply(ctx as never)
+  await settle()
+  switchLanguage('en-US')
+  await settle()
+  switchLanguage('en-GB') // still English: nothing new to say
+  await settle()
+  expect(api.requests.filter(r => r.path === 'language').map(r => r.body)).toEqual([{ language: 'zh' }, { language: 'en' }])
+  dispose()
+})
+
 it('registers a Chinese and an English dictionary, so the panel follows the language of DSH’s settings', () => {
   const { dictionaries } = fixture()
   const { zh, en } = dictionaries.outpost as { zh: Record<string, string>; en: Record<string, string> }

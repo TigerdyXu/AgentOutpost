@@ -2072,6 +2072,17 @@ describe('the track page (M2.1)', () => {
     expect(host.driver.runs.at(-1)!.prompt).toContain('每周例行刷新')
   })
 
+  it('names the sessions it opens in the panel’s language once the panel has said which', async () => {
+    const t = seed()
+    host.driver.script[RECOMMEND] = recommends([])
+    ok(await host.call('POST', `tracks/${t.id}/recommend`, {}))
+    ok(await host.call('POST', 'language', { language: 'en-US' }))
+    ok(await host.call('POST', `tracks/${t.id}/recommend`, {}))
+    ok(await host.call('POST', 'language', { language: 'zh-CN' }))
+    expect(host.driver.runs.slice(-2).map(r => r.title)).toEqual(['前哨 · 推荐 AI 编程助手', 'Outpost · suggestions · AI 编程助手'])
+    expect(repo.getSetting('uiLanguage')).toBe('zh')
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())
