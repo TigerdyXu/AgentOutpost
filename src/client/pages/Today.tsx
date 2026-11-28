@@ -17,7 +17,7 @@ import { FindingCard } from '../ui/FindingCard.tsx'
 import { ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { Tag } from '../ui/Tag.tsx'
-import { labelOf, told } from '../words.ts'
+import { counted, labelOf, told } from '../words.ts'
 
 /** How often an open page reads the brief again (a late finding, a brief written while it is open). */
 const POLL_MS = 5000
@@ -147,7 +147,7 @@ export function Today(): ReactNode {
   const unconfirmedCount = main.filter(f => f.status === 'unconfirmed').length
   const metaParts = brief ? [
     ...finishedAt ? [t('today.finished', { time: finishedAt })] : [],
-    t('today.products', { count: view.products.length }),
+    counted(t, 'today.products', { count: view.products.length }),
     ...noNews ? [] : [t('today.worth', { count: main.length })],
     ...noNews || main.length === 0 ? [] : [unconfirmedCount > 0 ? t('today.unconfirmed', { count: unconfirmedCount }) : t('today.checked')],
   ] : []
@@ -183,7 +183,7 @@ export function Today(): ReactNode {
       {shownMinor.length > 0 && <>
         <button type="button" className="op-fold" aria-expanded={minorOpen} onClick={() => { setMinorOpen(open => !open) }}>
           <ChevronIcon size={14} />
-          <span>{minorOpen ? t('today.minorHide') : t('today.minor', { count: shownMinor.length })}</span>
+          <span>{minorOpen ? t('today.minorHide') : counted(t, 'today.minor', { count: shownMinor.length })}</span>
         </button>
         {minorOpen && <div className="op-cards">{shownMinor.map(finding => card(finding, true))}</div>}
       </>}

@@ -12,7 +12,7 @@ import { localDay, shortDay } from '../../time.ts'
 import { SourceChip } from '../../ui/SourceChip.tsx'
 import { Tag } from '../../ui/Tag.tsx'
 import { RichText } from './richText.tsx'
-import { labelOf } from '../../words.ts'
+import { counted, labelOf } from '../../words.ts'
 import { told } from '../../words.ts'
 
 /**
@@ -81,7 +81,7 @@ function DimensionCard({ dimension, label, card, history, sources, open, baselin
         <ul className="op-dcard-bullets">
           {card.bullets.map((bullet, i) => <li key={i}><RichText text={bullet} sourceOf={sourceOf} /></li>)}
         </ul>
-        <p className="op-dcard-count">{t('dossier.sourceCount', { count: card.sourceIds.length })}</p>
+        <p className="op-dcard-count">{counted(t, 'dossier.sourceCount', { count: card.sourceIds.length })}</p>
       </>}
       {open && <div className="op-dcard-open">
         <div className="op-dcard-main">

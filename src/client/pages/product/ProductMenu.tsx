@@ -12,6 +12,7 @@ import type { Id, Product } from '../../../core/types.ts'
 import { describeError } from '../../api.ts'
 import { useShell } from '../../shell/context.ts'
 import { ChevronIcon } from '../../ui/icons.tsx'
+import { counted } from '../../words.ts'
 
 /** What the host takes as a product's daily budget in yuan; and a name or company, in characters. */
 const MAX_BUDGET = 100_000
@@ -180,7 +181,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: P
       const topped = await onTracks(change)
       if (!isOpen.current) return
       if (change.kind === 'unlink') { close(true); return }
-      setDone(t(change.kind === 'move' ? 'product.moved' : 'product.added', { track: name }) + (topped > 0 ? t('product.toppedUp', { count: topped }) : ''))
+      setDone(t(change.kind === 'move' ? 'product.moved' : 'product.added', { track: name }) + (topped > 0 ? counted(t, 'product.toppedUp', { count: topped }) : ''))
       focusNext.current = entries[change.kind].current
       setPicking(null)
     } catch (error) {

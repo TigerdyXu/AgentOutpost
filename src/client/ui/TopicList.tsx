@@ -8,11 +8,11 @@ import type { TopicRow } from '../../host/api.ts'
 import type { T } from '../locales.ts'
 import { useShell } from '../shell/context.ts'
 import { shortDay } from '../time.ts'
-import { told } from '../words.ts'
+import { counted, told } from '../words.ts'
 
 /** What a topic's line under its question says, in the reader's language. */
 export function topicMeta(t: T, row: TopicRow): string {
-  const parts = [t('topic.products', { count: row.productNames.length })]
+  const parts = [counted(t, 'topic.products', { count: row.productNames.length })]
   if (row.researching) parts.push(t('topic.researching'))
   else if (row.first) parts.push(t('topic.first', { date: shortDay(row.first) ?? '' }))
   else if (row.problem) parts.push(t('topic.noVersion', { reason: told(t, row.problem) }))

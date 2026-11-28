@@ -23,16 +23,17 @@ const PASSED_OVER_MAX = 40
  * follow, named as they are kept.
  * @throws When the track does not exist (nothing is started then).
  */
-export async function startRecommendation(deps: JobDeps, trackId: Id, refine?: string): Promise<Id> {
-  return beginRecommendation(deps, trackId, refine).run.id
+export async function startRecommendation(deps: JobDeps, trackId: Id, refine?: string, subject?: string): Promise<Id> {
+  return beginRecommendation(deps, trackId, refine, subject).run.id
 }
 
 /** Like `startRecommendation`, but resolves once the session is over, with its run (the weekly suggestions wait for it). */
-export function recommendAndWait(deps: JobDeps, trackId: Id, refine?: string): Promise<Run> {
-  return beginRecommendation(deps, trackId, refine).finished
+export function recommendAndWait(deps: JobDeps, trackId: Id, refine?: string, subject?: string): Promise<Run> {
+  return beginRecommendation(deps, trackId, refine, subject).finished
 }
 
-function beginRecommendation(deps: JobDeps, trackId: Id, refine?: string): { run: Run; finished: Promise<Run> } {
+/** `subject`: what the run is, kept on it (`WEEKLY_SUBJECT` for a weekly one). */
+function beginRecommendation(deps: JobDeps, trackId: Id, refine?: string, subject?: string): { run: Run; finished: Promise<Run> } {
   const { repo, runner, clock, icons } = deps
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
@@ -67,7 +68,7 @@ function beginRecommendation(deps: JobDeps, trackId: Id, refine?: string): { run
     refine: request || '（没有）',
   })
 
-  const started = runner.start('recommend', { trackId }, runId => ({
+  const started = runner.start('recommend', { trackId, ...subject ? { subject } : {} }, runId => ({
     title: `前哨 · 推荐 ${track.name}`,
     prompt,
     tools: onDone => researchTools('recommend', { repo, runId, trackId, productId: null, now: () => clock.now(), icons, onDone }),

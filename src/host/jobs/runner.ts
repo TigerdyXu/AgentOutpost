@@ -78,8 +78,12 @@ export const RETRY_DELAY_MS = 15_000
  * anyway: a release that hangs must not stop the day's runs. Wall-clock time, like the session time limit.
  */
 export const RELEASE_WAIT_MS = 60_000
-/** Sessions of runs that ended longer ago than this are archived. */
-export const ARCHIVE_AFTER_DAYS = 7
+/**
+ * Sessions of runs that ended longer ago than this are archived, after each day's run: Outpost writes a dozen sessions a
+ * day (research, checks, maps' neighbours: recommendations, topics), and a week of them crowded the user's own out of
+ * DSH's session list (M1 defect 9). A day keeps the latest ones at hand, to open from 运行记录.
+ */
+export const ARCHIVE_AFTER_DAYS = 1
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** Settings key: runs that ended before this moment (ISO) have had their sessions archived. */

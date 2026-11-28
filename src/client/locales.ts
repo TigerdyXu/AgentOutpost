@@ -192,7 +192,7 @@ const OWN = {
   'track.save': ['保存', 'Save'],
   'track.saving': ['正在保存…', 'Saving…'],
   'track.saved': ['已保存', 'Saved'],
-  'track.toppedUp': ['已保存 · {count} 个产品马上补新维度的卡片', 'Saved · the new dimensions are being filled in now, for {count} tracked product(s)'],
+  'track.toppedUp': ['已保存 · {count} 个产品马上补新维度的卡片', 'Saved · the new dimensions are being filled in now, for {count} tracked products'],
   'track.delete': ['删除赛道', 'Delete track'],
   'track.deleteStart': ['删除这个赛道…', 'Delete this track…'],
   'track.deleteIntro': ['删除这个赛道和它的推荐记录，不能恢复。', 'Deletes this track and its suggestions. This cannot be undone.'],
@@ -524,7 +524,31 @@ const OWN = {
 
 /** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */
 const SAID_TEXT = Object.fromEntries(Object.entries(SAID).map(([key, pair]) => [`said.${key}`, pair])) as { readonly [K in SaidKey as `said.${K}`]: readonly [string, string] }
-const TEXT = { ...OWN, ...SAID_TEXT }
+/**
+ * The singular English of the lines that count something (DSH's dictionaries have no plural rules): kept as `<key>.one`
+ * and picked by `counted` (words.ts) when the count is 1. Chinese has one form: its `.one` is the line itself.
+ */
+const ONE = {
+  unreadAria: '{count} unread finding in today’s brief',
+  'today.products': '{count} product',
+  'today.minor': '{count} more minor update, open to read',
+  'pick.found': 'Found {count} candidate, ranked by heat and fit',
+  'pick.heatFound': 'Found {count} related article',
+  'track.toppedUp': 'Saved · the new dimensions are being filled in now, for {count} tracked product',
+  'topic.products': '{count} product',
+  'product.toppedUp': ' · {count} card filled in',
+  'dossier.sourceCount': '{count} source',
+  'sources.citedBy': 'Cited by {count} conclusion',
+  'runs.meta': 'Last 7 days · {count} run · costs are estimates',
+  'runs.searches': 'Includes {count} web search, estimated at about 8,000 input and 800 output tokens',
+  'said.retried': '{reason} (tried again {count} time)',
+} as const satisfies Partial<Record<keyof typeof OWN | keyof typeof SAID_TEXT, string>>
+type Counted = keyof typeof ONE
+const BASE = { ...OWN, ...SAID_TEXT }
+const ONE_TEXT = Object.fromEntries(Object.entries(ONE).map(([key, one]) => [`${key}.one`, [BASE[key as Counted][0], one]])) as unknown as { readonly [K in Counted as `${K}.one`]: readonly [string, string] }
+/** The keys with a singular (`ONE`). */
+export const COUNTED: ReadonlySet<string> = new Set(Object.keys(ONE))
+const TEXT = { ...BASE, ...ONE_TEXT }
 export type OutpostKey = keyof typeof TEXT
 const language = (index: 0 | 1) => Object.fromEntries(Object.entries(TEXT).map(([key, pair]) => [key, pair[index]])) as Record<OutpostKey, string>
 export const zh = language(0), en = language(1)

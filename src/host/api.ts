@@ -26,7 +26,7 @@ import { isBaselining } from './jobs/baseline.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
-import { weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
+import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
 import { topicSchedule } from './jobs/topic.ts'
 import { LAST_COMPLETED } from './scheduler.ts'
 import { startRecommendation } from './jobs/recommend.ts'
@@ -740,7 +740,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate }
       const findings = [...brief.findingIds, ...brief.minorIds].flatMap(id => repo.getFinding(id) ?? []).filter(isShown)
       return {
-        brief,
+        // What the day cost as it stands now: a map drawn, or a topic looked into, after the brief was written counts too.
+        brief: { ...brief, costYuan: repo.spentOn(date) },
         findings,
         products: products([...findings.map(f => f.productId), ...brief.quietProductIds, ...brief.skipped.map(s => s.productId)]),
         sources: repo.getSources(findings.flatMap(f => f.sourceIds)),
@@ -1102,7 +1103,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           if (!run.trackId) throw new ApiError(409, say('recommendNoTrack'))
           const t = track(run.trackId)
           if (recommending(t.id)) throw new ApiError(409, say('recommending'))
-          return { runId: await startRecommendation(rt.jobs, t.id) }
+          // A weekly round is asked again for what is new only (M2.2).
+          return { runId: await (run.subject === WEEKLY_SUBJECT ? startRecommendation(rt.jobs, t.id, WEEKLY_REFINE, WEEKLY_SUBJECT) : startRecommendation(rt.jobs, t.id)) }
         }
         case 'baseline': case 'daily': case 'verify': {
           const p = product(run.productId ?? '')

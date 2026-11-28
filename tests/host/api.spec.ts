@@ -2058,6 +2058,20 @@ describe('the track page (M2.1)', () => {
     expect((await host.call('GET', `topics/${topicId}`)).status).toBe(404)
   })
 
+  it('gives the brief’s spending as it stands, and asks a weekly round’s 重试 for what is new only', async () => {
+    const t = seed()
+    putBrief(TODAY, [], { costYuan: 0.5 })
+    addRun('landscape', { status: 'done', costYuan: 0.03 }, TODAY, { trackId: t.id })
+    expect(ok(await host.call('GET', 'brief')).json<ApiResponse<'GET brief'>>().brief!.costYuan).toBeCloseTo(0.03)
+
+    const weekly = repo.createRun({ kind: 'recommend', date: TODAY, trackId: t.id, productId: null, subject: '每周推荐' })
+    repo.updateRun(weekly.id, { status: 'failed', error: '429' })
+    host.driver.script[RECOMMEND] = recommends([])
+    const { runId } = ok(await host.call('POST', `runs/${weekly.id}/retry`)).json<{ runId: Id }>()
+    expect(repo.getRun(runId)?.subject).toBe('每周推荐')
+    expect(host.driver.runs.at(-1)!.prompt).toContain('每周例行刷新')
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())

@@ -2,7 +2,7 @@
 import { DEFAULT_DIMENSIONS } from '../core/dimensions.ts'
 import { heard } from '../core/messages.ts'
 import type { Dimension } from '../core/types.ts'
-import type { T } from './locales.ts'
+import { COUNTED, type OutpostKey, type T } from './locales.ts'
 
 /**
  * A text the host wrote (a run's reason, a finding's note, an API refusal) in the reader's language: one of its fixed
@@ -13,7 +13,14 @@ export function told(t: T, text: string): string {
   const said = heard(text)
   if (!said) return text
   const { reason, ...rest } = said.params
-  return t(`said.${said.key}`, reason === undefined ? rest : { ...rest, reason: told(t, reason) })
+  const params = reason === undefined ? rest : { ...rest, reason: told(t, reason) }
+  return counted(t, `said.${said.key}`, params)
+}
+
+/** `t(key, params)`, with the singular line (`<key>.one`) when `params.count` is 1 and the key has one (locales.ts `ONE`). */
+export function counted(t: T, key: OutpostKey, params: Record<string, string | number>): string {
+  const one = Number(params.count) === 1 && COUNTED.has(key)
+  return (t as (key: string, params?: Record<string, string | number>) => string)(one ? `${key}.one` : key, params)
 }
 
 const DEFAULT_LABEL = new Map(DEFAULT_DIMENSIONS.map(dimension => [dimension.key, dimension.label] as const))

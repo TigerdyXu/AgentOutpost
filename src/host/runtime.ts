@@ -29,7 +29,7 @@ import { runDailyProduct } from './jobs/daily.ts'
 import { drawLandscape, needsDrawing } from './jobs/landscape.ts'
 import { recommendAndWait } from './jobs/recommend.ts'
 import { runTopic, topicDue } from './jobs/topic.ts'
-import { WEEKLY_REFINE, weeklyDue } from './jobs/weekly.ts'
+import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyDue } from './jobs/weekly.ts'
 import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from './jobs/runner.ts'
 import { appendLate, synthesizeBrief, type BriefDeps } from './jobs/synthesize.ts'
 import { verifyProduct } from './jobs/verify.ts'
@@ -267,7 +267,7 @@ export class Runtime {
     for (const track of this.repo.listTracks()) {
       if (this.runner.stopSignal.aborted) return
       if (track.status !== 'active' || !weeklyDue(this.repo, track, date)) continue
-      try { await recommendAndWait(this.jobs, track.id, WEEKLY_REFINE) }
+      try { await recommendAndWait(this.jobs, track.id, WEEKLY_REFINE, WEEKLY_SUBJECT) }
       catch (error) { this.log(`the weekly suggestions of track ${track.id} did not start: ${messageOf(error)}`) }
     }
   }

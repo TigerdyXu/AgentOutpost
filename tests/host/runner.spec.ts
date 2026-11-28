@@ -601,11 +601,11 @@ describe('archiveOld', () => {
     return run
   }
 
-  it('archives sessions that ended more than 7 days ago, once', async () => {
+  it('archives sessions that ended more than a day ago, once', async () => {
     const now = new Date(2026, 10, 25, 8, 0, 0)
-    ended('outpost-daily-old', new Date(2026, 10, 18, 7, 0, 0).toISOString())
-    ended('outpost-daily-gone', new Date(2026, 10, 17, 7, 0, 0).toISOString())
-    ended('outpost-daily-recent', new Date(2026, 10, 18, 9, 0, 0).toISOString())
+    ended('outpost-daily-old', new Date(2026, 10, 24, 7, 0, 0).toISOString())
+    ended('outpost-daily-gone', new Date(2026, 10, 23, 7, 0, 0).toISOString())
+    ended('outpost-daily-recent', new Date(2026, 10, 24, 9, 0, 0).toISOString())
     ended('outpost-daily-running', null)
     ended(null, new Date(2026, 10, 10, 7, 0, 0).toISOString()) // skipped: never had a session
     ended('outpost-followup-chat', new Date(2026, 10, 10, 7, 0, 0).toISOString(), 'followup') // the user's own chat stays

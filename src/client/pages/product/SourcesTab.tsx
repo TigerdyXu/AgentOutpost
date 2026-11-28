@@ -12,7 +12,7 @@ import type { Dimension, Source, SourceKind } from '../../../core/types.ts'
 import type { ProductView } from '../../../host/api.ts'
 import { useShell } from '../../shell/context.ts'
 import { Tag } from '../../ui/Tag.tsx'
-import { labelOf } from '../../words.ts'
+import { counted, labelOf } from '../../words.ts'
 
 const KINDS: Record<SourceKind, 'sources.kind.official' | 'sources.kind.media' | 'sources.kind.review' | 'sources.kind.appstore' | 'sources.kind.social'> = {
   official: 'sources.kind.official', media: 'sources.kind.media', review: 'sources.kind.review', appstore: 'sources.kind.appstore', social: 'sources.kind.social',
@@ -92,7 +92,7 @@ export function SourcesTab({ view }: { view: ProductView }): ReactNode {
             <td className="op-sources-date">{source.publishedAt?.slice(0, 10) || t('dossier.fact.none')}</td>
             <td className="op-sources-kind">{t(kindKey(source))}</td>
             <td>
-              <span className="op-sources-count">{t('sources.citedBy', { count: by.length })}</span>
+              <span className="op-sources-count">{counted(t, 'sources.citedBy', { count: by.length })}</span>
               {by.length > 0 && <span className="op-sources-by">{by.join(t('today.list'))}</span>}
             </td>
           </tr>

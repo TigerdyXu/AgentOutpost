@@ -18,6 +18,7 @@ import { SettingsForm, usePageForm } from './pages/Settings.tsx'
 import type { SessionAccess } from './shell/context.ts'
 import { App } from './shell/App.tsx'
 import { TelescopeIcon } from './ui/icons.tsx'
+import { counted } from './words.ts'
 
 type ClientContext = Context & { sessions: ISessions }
 const PANEL_ID = 'outpost' as MainPanelId
@@ -53,7 +54,7 @@ function UnreadCount({ useCount, wide, t }: UnreadCountProps): ReactNode {
   if (count === 0) return null
   return <span className="op-nav-count" data-wide={wide ? '' : undefined}>
     <span aria-hidden="true">{count > MAX_SHOWN ? `${MAX_SHOWN}+` : count}</span>
-    <span className="op-visually-hidden">{t('unreadAria', { count })}</span>
+    <span className="op-visually-hidden">{counted(t, 'unreadAria', { count })}</span>
   </span>
 }
 

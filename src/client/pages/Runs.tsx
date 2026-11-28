@@ -17,7 +17,7 @@ import { useShell } from '../shell/context.ts'
 import { yuan } from '../shell/MiddleColumn.tsx'
 import { duration, localDay } from '../time.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
-import { told } from '../words.ts'
+import { counted, told } from '../words.ts'
 
 const POLL_MS = 5000
 const BUSY_MS = 2000
@@ -151,7 +151,7 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
     <span className="op-run-status" data-status={shown}>{t(`runs.status.${shown}`)}</span>
     <span className="op-run-figures">
       <span className="op-run-time">{took}</span>
-      <span className="op-run-cost" title={run.usage.searches ? t('runs.searches', { count: run.usage.searches }) : undefined}>
+      <span className="op-run-cost" title={run.usage.searches ? counted(t, 'runs.searches', { count: run.usage.searches }) : undefined}>
         {run.costYuan > 0 ? costText(t, run.costYuan) : t('runs.none')}
       </span>
     </span>
@@ -192,7 +192,7 @@ export function Runs(): ReactNode {
   return <div className="op-page op-runs">
     <header className="op-runs-head">
       <h1 className="op-page-title">{t('nav.runs')}</h1>
-      {runs && runs.length > 0 && <p className="op-day-meta">{t('runs.meta', { count: runs.length })}</p>}
+      {runs && runs.length > 0 && <p className="op-day-meta">{counted(t, 'runs.meta', { count: runs.length })}</p>}
     </header>
     {!runs && error && <p className="op-day-problem" role="status">{describeError(t, error)}</p>}
     {runs?.length === 0 && <p className="op-day-empty">{t('runs.empty')}</p>}

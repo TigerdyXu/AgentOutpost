@@ -21,6 +21,25 @@ function usable(spans: readonly Span[], length: number): Span[] {
   })
 }
 
+/** Two added stretches this close (in characters), or with only punctuation, spaces and citations between them, read as one. */
+const ADDED_GAP = 3
+
+/**
+ * The added spans of `text` with the small gaps between them closed: a reworded sentence's new words, compared character
+ * by character, come in many short pieces, which read as one change (M1 defect 7).
+ */
+export function joinAdded(text: string, spans: readonly Span[]): Span[] {
+  const sorted = [...spans].sort((a, b) => a.start - b.start)
+  const joined: Span[] = []
+  for (const span of sorted) {
+    const last = joined.at(-1)
+    const gap = last ? text.slice(last.end, span.start) : ''
+    if (last && span.start <= last.end + ADDED_GAP || last && /^(?:[\s\p{P}\p{S}]|\[\d+\])*$/u.test(gap)) last!.end = Math.max(last!.end, span.end)
+    else joined.push({ ...span })
+  }
+  return joined
+}
+
 /**
  * Cuts `text` wherever a citation, an inference span or an added span begins or ends. A citation `[12]` is never cut
  * through: a span edge inside it moves out, so the marker is in a span when its first character is.
@@ -28,7 +47,7 @@ function usable(spans: readonly Span[], length: number): Span[] {
 export function splitText(text: string, inference: readonly Span[], added: readonly Span[]): Piece[] {
   const marks = [...text.matchAll(/\[(\d+)\]/g)].map(match => ({ start: match.index, end: match.index + match[0].length, n: Number(match[1]) }))
   const inferred = usable(inference, text.length)
-  const addedSpans = usable(added, text.length)
+  const addedSpans = joinAdded(text, usable(added, text.length))
   const cuts = new Set([0, text.length, ...marks.flatMap(mark => [mark.start, mark.end]), ...[...inferred, ...addedSpans].flatMap(span => [span.start, span.end])])
   const edges = [...cuts].filter(cut => !marks.some(mark => mark.start < cut && cut < mark.end)).sort((a, b) => a - b)
   const covers = (spans: Span[], at: number) => spans.some(span => span.start <= at && at < span.end)

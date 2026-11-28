@@ -19,7 +19,7 @@ import { useShell } from '../shell/context.ts'
 import { duration } from '../time.ts'
 import { CheckIcon, ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
-import { labelOf, told } from '../words.ts'
+import { counted, labelOf, told } from '../words.ts'
 
 // Limits the host checks (src/host/api.ts): a longer text is a 400 there.
 const MAX_NAME = 20
@@ -265,7 +265,7 @@ function HeatLine({ heat }: { heat: Heat }): ReactNode {
     {bars && <span className="op-heat-bars" role="img" aria-label={t('pick.heatWeeks', { counts: heat.datedWeekly.join(t('today.list')) })}>
       {heat.datedWeekly.map((count, i) => <i key={i} data-empty={count === 0 ? '' : undefined} style={{ '--op-bar': count / top } as CSSProperties} />)}
     </span>}
-    <span>{t('pick.heatFound', { count: heat.foundCount })}</span>
+    <span>{counted(t, 'pick.heatFound', { count: heat.foundCount })}</span>
     {trend && <>{' · '}<span className="op-heat-trend">{trend}</span></>}
   </span>
 }
@@ -398,7 +398,7 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
   // What the line above the cards says: still looking, or what was found and how long it took.
   const statusLine = !data ? null
     : data.running ? [t('pick.searching', { count: candidates.length }), t('pick.tookRunning', { time: duration(t, data.elapsedSec) })].join(' · ')
-    : candidates.length > 0 ? [t('pick.found', { count: candidates.length }), t('pick.took', { time: duration(t, data.elapsedSec) })].join(' · ')
+    : candidates.length > 0 ? [counted(t, 'pick.found', { count: candidates.length }), t('pick.took', { time: duration(t, data.elapsedSec) })].join(' · ')
     : null
   // Why there may be nothing to pick (or a failure after some), from how the round ended.
   const reason = data?.error ? told(t, data.error) : ''

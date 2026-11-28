@@ -13,7 +13,7 @@ import type { DimensionKey } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
 import { call, describeError } from '../api.ts'
 import { useShell } from '../shell/context.ts'
-import { labelOf } from '../words.ts'
+import { counted, labelOf } from '../words.ts'
 
 // Limits the host checks (src/host/api.ts): a longer text, or more dimensions, is a 400 there.
 const MAX_NAME = 20
@@ -100,7 +100,7 @@ function TrackEditor({ view, others }: { view: TrackView; others: TrackView[] })
         const shown = labelOf(t, dimension)
         return { id: dimension.key, key: dimension.key, stored: dimension.label, shown, text: shown }
       }))
-      setSaved(answer.toppedUp > 0 ? t('track.toppedUp', { count: answer.toppedUp }) : t('track.saved'))
+      setSaved(answer.toppedUp > 0 ? counted(t, 'track.toppedUp', { count: answer.toppedUp }) : t('track.saved'))
     } catch (failure) {
       setProblem(describeError(t, errorOf(failure)))
     } finally {

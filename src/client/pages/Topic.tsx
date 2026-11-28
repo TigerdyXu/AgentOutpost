@@ -11,7 +11,7 @@ import { ApiError, call, describeError, usePoll } from '../api.ts'
 import { useShell } from '../shell/context.ts'
 import { shortDay } from '../time.ts'
 import { SourceChip } from '../ui/SourceChip.tsx'
-import { told } from '../words.ts'
+import { counted, told } from '../words.ts'
 import { RichText } from './product/richText.tsx'
 
 /** How often the page reads the topic again: quickly while a round runs (its cards appear when it is over). */
@@ -142,7 +142,7 @@ function TopicCardView({ card, sources, nameOf }: { card: TopicCard; sources: Ma
     <div id={`${ids}-body`}>
       {!open && <>
         <ul className="op-dcard-bullets">{card.bullets.map((bullet, i) => <li key={i}><RichText text={bullet} sourceOf={sourceOf} /></li>)}</ul>
-        <p className="op-dcard-count">{t('dossier.sourceCount', { count: card.sourceIds.length })}</p>
+        <p className="op-dcard-count">{counted(t, 'dossier.sourceCount', { count: card.sourceIds.length })}</p>
       </>}
       {open && <div className="op-dcard-main">
         <p className="op-dcard-text"><RichText text={card.body} sourceOf={sourceOf} inference={card.inferenceSpans} /></p>
