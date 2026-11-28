@@ -40,5 +40,12 @@ describe('what an update added', () => {
     expect(joinAdded(text, [{ start: 14, end: 22 }, { start: 23, end: 26 }])).toEqual([{ start: 14, end: 26 }]) // 。[1] between
     expect(joinAdded(text, [{ start: 0, end: 2 }, { start: 14, end: 16 }])).toEqual([{ start: 0, end: 2 }, { start: 14, end: 16 }]) // words between: two
   })
+
+  it('leaves out a stretch with no word in it: punctuation, spaces or a citation alone', () => {
+    const text = '免费提供[1]；依赖服务器的功能有限额[2]。'
+    expect(joinAdded(text, [{ start: 7, end: 8 }])).toEqual([]) // 「；」 for 「。」
+    expect(joinAdded(text, [{ start: 19, end: 22 }])).toEqual([]) // 「[2]」
+    expect(joinAdded(text, [{ start: 7, end: 8 }, { start: 8, end: 10 }])).toEqual([{ start: 7, end: 10 }]) // with words: kept whole
+  })
 })
 

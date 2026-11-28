@@ -26,7 +26,8 @@ const ADDED_GAP = 3
 
 /**
  * The added spans of `text` with the small gaps between them closed: a reworded sentence's new words, compared character
- * by character, come in many short pieces, which read as one change (M1 defect 7).
+ * by character, come in many short pieces, which read as one change (M1 defect 7). A stretch with no word in it (a 「；」
+ * for a 「。」, a citation moved) is left out: alone, it marked a box around a punctuation mark (M3.1).
  */
 export function joinAdded(text: string, spans: readonly Span[]): Span[] {
   const sorted = [...spans].sort((a, b) => a.start - b.start)
@@ -37,7 +38,7 @@ export function joinAdded(text: string, spans: readonly Span[]): Span[] {
     if (last && span.start <= last.end + ADDED_GAP || last && /^(?:[\s\p{P}\p{S}]|\[\d+\])*$/u.test(gap)) last!.end = Math.max(last!.end, span.end)
     else joined.push({ ...span })
   }
-  return joined
+  return joined.filter(span => /[\p{L}\p{N}]/u.test(text.slice(span.start, span.end).replace(/\[\d+\]/g, '')))
 }
 
 /**
