@@ -63,6 +63,10 @@ export interface TopicCard { title: string; summary: string; bullets: string[]; 
 export type TopicVersionStatus = 'draft' | 'final' | 'rejected'
 export interface TopicVersion { id: Id; topicId: Id; version: number | null; status: TopicVersionStatus; cards: TopicCard[]; changeNote: string; runId: Id | null; createdAt: string }
 
+/** The user's own note (M3.3) on a product or a finding: one per thing, in their words; never read by research. */
+export type NoteKind = 'product' | 'finding'
+export interface Note { kind: NoteKind; subjectId: Id; text: string; updatedAt: string }
+
 export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
   /**
    * Tracked products not updated that day, with why. Without `failed` the budget stopped it (shown 「因预算未跑：…」);

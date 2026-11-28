@@ -17,8 +17,8 @@ const results = (over: Partial<SearchResults> = {}): SearchResults => ({
 const found = results({
   cards: [{ productId: 'p1', product: '豆包·小豆', dimension: 'business', label: '商业化', snippet: { text: '…三档会员，额度互通', marks: [{ start: 3, end: 5 }] } }],
   findings: [
-    { id: 'f1', productId: 'p1', product: '豆包·小豆', date: '2026-11-27', headline: '会员涨价', status: 'unconfirmed', inHeadline: true, snippet: { text: '会员涨价', marks: [{ start: 0, end: 2 }] } },
-    { id: 'f2', productId: 'p2', product: 'Muse', date: '2026-11-26', headline: 'Muse 调价', status: 'verified', inHeadline: false, snippet: { text: '只给会员', marks: [{ start: 2, end: 4 }] } },
+    { id: 'f1', productId: 'p1', product: '豆包·小豆', date: '2026-11-27', headline: '会员涨价', status: 'unconfirmed', inHeadline: true, inNote: false, snippet: { text: '会员涨价', marks: [{ start: 0, end: 2 }] } },
+    { id: 'f2', productId: 'p2', product: 'Muse', date: '2026-11-26', headline: 'Muse 调价', status: 'verified', inHeadline: false, inNote: false, snippet: { text: '只给会员', marks: [{ start: 2, end: 4 }] } },
   ],
   more: { products: 0, tracks: 0, cards: 0, findings: 5, topics: 0 },
 })
@@ -51,7 +51,7 @@ describe('the search page', () => {
     await mount(<Search />, { route: { page: 'search', q: 'zzz' }, t: tEn })
     expect(text()).toContain('Nothing in Outpost matches “zzz”.')
     unmount()
-    stubApi({ 'GET search': results({ query: 'muse', products: [{ id: 'p2', name: 'Muse', company: 'Meta', tracks: ['Personal Agent'], snippet: { text: 'Muse', marks: [{ start: 0, end: 4 }] } }] }) })
+    stubApi({ 'GET search': results({ query: 'muse', products: [{ id: 'p2', name: 'Muse', company: 'Meta', tracks: ['Personal Agent'], inNote: false, snippet: { text: 'Muse', marks: [{ start: 0, end: 4 }] } }] }) })
     await mount(<Search />, { route: { page: 'search', q: 'muse' }, t: tEn })
     expect(text()).toContain('1 match')
     expect(text()).toContain('Meta · Personal Agent')

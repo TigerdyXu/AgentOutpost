@@ -53,6 +53,8 @@ export const SAID = {
   trackNotFound: ['找不到这个赛道', 'Cannot find this track'],
   productNotFound: ['找不到这个产品', 'Cannot find this product'],
   findingNotFound: ['找不到这条发现', 'Cannot find this finding'],
+  noteSubjectNotFound: ['只能给产品或发现写笔记', 'Notes go on a product or a finding'],
+  noteTooLong: ['笔记最多 {max} 字', 'A note is at most {max} characters'],
   runNotFound: ['找不到这次运行', 'Cannot find this run'],
   noBriefThatDay: ['这一天没有哨报', 'There is no brief for this day'],
   noIcon: ['这个产品没有图标', 'This product has no icon'],

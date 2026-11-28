@@ -160,7 +160,7 @@ export const brief = (extra: Partial<Brief> = {}): Brief => ({
   createdAt: new Date(2026, 10, 25, 8, 12).toISOString(), updatedAt: new Date(2026, 10, 25, 8, 12).toISOString(), ...extra,
 })
 /** `GET brief`'s answer: the brief, its findings, the products it names and the sources of the findings. */
-export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], changed: {}, prevDate: null, ...extra })
+export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {}, ...extra })
 
 /** A card of `dimension`, written at the baseline (version 1, nothing highlighted); `body` is the text, `[n]` citing `sourceIds[n - 1]`. */
 export const card = (productId: string, dimension: string, extra: Partial<CardVersion> = {}): CardVersion => ({
@@ -173,7 +173,7 @@ export const facts = (productId: string, extra: Partial<Facts> = {}): Facts => (
 })
 /** `GET products/:id`'s answer: no card, no fact, no source and no progress until given. */
 export const productView = (p: Product, extra: Partial<ProductView> = {}): ProductView => ({
-  product: p, facts: null, cards: [], history: {}, sources: [], dimensions: [], progress: null, ...extra,
+  product: p, facts: null, cards: [], history: {}, sources: [], dimensions: [], progress: null, note: null, ...extra,
 })
 export const run = (id: string, productId: string | null, status: Run['status'], extra: Partial<Run & { productName: string | null }> = {}): Run & { productName: string | null } => ({
   id, kind: 'daily', date: '2026-11-25', trackId: null, productId, sessionId: null, status, startedAt: '2026-11-25T08:00:00.000Z', endedAt: null,

@@ -2,11 +2,12 @@
  * A finding as a card (design §5.2): who, what, why it matters, its sources, how far it can be trusted, which dimensions
  * of the profile it changed, and 追问. The brief and the product's 动态 tab show the same card.
  */
-import { useRef, type ReactNode } from 'react'
-import type { DimensionKey, Finding, Id, Product, Source } from '../../core/types.ts'
+import { useRef, useState, type ReactNode } from 'react'
+import type { DimensionKey, Finding, Id, Note, Product, Source } from '../../core/types.ts'
 import { canonicalUrl } from '../../core/url.ts'
 import { UNOPENED } from '../notes.ts'
 import { useShell } from '../shell/context.ts'
+import { NoteBlock } from './NoteBlock.tsx'
 import { ProductIcon } from './ProductIcon.tsx'
 import { SourceChip } from './SourceChip.tsx'
 import { Tag } from './Tag.tsx'
@@ -31,9 +32,13 @@ export interface FindingCardProps {
   onRead?: (id: Id) => void
   /** The one a link asked to show (a search hit): outlined. */
   focused?: boolean
+  /** The user's note on it (M3.3), and where a saved one goes; without `onNoteSaved` no note can be written here. */
+  note?: Note | null
+  onNoteSaved?: (findingId: Id, note: Note | null) => void
 }
 
-export function FindingCard({ finding, product, trackName, sources, changed, promoted, read = false, minor, onRead, focused = false }: FindingCardProps): ReactNode {
+export function FindingCard({ finding, product, trackName, sources, changed, promoted, read = false, minor, onRead, focused = false, note = null, onNoteSaved }: FindingCardProps): ReactNode {
+  const [writing, setWriting] = useState(false)
   const { t, navigate } = useShell()
   const card = useRef<HTMLElement>(null)
   useLeaveViewport(card, read || !onRead, () => { onRead?.(finding.id) })
@@ -70,9 +75,12 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
       <span className="op-card-actions">
         {changed.length > 0 && <button type="button" className="op-link"
           onClick={() => { navigate({ page: 'product', productId: finding.productId, tab: 'dossier', expand: changed[0]!.key }) }}>{t('today.look')}</button>}
+        {onNoteSaved && !note && !writing && <button type="button" className="op-link" onClick={() => { setWriting(true) }}>{t('note.add')}</button>}
         <button type="button" className="op-link" disabled={asking} aria-busy={asking || undefined} onClick={() => { void ask() }}>{t('today.followup')}</button>
       </span>
     </div>
+    {onNoteSaved && <NoteBlock kind="finding" subjectId={finding.id} note={note} editing={writing} onEditing={setWriting}
+      onSaved={kept => { onNoteSaved(finding.id, kept) }} />}
     {problem && <p className="op-card-error" role="alert">{problem}</p>}
   </article>
 }

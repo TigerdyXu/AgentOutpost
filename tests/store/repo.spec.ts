@@ -9,7 +9,7 @@ import { lockDataDir, openDb, type Db } from '../../src/store/db.ts'
 import { MIGRATIONS, migrate } from '../../src/store/migrations.ts'
 import { Repo } from '../../src/store/repo.ts'
 
-const TABLES = ['tracks', 'products', 'track_products', 'candidates', 'sources', 'findings', 'card_versions', 'card_edits', 'facts', 'briefs', 'runs', 'settings_kv', 'landscapes', 'topics', 'topic_versions']
+const TABLES = ['tracks', 'products', 'track_products', 'candidates', 'sources', 'findings', 'card_versions', 'card_edits', 'facts', 'briefs', 'runs', 'settings_kv', 'landscapes', 'topics', 'topic_versions', 'notes']
 const mode = (path: string) => statSync(path).mode & 0o777
 
 let dir: string
@@ -1045,3 +1045,43 @@ describe('Repo: the user’s order (M2.4)', () => {
   })
 })
 
+describe('Repo: the user’s notes (M3.3)', () => {
+  it('keeps one note per product and per finding, replaced when written again and erased when blank', () => {
+    const repo = newRepo()
+    expect(repo.getNote('product', 'p1')).toBeNull()
+    const first = repo.setNote('product', 'p1', '  要盯它的定价  ')
+    expect(first).toMatchObject({ kind: 'product', subjectId: 'p1', text: '要盯它的定价' })
+    repo.setNote('product', 'p1', '改主意了')
+    repo.setNote('finding', 'p1', '同一个 id 的发现是另一回事')
+    expect(repo.getNote('product', 'p1')?.text).toBe('改主意了')
+    expect([...repo.notesOf('finding', ['p1', 'p9']).keys()]).toEqual(['p1'])
+    expect(repo.notesOf('finding', [])).toEqual(new Map())
+    expect(repo.setNote('product', 'p1', '   ')).toBeNull()
+    expect(repo.getNote('product', 'p1')).toBeNull()
+  })
+
+  it('erases a deleted product’s note and the notes on its findings, and no one else’s', () => {
+    const repo = newRepo()
+    const track = repo.createTrack({ name: '甲', brief: '', dimensions: [], status: 'active' })
+    for (const id of ['p1', 'p2']) {
+      repo.upsertProduct({ id, name: id, company: '', region: 'domestic', form: 'App', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: null })
+      repo.linkProduct(track.id, id)
+    }
+    const run = repo.createRun({ kind: 'daily', date: '2026-11-28', trackId: null, productId: 'p1' })
+    const finding = (productId: string) => repo.addFinding({
+      productId, runId: run.id, headline: 'h', why: 'w', importance: 'minor', claimKind: 'self', sourceIds: [], status: 'verified', statusNote: null,
+      unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: productId, verifiedOn: null,
+    })
+    const mine = finding('p1')
+    const theirs = finding('p2')
+    repo.setNote('product', 'p1', 'a')
+    repo.setNote('finding', mine.id, 'b')
+    repo.setNote('product', 'p2', 'c')
+    repo.setNote('finding', theirs.id, 'd')
+    repo.deleteProduct('p1')
+    expect(repo.getNote('product', 'p1')).toBeNull()
+    expect(repo.getNote('finding', mine.id)).toBeNull()
+    expect(repo.getNote('product', 'p2')?.text).toBe('c')
+    expect(repo.getNote('finding', theirs.id)?.text).toBe('d')
+  })
+})

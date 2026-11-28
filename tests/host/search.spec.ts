@@ -88,7 +88,7 @@ describe('search', () => {
   })
 
   it('finds products by name or company, with their tracks', () => {
-    expect(search(repo, '字节').products).toEqual([{ id: 'p1', name: '豆包·小豆', company: '字节跳动', tracks: ['Personal Agent', '手机 AI 助理'], snippet: { text: '字节跳动', marks: [{ start: 0, end: 2 }] } }])
+    expect(search(repo, '字节').products).toEqual([{ id: 'p1', name: '豆包·小豆', company: '字节跳动', tracks: ['Personal Agent', '手机 AI 助理'], inNote: false, snippet: { text: '字节跳动', marks: [{ start: 0, end: 2 }] } }])
     expect(search(repo, 'muse').products.map(p => p.name)).toEqual(['Muse'])
   })
 
@@ -111,7 +111,7 @@ describe('search', () => {
     finding('p1', '撤回的会员消息', '无', 'withdrawn')
     const hits = search(repo, '会员').findings
     expect(hits.map(h => [h.headline, h.status])).toEqual([['没站住的会员传闻', 'unproven'], ['Muse 调整会员价', 'verified'], ['小豆上线记忆', 'verified']])
-    expect(hits[2]).toEqual({ id: expect.any(String), productId: 'p1', product: '豆包·小豆', date: '2026-11-28', headline: '小豆上线记忆', status: 'verified', inHeadline: false, snippet: { text: '会员才有', marks: [{ start: 0, end: 2 }] } })
+    expect(hits[2]).toEqual({ id: expect.any(String), productId: 'p1', product: '豆包·小豆', date: '2026-11-28', headline: '小豆上线记忆', status: 'verified', inHeadline: false, inNote: false, snippet: { text: '会员才有', marks: [{ start: 0, end: 2 }] } })
     expect(hits[1]!.inHeadline).toBe(true)
   })
 
@@ -121,6 +121,15 @@ describe('search', () => {
     repo.updateTopicVersion(draft.id, { status: 'final', version: 1, cards: [{ title: '偏好', summary: '小豆记得住口味', bullets: ['b'], body: '正文', sourceIds: [], inferenceSpans: [], productIds: ['p1'] }] })
     expect(search(repo, '记忆').topics).toEqual([{ id: topic.id, question: '谁的记忆做得好？', track: 'Personal Agent', snippet: { text: '谁的记忆做得好？', marks: [{ start: 2, end: 4 }] } }])
     expect(search(repo, '口味').topics).toHaveLength(1)
+  })
+
+  it('finds products and findings by the user’s own notes, and says so (M3.3)', () => {
+    const f = finding('p1', '小豆上线记忆', '会员才有')
+    repo.setNote('product', 'p2', '我觉得它的社交入口最有意思')
+    repo.setNote('finding', f.id, '要盯一下会不会收费')
+    expect(search(repo, '社交入口').products).toMatchObject([{ id: 'p2', inNote: true, snippet: { text: '我觉得它的社交入口最有意思' } }])
+    expect(search(repo, '收费').findings).toMatchObject([{ id: f.id, inNote: true, inHeadline: false, snippet: { text: '要盯一下会不会收费' } }])
+    expect(search(repo, 'Muse').products).toMatchObject([{ id: 'p2', inNote: false }])
   })
 
   it('leaves out candidates, and archived tracks with what only they hold', () => {

@@ -545,6 +545,19 @@ const OWN = {
   'search.group.cards': ['档案', 'Dossier cards'],
   'search.group.findings': ['动态', 'Findings'],
   'search.group.topics': ['专题', 'Topics'],
+
+  // M3.3: the user's own notes.
+  'note.label': ['我的笔记', 'My note'],
+  'note.add': ['写笔记', 'Add a note'],
+  'note.addProduct': ['＋ 写笔记：你对这个产品的看法、要盯的事', '+ Add a note: what you think of this product, what to watch'],
+  'note.edit': ['编辑', 'Edit'],
+  'note.save': ['保存', 'Save'],
+  'note.saving': ['保存中…', 'Saving…'],
+  'note.cancel': ['取消', 'Cancel'],
+  'note.delete': ['删除笔记', 'Delete the note'],
+  'note.placeholder.product': ['只有你自己看得到；调研不会读它。搜索、追问和其他对话查前哨时会用上。', 'Only you see it; research never reads it. Search, Ask more and other chats looking Outpost up use it.'],
+  'note.placeholder.finding': ['对这条的看法，或者要跟进的事', 'What you make of this, or what to follow up'],
+  'search.inNote': ['我的笔记', 'My note'],
 } as const satisfies Record<string, readonly [string, string]>
 
 /** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */

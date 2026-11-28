@@ -15,8 +15,9 @@ import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
-  Axes, Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Placement, Product, ProductStatus, Run, RunStatus, Source, Topic, TopicCadence, TopicVersion, Track,
+  Axes, Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Note, Placement, Product, ProductStatus, Run, RunStatus, Source, Topic, TopicCadence, TopicVersion, Track,
 } from '../core/types.ts'
+import { NOTE_MAX } from '../core/notes.ts'
 import { listModelGroups } from './dsh-model.ts'
 import { BASIC_AGENT_PRESET } from './dsh-sessions.ts'
 import { startFollowup } from './followup.ts'
@@ -93,6 +94,8 @@ export interface BriefView {
   changed: Record<Id, DimensionKey[]>
   /** The latest earlier day with a brief (「‹ 昨天」), or null. */
   prevDate: string | null
+  /** The user's notes on `findings` (M3.3), by finding. */
+  notes: Record<Id, Note>
 }
 export interface CandidatesView {
   /** The latest recommendation of the track (its run id), or null when it never had one. */
@@ -126,6 +129,8 @@ export interface ProductView {
   sources: Source[]
   dimensions: Dimension[]
   progress: Run['progress']
+  /** The user's own note on the product (M3.3), or null. */
+  note: Note | null
 }
 export type RunRow = Run & { productName: string | null }
 /** A track's page (M2.1, design §5.5): its comparison table and its map. */
@@ -206,6 +211,11 @@ export interface Api {
   'GET state': { response: StateView }
   'GET brief': { query?: { date?: string }; response: BriefView }
   'POST findings/:id/read': { response: { ok: true } }
+  /**
+   * Writes the user's note on a product or a finding (M3.3); a blank `text` erases it. At most `NOTE_MAX[kind]`
+   * characters (400 beyond); 404 when there is no such product or finding.
+   */
+  'POST notes/:kind/:id': { body: { text: string }; response: { note: Note | null } }
   /** Marks every finding of that day's brief read. */
   'POST brief/read-all': { body: { date: string }; response: { ok: true } }
   /** Creates the track (status `picking`; dimensions: the six defaults, then the custom ones) and starts its recommendation. */
@@ -311,7 +321,7 @@ export interface Api {
   'POST products/:id/move': { body: { from: Id; to: Id }; response: { toppedUp: number } }
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
-  'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
+  'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]>; notes: Record<Id, Note> } }
   /**
    * Pauses or resumes, sets the product's own budget, and (M1.5) renames it or sets its official sites. A name and company
    * that read as those of another product Outpost follows (`findSameProduct`) are a 409 (「已经有一个X在跟踪了」); a row
@@ -414,6 +424,7 @@ const TopicPatch = z.object({ cadence })
 const MapRequest = z.object({ axes: z.object({ x: z.object({ low: axisEnd, high: axisEnd }), y: z.object({ low: axisEnd, high: axisEnd }) }).optional() })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
+const NoteBody = z.object({ text: z.string() })
 
 /** `YYYY-MM-DD` naming a day that exists. */
 function day(value: string | undefined, field: string): string {
@@ -764,7 +775,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const date = query.date === undefined ? rt.today() : day(query.date, 'date')
       const brief = repo.getBrief(date)
       const prevDate = repo.previousBriefDate(date)
-      if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate }
+      if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate, notes: {} }
       const findings = [...brief.findingIds, ...brief.minorIds].flatMap(id => repo.getFinding(id) ?? []).filter(isShown)
       return {
         // What the day cost as it stands now: a map drawn, or a topic looked into, after the brief was written counts too.
@@ -774,7 +785,18 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         sources: repo.getSources(findings.flatMap(f => f.sourceIds)),
         changed: changedBy(findings),
         prevDate,
+        notes: Object.fromEntries(repo.notesOf('finding', findings.map(f => f.id))),
       }
+    },
+
+    'POST notes/:kind/:id': async req => {
+      const kind = req.params.kind
+      if (kind !== 'product' && kind !== 'finding') notFound(say('noteSubjectNotFound'))
+      if (kind === 'product') product(req.params.id!)
+      else if (!repo.getFinding(req.params.id!)) notFound(say('findingNotFound'))
+      const { text } = NoteBody.parse(await req.body())
+      if ([...text.trim()].length > NOTE_MAX[kind]) throw new ApiError(400, say('noteTooLong', { max: NOTE_MAX[kind] }))
+      return { note: repo.setNote(kind, req.params.id!, text) }
     },
 
     'POST findings/:id/read': ({ params }) => {
@@ -1073,13 +1095,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         sources: repo.getSources(cards.flatMap(c => c.sourceIds)),
         dimensions,
         progress: progressOf(p.id, repo.activeRuns(p.id)),
+        note: repo.getNote('product', p.id),
       }
     },
 
     'GET products/:id/findings': ({ params }) => {
       const p = product(params.id!)
       const findings = repo.findingsOfProduct(p.id).filter(f => f.status !== 'pending' && f.status !== 'withdrawn')
-      return { findings, sources: repo.getSources(findings.flatMap(f => f.sourceIds)), changed: changedBy(findings) }
+      return { findings, sources: repo.getSources(findings.flatMap(f => f.sourceIds)), changed: changedBy(findings), notes: Object.fromEntries(repo.notesOf('finding', findings.map(f => f.id))) }
     },
 
     'PATCH products/:id': async req => {

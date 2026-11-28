@@ -68,7 +68,9 @@ export function Search(): ReactNode {
       <p className="op-search-found" role="status">{counted(t, 'search.found', { count: total + more })}</p>
       <Group title="search.group.products" count={current.products.length} more={current.more.products}>
         {current.products.map(hit => <Hit key={hit.id} to={{ page: 'product', productId: hit.id, tab: 'dossier' }}
-          head={<><b>{hit.name}</b><span className="op-search-meta">{[hit.company, ...hit.tracks].join(' · ')}</span></>} />)}
+          head={<><b>{hit.name}</b><span className="op-search-meta">{[hit.company, ...hit.tracks].join(' · ')}</span>
+            {hit.inNote && <span className="op-search-note-tag">{t('search.inNote')}</span>}</>}
+          {...hit.inNote ? { snippet: hit.snippet } : {}} />)}
       </Group>
       <Group title="search.group.tracks" count={current.tracks.length} more={current.more.tracks}>
         {current.tracks.map(hit => <Hit key={hit.id} to={{ page: 'track', trackId: hit.id }} head={<b>{hit.name}</b>} snippet={hit.snippet} />)}
@@ -82,6 +84,7 @@ export function Search(): ReactNode {
           head={<><b>{hit.product}</b><span className="op-search-meta">{hit.date.slice(5)}</span>
             {hit.status === 'unconfirmed' && <Tag kind="unconfirmed" />}
             {hit.status === 'unproven' && <span className="op-search-meta">{t('feed.unproven')}</span>}
+            {hit.inNote && <span className="op-search-note-tag">{t('search.inNote')}</span>}
             {/* Found in why it matters: the headline still says which finding it is. */}
             {!hit.inHeadline && <span className="op-search-headline">{hit.headline}</span>}</>}
           snippet={hit.snippet} />)}

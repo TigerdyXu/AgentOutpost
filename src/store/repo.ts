@@ -3,7 +3,7 @@ import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
 import { FOLLOWED, identityKey, nameKey } from '../core/identity.ts'
 import type {
-  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Product, ProductStatus, Run, RunKind, Source, Topic, TopicVersion, Track,
+  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Note, NoteKind, Product, ProductStatus, Run, RunKind, Source, Topic, TopicVersion, Track,
 } from '../core/types.ts'
 import type { Db } from './db.ts'
 
@@ -52,6 +52,7 @@ const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', finding
 const LANDSCAPE = new Codec<Landscape>('landscapes', { id: 'plain', trackId: 'plain', date: 'plain', gist: 'plain', axes: 'json', positions: 'json', runId: 'plain', createdAt: 'plain' })
 const TOPIC = new Codec<Topic>('topics', { id: 'plain', trackId: 'plain', question: 'plain', productIds: 'json', cadence: 'plain', createdAt: 'plain' })
 const TOPIC_VERSION = new Codec<TopicVersion>('topic_versions', { id: 'plain', topicId: 'plain', version: 'plain', status: 'plain', cards: 'json', changeNote: 'plain', runId: 'plain', createdAt: 'plain' })
+const NOTE = new Codec<Note>('notes', { kind: 'plain', subjectId: 'plain', text: 'plain', updatedAt: 'plain' })
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup' | 'officialConfirmed'>>
@@ -251,6 +252,10 @@ export class Repo {
         if (JSON.stringify(kept) !== JSON.stringify(brief)) this.putBrief(kept)
       }
       this.db.prepare('UPDATE runs SET subject = ? WHERE product_id = ?').run(product.name, id)
+      // The user's notes on it and on its findings go with them (M3.3).
+      this.db.prepare("DELETE FROM notes WHERE kind = 'product' AND subject_id = ?").run(id)
+      const deleteNote = this.db.prepare("DELETE FROM notes WHERE kind = 'finding' AND subject_id = ?")
+      for (const findingId of findingIds) deleteNote.run(findingId)
       this.db.prepare('DELETE FROM products WHERE id = ?').run(id)
       return product
     })
@@ -595,6 +600,34 @@ export class Repo {
   }
 
   // ---- settings ----
+
+  // ---- the user's notes (M3.3) ----
+
+  /** The user's note on the thing, or null. */
+  getNote(kind: NoteKind, subjectId: Id): Note | null {
+    return this.select(NOTE, 'WHERE kind = ? AND subject_id = ?', kind, subjectId)[0] ?? null
+  }
+
+  /** The user's notes on those of `subjectIds` that have one, by subject. */
+  notesOf(kind: NoteKind, subjectIds: Iterable<Id>): Map<Id, Note> {
+    const ids = [...new Set(subjectIds)]
+    if (!ids.length) return new Map()
+    const notes = this.select(NOTE, `WHERE kind = ? AND subject_id IN (${ids.map(() => '?').join(',')})`, kind, ...ids)
+    return new Map(notes.map(note => [note.subjectId, note]))
+  }
+
+  /** Writes the user's note on the thing (stamped now), or erases it when `text` is blank; returns what is kept. */
+  setNote(kind: NoteKind, subjectId: Id, text: string): Note | null {
+    const kept = text.trim()
+    if (!kept) {
+      this.db.prepare('DELETE FROM notes WHERE kind = ? AND subject_id = ?').run(kind, subjectId)
+      return null
+    }
+    const note: Note = { kind, subjectId, text: kept, updatedAt: this.stamp() }
+    this.db.prepare('INSERT INTO notes (kind, subject_id, text, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(kind, subject_id) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at')
+      .run(kind, subjectId, note.text, note.updatedAt)
+    return note
+  }
 
   getSetting<T>(key: string): T | undefined {
     const row = this.db.prepare('SELECT value FROM settings_kv WHERE key = ?').get(key)

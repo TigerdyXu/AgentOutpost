@@ -97,6 +97,15 @@ describe('startFollowup', () => {
     expect(prompt).not.toMatch(/\{\{|\}\}/)
   })
 
+  it('puts the user’s own notes in the first message, as their view and not a source (M3.3)', async () => {
+    await startFollowup(deps, finding.id)
+    expect(driver.interactive[0]!.prompt).toContain('## 我自己的笔记（我写的看法，不是来源，不要当事实引用）\n（没写）')
+    repo.setNote('product', finding.productId, '我更关心团队版')
+    repo.setNote('finding', finding.id, '后台 Agent 要实测一下')
+    await startFollowup(deps, finding.id)
+    expect(driver.interactive[1]!.prompt).toContain('- 对这个产品：我更关心团队版\n- 对这条发现：后台 Agent 要实测一下')
+  })
+
   it('calls a source 官方 only when the check found the maker published it (M1.6)', async () => {
     const claimed = repo.addSource({ url: 'https://cursor.example/blog', title: '同名公司的博客', publisher: 'Cursor Inc.', publishedAt: null, kind: 'official', isOfficial: true, quote: '原话', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: false })
     const run = repo.createRun({ kind: 'daily', date: TODAY, trackId: null, productId: 'p1' })

@@ -14,11 +14,12 @@ export interface Snippet { text: string; marks: Span[] }
 
 export interface SearchResults {
   query: string
-  products: { id: Id; name: string; company: string; tracks: string[]; snippet: Snippet }[]
+  /** `inNote`: found in the user's own note (M3.3), which the snippet is from. */
+  products: { id: Id; name: string; company: string; tracks: string[]; inNote: boolean; snippet: Snippet }[]
   tracks: { id: Id; name: string; snippet: Snippet }[]
   cards: { productId: Id; product: string; dimension: DimensionKey; label: string; snippet: Snippet }[]
   /** `inHeadline`: the snippet is the headline's (else it is from why it matters, and the panel shows the headline too). */
-  findings: { id: Id; productId: Id; product: string; date: string; headline: string; status: FindingStatus; inHeadline: boolean; snippet: Snippet }[]
+  findings: { id: Id; productId: Id; product: string; date: string; headline: string; status: FindingStatus; inHeadline: boolean; inNote: boolean; snippet: Snippet }[]
   topics: { id: Id; question: string; track: string; snippet: Snippet }[]
   /** How many more of each kind matched than are listed (`SEARCH_LIMIT`). */
   more: { products: number; tracks: number; cards: number; findings: number; topics: number }
@@ -144,12 +145,13 @@ export function search(repo: Repo, query: string): SearchResults {
       tracksOf.get(product.id)!.push(track)
     }
   }
+  const productNotes = repo.notesOf('product', products.map(p => p.id))
   const productHits: SearchResults['products'] = []
   const cardHits: SearchResults['cards'] = []
   const findingHits: (SearchResults['findings'][number] & { at: string })[] = []
   for (const product of products) {
-    const nameHit = matchFields([product.name, product.company], terms)
-    if (nameHit) productHits.push({ id: product.id, name: product.name, company: product.company, tracks: tracksOf.get(product.id)!.map(t => t.name), snippet: snippetOf(nameHit) })
+    const nameHit = matchFields([product.name, product.company, productNotes.get(product.id)?.text ?? ''], terms)
+    if (nameHit) productHits.push({ id: product.id, name: product.name, company: product.company, tracks: tracksOf.get(product.id)!.map(t => t.name), inNote: nameHit.field === 2, snippet: snippetOf(nameHit) })
     const dimensions: Dimension[] = repo.dimensionsOfProduct(product.id)
     const cards = repo.latestCards(product.id)
     for (const dimension of dimensions) {
@@ -157,10 +159,11 @@ export function search(repo: Repo, query: string): SearchResults {
       const hit = card && matchFields([card.summary, ...card.bullets, card.body], terms)
       if (hit) cardHits.push({ productId: product.id, product: product.name, dimension: dimension.key, label: dimension.label, snippet: snippetOf(hit) })
     }
-    for (const finding of repo.findingsOfProduct(product.id)) {
-      if (!SHOWN.includes(finding.status)) continue
-      const hit = matchFields([finding.headline, finding.why], terms)
-      if (hit) findingHits.push({ id: finding.id, productId: product.id, product: product.name, date: localDate(new Date(finding.createdAt)), headline: finding.headline, status: finding.status, inHeadline: hit.field === 0, snippet: snippetOf(hit), at: finding.createdAt })
+    const findings = repo.findingsOfProduct(product.id).filter(f => SHOWN.includes(f.status))
+    const findingNotes = repo.notesOf('finding', findings.map(f => f.id))
+    for (const finding of findings) {
+      const hit = matchFields([finding.headline, finding.why, findingNotes.get(finding.id)?.text ?? ''], terms)
+      if (hit) findingHits.push({ id: finding.id, productId: product.id, product: product.name, date: localDate(new Date(finding.createdAt)), headline: finding.headline, status: finding.status, inHeadline: hit.field === 0, inNote: hit.field === 2, snippet: snippetOf(hit), at: finding.createdAt })
     }
   }
   findingHits.sort((a, b) => b.at.localeCompare(a.at))

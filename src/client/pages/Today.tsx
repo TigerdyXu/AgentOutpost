@@ -14,6 +14,7 @@ import { PROMOTED, VERIFY_BUDGET } from '../notes.ts'
 import { useShell } from '../shell/context.ts'
 import { clockTime } from '../time.ts'
 import { FindingCard } from '../ui/FindingCard.tsx'
+import { useNotes } from '../ui/useNotes.ts'
 import { ChevronIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { Tag } from '../ui/Tag.tsx'
@@ -59,6 +60,7 @@ export function Today(): ReactNode {
   // The answer carries the day it was asked for, so that the previous day's page does not stand in while the next one loads.
   const { data, error } = usePoll(async () => ({ date, view: await call('GET brief', { query: date ? { date } : {} }) }), [date], POLL_MS)
   const view = data && data.date === date ? data.view : undefined
+  const { noteOf, saved: noteSaved } = useNotes(view?.notes)
 
   // Cards read on this page, ahead of what the server says; and the folded row.
   const [read, setRead] = useState<ReadonlySet<Id>>(new Set())
@@ -137,7 +139,7 @@ export function Today(): ReactNode {
     return <FindingCard key={finding.id} finding={finding} product={product} trackName={trackName}
       sources={finding.sourceIds.flatMap(id => index.sources.get(id) ?? [])} changed={changed} read={finding.read || read.has(finding.id)}
       promoted={finding.verifiedOn === brief!.date && finding.statusNote === PROMOTED}
-      minor={isMinor} onRead={id => { void markRead(id) }} />
+      minor={isMinor} onRead={id => { void markRead(id) }} note={noteOf(finding.id)} onNoteSaved={noteSaved} />
   }
 
   const shownMain = main.filter(f => visible(f.productId))

@@ -178,6 +178,15 @@ describe('outpost_lookup: a product', () => {
     expect(ask('Personal Agent')).toMatchObject({ topics: [{ conclusions: [{ title: '订阅', products: ['Muse'] }] }] })
   })
 
+  it('gives the user’s own notes, marked as theirs (M3.3)', () => {
+    const f = finding('p1', '上线记忆功能', 'verified')
+    repo.setNote('product', 'p1', '我觉得它会先在抖音里铺开')
+    repo.setNote('finding', f.id, '要看会不会收费')
+    const answer = ask('小豆')
+    expect(answer).toMatchObject({ note: expect.stringContaining('yourNote'), product: { yourNote: '我觉得它会先在抖音里铺开' }, recentFindings: [{ headline: '上线记忆功能', yourNote: '要看会不会收费' }] })
+    expect(ask('Muse')).not.toHaveProperty('product.yourNote')
+  })
+
   it('keeps a source’s number when an earlier one is gone', () => {
     const kept = source('https://kept.example/')
     card('p1', 'business', '会员制', { sourceIds: ['gone', kept.id] })

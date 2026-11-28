@@ -76,5 +76,10 @@ function firstMessage(repo: Repo, finding: Finding, product: Product): string {
     status: STATUS[finding.status] + (finding.statusNote ? `（${finding.statusNote}）` : ''),
     sources: sources.join('\n') || '  （没有记录来源）',
     cards: cards.join('\n\n') || '（这个产品还没有档案卡片）',
+    // The user's own notes (M3.3): their view, which the answer can take into account but never cite.
+    notes: [
+      repo.getNote('product', product.id) && `- 对这个产品：${repo.getNote('product', product.id)!.text}`,
+      repo.getNote('finding', finding.id) && `- 对这条发现：${repo.getNote('finding', finding.id)!.text}`,
+    ].filter(Boolean).join('\n') || '（没写）',
   })
 }

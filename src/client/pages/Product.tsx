@@ -5,11 +5,12 @@
  * asked for, shows up by itself.
  */
 import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { DimensionKey, Id } from '../../core/types.ts'
+import type { DimensionKey, Id, Note } from '../../core/types.ts'
 import { call, describeError, usePoll } from '../api.ts'
 import { useShell } from '../shell/context.ts'
 import type { ProductTab, Route } from '../shell/route.ts'
 import { clockTime, localDay, shortDay } from '../time.ts'
+import { NoteBlock } from '../ui/NoteBlock.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
@@ -43,6 +44,9 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
   const [starting, setStarting] = useState(false)
   const [updateNote, setUpdateNote] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<ReadonlySet<DimensionKey>>(() => new Set(expand ? [expand] : []))
+  // The user's note on the product (M3.3): the one saved here, until the next read of the profile brings it.
+  const [savedNote, setSavedNote] = useState<Note | null | undefined>(undefined)
+  const [writingNote, setWritingNote] = useState(false)
   useEffect(() => { if (expand) setExpanded(previous => previous.has(expand) ? previous : new Set(previous).add(expand)) }, [expand])
 
   const profile = usePoll(() => call('GET products/:id', { id: productId }), [productId],
@@ -174,6 +178,13 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       </div>}
     </header>
     {updateNote && <p className="op-phead-error" role="alert">{updateNote}</p>}
+    {view && (() => {
+      const note = savedNote !== undefined ? savedNote : view.note
+      return note || writingNote
+        ? <NoteBlock kind="product" subjectId={view.product.id} note={note} editing={writingNote} onEditing={setWritingNote}
+          onSaved={kept => { setSavedNote(kept); void reloadProfile() }} />
+        : <button type="button" className="op-link op-note-add" onClick={() => { setWritingNote(true) }}>{t('note.addProduct')}</button>
+    })()}
     {!view && profile.error && <p className="op-day-problem" role="alert">{describeError(t, profile.error)}</p>}
 
     {view && <>
@@ -188,7 +199,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       <div className="op-tabpanel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-${tab}`}>
         {tab === 'dossier' && <DossierTab view={view} expanded={expanded} onToggle={toggle} focus={expand} now={now} />}
         {tab === 'feed' && (feed.data
-          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} focus={finding} />
+          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} focus={finding} notes={feed.data.notes} />
           : feed.error && <p className="op-day-problem" role="alert">{describeError(t, feed.error)}</p>)}
         {tab === 'sources' && <SourcesTab view={view} />}
         {tab === 'topics' && <TopicsTab productId={view.product.id} />}

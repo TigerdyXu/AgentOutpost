@@ -229,6 +229,16 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE tracks ADD COLUMN position INTEGER;
   ALTER TABLE track_products ADD COLUMN position INTEGER;
   `,
+  // 8: the user's own notes on a product or a finding (M3.3), one per thing.
+  `
+  CREATE TABLE notes (
+    kind TEXT NOT NULL CHECK (kind IN ('product', 'finding')),
+    subject_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (kind, subject_id)
+  );
+  `,
 ]
 
 /**

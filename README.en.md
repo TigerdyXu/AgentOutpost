@@ -44,7 +44,9 @@ You need:
 
 **7. Search.** The box at the top of the middle column: type a product, a company, or words from a dossier, a finding or a topic, and the hits are listed by kind with the words in bold; one click opens that card or finding. Several words separated by spaces must all be there.
 
-**8. Ask from any chat.** In any chat of DeepSeek Harness, ask "what does Outpost have on 小豆's business model?" or "who charges in the Personal Agent track?": the AI looks it up with `outpost_lookup` and answers from the checked dossiers and their sources, saying as of which day. It only reads and costs Outpost nothing; to keep other chats from seeing Outpost, turn it off in Outpost's Settings.
+**8. Your own notes.** Under a product page's title, and beside "Ask more" on every finding, write a note of your own: what you think, what to watch. Only you see it and research never reads it; search, Ask more and other chats looking Outpost up use it, marked as your view.
+
+**9. Ask from any chat.** In any chat of DeepSeek Harness, ask "what does Outpost have on 小豆's business model?" or "who charges in the Personal Agent track?": the AI looks it up with `outpost_lookup` and answers from the checked dossiers and their sources, saying as of which day. It only reads and costs Outpost nothing; to keep other chats from seeing Outpost, turn it off in Outpost's Settings.
 
 <img src="docs/images/add-product.png" width="760" alt="Add product">
 

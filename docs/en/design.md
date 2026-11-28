@@ -30,6 +30,8 @@
 
 > **M3.2 changes (2026-11-28)**: a search box at the top of the middle column searches products, tracks, dossier cards, findings and topics (every word required, case and width aside); hits are listed by kind with the words in bold, and open the card or finding itself. For details see [`docs/en/m3.2-design.md`](m3.2-design.md).
 
+> **M3.3 changes (2026-11-28)**: a product and every finding can have a note of the user's own (≤2000 characters on a product, ≤500 on a finding), which research and checks never read; search, Ask more and other chats looking Outpost up use it, marked as the user's view. Database version 8. For details see [`docs/en/m3.3-design.md`](m3.3-design.md).
+
 ## 1. Why build this
 
 The user keeps following product news in directions such as Personal Agent (Meta Muse, 豆包·小豆, OpenAI Dots, Grok Bots, 蚂蚁灵光 and others). Until now they asked an Agent to search each time (for example, on 11-16 in 飞书 (Feishu) they asked dsh-superagent to "check what is new lately among personal agents"). The problems with an ad hoc search: every time it starts from zero, results do not connect, you cannot see "what changed", and it is hard to tell true from false.

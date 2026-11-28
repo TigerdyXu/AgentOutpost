@@ -337,7 +337,7 @@ describe('GET brief', () => {
   it('returns another day\'s brief, and an empty one for a day without', async () => {
     expect(ok(await host.call('GET', 'brief?date=2026-11-23')).json<ApiResponse<'GET brief'>>()).toMatchObject({ brief: { date: '2026-11-23' }, prevDate: '2026-11-20' })
     expect(ok(await host.call('GET', 'brief?date=2026-11-20')).json<ApiResponse<'GET brief'>>().prevDate).toBeNull()
-    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-23' })
+    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-23', notes: {} })
   })
 
   it('says which dimensions each finding actually changed: those whose card a version of it cites, not the ones it names', async () => {
@@ -2093,6 +2093,28 @@ describe('the track page (M2.1)', () => {
     ok(await host.call('POST', 'lookup', { on: true }))
     expect(host.driver.shared.has('outpost_lookup')).toBe(true)
     expect((await host.call('POST', 'lookup', { on: 'yes' })).status).toBe(400)
+  })
+
+  it('writes, shows and erases the user’s notes on products and findings (M3.3)', async () => {
+    const t = seed()
+    addProduct('p1', 'Cursor', 'tracking', t.id)
+    const f = addFinding('p1')
+    putBrief(TODAY, [f.id])
+    const saved = ok(await host.call('POST', 'notes/product/p1', { text: '  要盯它的定价  ' })).json<ApiResponse<'POST notes/:kind/:id'>>()
+    expect(saved.note).toMatchObject({ kind: 'product', subjectId: 'p1', text: '要盯它的定价' })
+    ok(await host.call('POST', `notes/finding/${f.id}`, { text: '这条要跟进' }))
+    expect(ok(await host.call('GET', 'products/p1')).json<ApiResponse<'GET products/:id'>>().note?.text).toBe('要盯它的定价')
+    expect(ok(await host.call('GET', 'products/p1/findings')).json<ApiResponse<'GET products/:id/findings'>>().notes[f.id]?.text).toBe('这条要跟进')
+    expect(ok(await host.call('GET', 'brief')).json<ApiResponse<'GET brief'>>().notes[f.id]?.text).toBe('这条要跟进')
+    // Blank erases; too long, an unknown kind or thing are refused.
+    expect(ok(await host.call('POST', 'notes/product/p1', { text: ' ' })).json<ApiResponse<'POST notes/:kind/:id'>>().note).toBeNull()
+    expect(ok(await host.call('GET', 'products/p1')).json<ApiResponse<'GET products/:id'>>().note).toBeNull()
+    expect((await host.call('POST', `notes/finding/${f.id}`, { text: '长'.repeat(501) })).status).toBe(400)
+    expect((await host.call('POST', 'notes/product/p1', { text: '长'.repeat(2000) })).status).toBe(200)
+    expect((await host.call('POST', 'notes/track/p1', { text: 'x' })).status).toBe(404)
+    expect((await host.call('POST', 'notes/finding/nope', { text: 'x' })).status).toBe(404)
+    expect((await host.call('POST', 'notes/product/nope', { text: 'x' })).status).toBe(404)
+    expect((await host.call('POST', 'notes/product/p1', { words: 'x' })).status).toBe(400)
   })
 
   it('searches what Outpost holds, and refuses a query over 60 characters (M3.2)', async () => {

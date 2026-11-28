@@ -3663,3 +3663,88 @@ button.op-run-open:focus-visible {
   border-color: var(--dsw-alias-link);
   box-shadow: 0 0 0 1px var(--dsw-alias-link);
 }
+
+/* ---- M3.3: the user's own notes ---- */
+
+/* The user's words, set apart from what the AI wrote: a block tinted with the link colour, no bar at its side. */
+.op-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--dsw-radius-md);
+  background: color-mix(in srgb, var(--dsw-alias-link) 7%, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l3);
+}
+
+.op-product > .op-note {
+  margin: 0 0 16px;
+}
+
+.op-note-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.op-note-label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.op-note-date {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.op-note-head > .op-link {
+  margin-left: auto;
+}
+
+.op-note-text {
+  margin: 0;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.op-note-input {
+  min-height: 3em;
+}
+
+.op-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.op-note-count {
+  margin-right: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.op-link[data-tone="danger"] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.op-note-add {
+  align-self: flex-start;
+  margin: 0 0 14px;
+  font-weight: 500;
+}
+
+/* A search hit found in the user's own note: tinted as the note itself is. */
+.op-search-note-tag {
+  padding: 0 6px;
+  border-radius: var(--dsw-radius-xs);
+  background: color-mix(in srgb, var(--dsw-alias-link) 10%, transparent);
+  color: var(--dsw-alias-link);
+  font-size: 13px;
+  font-weight: 600;
+}
