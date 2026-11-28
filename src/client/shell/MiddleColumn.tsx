@@ -2,7 +2,7 @@
  * The middle column (design §5.1, mockup 1 option B): 前哨 with 「＋ 新赛道」; 今日哨报 with its count of new findings;
  * one foldable group per track with its products (blue dot for new findings, 建档中 while baselined) and 「＋ 添加产品」,
  * 挑产品 while the track is being picked and 候选推荐 while candidates wait; 运行记录 (today's spend) and 设置 pinned at the bottom.
- * M1 has no 「赛道概览 · 对比矩阵」 row (that is M2's track page).
+ * M1 has no 「赛道概览 · 对比矩阵」 row (that is M2's track page); the 「⋯」 beside a track's name opens its settings (M1.5).
  */
 import { useState, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
@@ -78,15 +78,21 @@ function DefaultPickRow({ trackId, tracked, onChoose }: { trackId: Id; tracked: 
 }
 
 function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folded: boolean; onFold: () => void; onChoose: () => void }): ReactNode {
-  const { t, picks } = useShell()
+  const { t, picks, route, navigate } = useShell()
   const { track, products, candidatesToReview } = view
   const picking = track.status === 'picking'
+  const editing = route.page === 'editTrack' && route.trackId === track.id
   return <div className="op-group" role="group" aria-label={track.name}>
-    <button type="button" className="op-group-head" aria-expanded={!folded} onClick={onFold}>
-      <ChevronIcon />
-      <span className="op-group-name">{track.name}</span>
-      <span className="op-group-end">{picking ? t('nav.picking') : products.length}</span>
-    </button>
+    <div className="op-group-top">
+      <button type="button" className="op-group-head" aria-expanded={!folded} onClick={onFold}>
+        <ChevronIcon />
+        <span className="op-group-name">{track.name}</span>
+        <span className="op-group-end">{picking ? t('nav.picking') : products.length}</span>
+      </button>
+      {/* The track's own page: its name, what it follows, its dimensions, and deleting it (M1.5). */}
+      <button type="button" className="op-group-more" title={t('nav.trackSettings', { track: track.name })} aria-label={t('nav.trackSettings', { track: track.name })}
+        aria-current={editing ? 'page' : undefined} onClick={() => { if (!editing) navigate({ page: 'editTrack', trackId: track.id }); onChoose() }}>⋯</button>
+    </div>
     {!folded && <div className="op-group-rows">
       {picking && (picks[track.id] === undefined ? <DefaultPickRow trackId={track.id} tracked={new Set(products.map(item => item.product.id))} onChoose={onChoose} />
         : <PickRow trackId={track.id} count={picks[track.id]} onChoose={onChoose} />)}

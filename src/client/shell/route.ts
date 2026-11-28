@@ -7,6 +7,7 @@ export type Route =
   | { page: 'today'; date?: string }
   | { page: 'newTrack'; trackId?: Id }
   | { page: 'addProduct'; trackId: Id }
+  | { page: 'editTrack'; trackId: Id }
   | { page: 'product'; productId: Id; tab: ProductTab; expand?: DimensionKey }
   | { page: 'runs' }
   | { page: 'settings' }
@@ -23,7 +24,7 @@ export function parseRoute(value: unknown): Route | undefined {
   switch (page) {
     case 'today': { const day = text(date); return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? { page, date: day } : { page } }
     case 'newTrack': { const id = text(trackId); return id ? { page, trackId: id } : { page } }
-    case 'addProduct': { const id = text(trackId); return id ? { page, trackId: id } : undefined }
+    case 'addProduct': case 'editTrack': { const id = text(trackId); return id ? { page, trackId: id } : undefined }
     case 'product': {
       const id = text(productId)
       if (!id) return undefined
@@ -66,5 +67,6 @@ export function samePage(a: Route, b: Route): boolean {
   if (a.page === 'product' && b.page === 'product') return a.productId === b.productId
   if (a.page === 'newTrack' && b.page === 'newTrack') return a.trackId === b.trackId
   if (a.page === 'addProduct' && b.page === 'addProduct') return a.trackId === b.trackId
+  if (a.page === 'editTrack' && b.page === 'editTrack') return a.trackId === b.trackId
   return true
 }

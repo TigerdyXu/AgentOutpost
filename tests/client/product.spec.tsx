@@ -7,7 +7,7 @@ import { Product } from '../../src/client/pages/Product.tsx'
 import { App } from '../../src/client/shell/App.tsx'
 import type { Route } from '../../src/client/shell/route.ts'
 import type { Shell } from '../../src/client/shell/context.ts'
-import { all, card, click, facts, fail, finding, find, mount, product, productView, run, settle, source, state, stubApi, t, text, track, tracked, type, unmount } from '../fixtures/client.tsx'
+import { all, card, click, facts, fail, finding, find, mount, product, productView, run, settle, source, state, stubApi, t, tEn, text, track, tracked, type, unmount } from '../fixtures/client.tsx'
 
 // ---- one product: 豆包·小豆, with the six default dimensions ----
 
@@ -654,7 +654,7 @@ describe('the ⋯ menu', () => {
     expect(more().getAttribute('aria-expanded')).toBe('false')
     await click(more())
     expect(more().getAttribute('aria-expanded')).toBe('true')
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
     await click(control('暂停跟踪'))
     expect(patches(api)).toEqual([['products/p1', { status: 'paused' }]])
     // The menu closes, and the page and the column read the change.
@@ -663,7 +663,7 @@ describe('the ⋯ menu', () => {
     unmount()
     const paused = await show(view({ product: { ...doubao, status: 'paused', dailyBudgetYuan: 2.5 } }))
     await click(more())
-    expect(items()).toEqual(['恢复跟踪', '每日预算：¥2.5', '移到其他赛道…', '也加到其他赛道…'])
+    expect(items()).toEqual(['恢复跟踪', '每日预算：¥2.5', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
     await click(control('恢复跟踪'))
     expect(patches(paused.api)).toEqual([['products/p1', { status: 'tracking' }]])
   })
@@ -671,7 +671,56 @@ describe('the ⋯ menu', () => {
   it('offers neither pausing nor resuming while the product is being baselined', async () => {
     await show(view({ product: { ...doubao, status: 'baselining' } }))
     await click(more())
-    expect(items()).toEqual(['每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    expect(items()).toEqual(['每日预算：不限', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
+  })
+
+  it('edits the name, company and official sites in the menu (M1.5)', async () => {
+    const { api } = await show(view({ product: { ...doubao, officialDomains: ['doubao.com'] } }))
+    await click(more())
+    await click(control('编辑名称和官网…'))
+    const [name, company, site] = all<HTMLInputElement>('[role="menu"] input')
+    expect([name!.value, company!.value, site!.value]).toEqual(['豆包·小豆', '字节跳动', 'doubao.com'])
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('以后的调研、核查都用新名字')
+    await type(name!, ' 小豆 ')
+    await type(site!, 'doubao.com， https://www.xiaodou.cn ')
+    await click('保存')
+    expect(patches(api)).toEqual([['products/p1', { name: '小豆', company: '字节跳动', officialDomains: ['doubao.com', 'https://www.xiaodou.cn'] }]])
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it('does not send an empty name, and says a refusal of the host in the menu', async () => {
+    const { api } = await show(view(), {}, { 'PATCH products/:id': fail(409, '已经有一个「Meta Muse」在跟踪了。想合并的话，删掉其中一个') })
+    await click(more())
+    await click(control('编辑名称和官网…'))
+    const [name] = all<HTMLInputElement>('[role="menu"] input')
+    await type(name!, '  ')
+    await click('保存')
+    expect(patches(api)).toEqual([])
+    expect(document.querySelector('[role="menu"] [role="alert"]')?.textContent).toBe('请填名称')
+    await type(name!, 'Meta Muse')
+    await click('保存')
+    expect(document.querySelector('[role="menu"] [role="alert"]')?.textContent).toBe('已经有一个「Meta Muse」在跟踪了。想合并的话，删掉其中一个')
+  })
+
+  it('deletes the product after asking once more, and goes to the brief (M1.5)', async () => {
+    const { api, context } = await show(view(), {}, { 'POST products/:id/delete': { ok: true } })
+    await click(more())
+    await click(control('删除产品…'))
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('删除「豆包·小豆」？档案、发现和它在哨报里的条目都会删掉，不能恢复。花费记录保留。')
+    expect(api.requests.filter(request => request.method === 'POST')).toEqual([])
+    await click(find('删除', '[role="menu"] button'))
+    expect(api.requests.filter(request => request.method === 'POST').map(request => request.path)).toEqual(['products/p1/delete'])
+    expect(context.refresh).toHaveBeenCalled()
+    expect(context.navigate).toHaveBeenLastCalledWith({ page: 'today' })
+  })
+
+  it('says, in English too, why a product cannot be deleted yet', async () => {
+    const { context } = await show(view(), { t: tEn }, { 'POST products/:id/delete': fail(409, '「豆包·小豆」正在建档、更新或核查，等它跑完再删') })
+    await click(find('More actions'))
+    await click(control('Delete product…'))
+    await click(find('Delete', '[role="menu"] button'))
+    expect(document.querySelector('[role="menu"] [role="alert"]')?.textContent).toBe('“豆包·小豆” is being profiled, updated or checked; delete it once that is over')
+    expect(context.navigate).not.toHaveBeenCalledWith({ page: 'today' })
   })
 
   it('sets the daily budget of the product, and clears it', async () => {
@@ -837,24 +886,24 @@ describe('the ⋯ menu, tracks', () => {
   it('offers move only when the product is in one track, and remove per track when in several', async () => {
     await show(view(), { state: alone }, MOVED)
     await click(more())
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
-    expect(all('[role="menuitem"]').map(item => item.getAttribute('aria-expanded'))).toEqual([null, null, 'false', 'false'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
+    expect(all('[role="menuitem"]').map(item => item.getAttribute('aria-expanded'))).toEqual([null, null, null, 'false', 'false', null])
     unmount()
     await show(view(), { state: twice }, MOVED)
     await click(more())
     // Moving is moving out of the one track it is in; with several it is taking it out of one, so that is what is offered.
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉', '删除产品…'])
   })
 
   it('offers no track entry when the page does not know the product’s tracks', async () => {
     // The state is not read yet, or does not have the product in any track (it is not followed): nothing to move or remove.
     await show(view(), { state: undefined }, MOVED)
     await click(more())
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '删除产品…'])
     unmount()
     await show(view(), { state: state({ tracks: [track('t1', 'Personal Agent', [tracked(muse)], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [], { dimensions: DIMENSIONS })] }) }, MOVED)
     await click(more())
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '删除产品…'])
   })
 
   it('move lists the other active tracks and reports the result', async () => {
@@ -937,7 +986,7 @@ describe('the ⋯ menu, tracks', () => {
     const stuck = state({ tracks: [track('t1', 'Personal Agent', [mine], { dimensions: DIMENSIONS }), track('t4', '旧赛道', [], { dimensions: DIMENSIONS, status: 'archived' })] })
     const { api } = await show(view(), { state: stuck }, MOVED)
     await click(more())
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
     for (const name of ['移到其他赛道…', '也加到其他赛道…']) {
       const entry = control(name)
       expect(entry.getAttribute('aria-disabled'), name).toBe('true')
@@ -951,7 +1000,7 @@ describe('the ⋯ menu, tracks', () => {
     expect(all('[role="menu"] [role="group"]')).toHaveLength(0)
     expect(sent(api)).toEqual([])
     // A disabled entry is still one the arrow keys reach, so that a reader of the screen hears why it cannot be used.
-    control('每日预算：不限').focus()
+    control('编辑名称和官网…').focus()
     await press(document.activeElement!, 'ArrowDown')
     expect(document.activeElement).toBe(control('移到其他赛道…'))
     // In several tracks, with every other one joined, only 也加到 is out of use; taking it out of a track still is not.
@@ -959,7 +1008,7 @@ describe('the ⋯ menu, tracks', () => {
     const full = state({ tracks: [track('t1', 'Personal Agent', [mine], { dimensions: DIMENSIONS }), track('t2', '手机 AI 助理', [mine], { dimensions: DIMENSIONS })] })
     await show(view(), { state: full }, MOVED)
     await click(more())
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '也加到其他赛道…', '从「Personal Agent」拿掉', '从「手机 AI 助理」拿掉', '删除产品…'])
     expect(control('也加到其他赛道…').getAttribute('aria-disabled')).toBe('true')
     expect(control('从「手机 AI 助理」拿掉').getAttribute('aria-disabled')).toBeNull()
     expect(all('[role="menu"] .op-menu-note').map(note => note.textContent)).toEqual(['还没有别的赛道'])
@@ -1120,7 +1169,7 @@ describe('the ⋯ menu, tracks', () => {
     expect(rowsOf('Personal Agent')).toEqual(['Meta Muse'])
     expect(rowsOf('手机 AI 助理')).toEqual(['豆包·小豆', 'Meta Muse'])
     // Now it is in 手机 AI 助理 alone: the way back is a move to the first.
-    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '移到其他赛道…', '也加到其他赛道…'])
+    expect(items()).toEqual(['暂停跟踪', '每日预算：不限', '编辑名称和官网…', '移到其他赛道…', '也加到其他赛道…', '删除产品…'])
     await click(control('移到其他赛道…'))
     expect(options()).toEqual(['Personal Agent'])
   })

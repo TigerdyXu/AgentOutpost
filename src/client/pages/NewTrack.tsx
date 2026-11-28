@@ -11,7 +11,7 @@
  */
 import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { DEFAULT_DIMENSIONS } from '../../core/dimensions.ts'
-import type { Candidate, Heat, Id, Track } from '../../core/types.ts'
+import type { Candidate, Dimension, Heat, Id, Track } from '../../core/types.ts'
 import type { CandidatesView, RunRow } from '../../host/api.ts'
 import { call, describeError, useCandidates } from '../api.ts'
 import { yuan } from '../shell/MiddleColumn.tsx'
@@ -39,7 +39,6 @@ const COST_DAYS = 7
 const errorOf = (failure: unknown) => failure instanceof Error ? failure : new Error(String(failure))
 /** Two labels are one dimension when they differ in case or width only (as the host reads them). */
 const sameLabel = (label: string) => label.normalize('NFKC').trim().toLowerCase()
-const DEFAULT_LABELS = DEFAULT_DIMENSIONS.map(dimension => dimension.label)
 const DEFAULT_KEYS = new Set(DEFAULT_DIMENSIONS.map(dimension => dimension.key))
 
 // ---- what was picked, kept while the panel stays open ----
@@ -78,7 +77,9 @@ interface FormValue { name: string; brief: string; extra: string[] }
 const extraLabels = (track: Track) => track.dimensions.filter(dimension => !DEFAULT_KEYS.has(dimension.key)).map(dimension => dimension.label)
 
 /** The form of step 1, to create a track and to change it: name, one sentence, and the dimensions. */
-function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSubmit, onCancel }: {
+function TrackForm({ initial, fixed, submitLabel, busyLabel, busy, problem, hint, onSubmit, onCancel }: {
+  /** The dimensions the form shows but does not change: the six defaults, as the track has them (编辑赛道 may have renamed or removed some). */
+  fixed: readonly Dimension[]
   initial: FormValue; submitLabel: string; busyLabel: string; busy: boolean; problem: string | null; hint?: string
   onSubmit: (value: FormValue) => void; onCancel?: () => void
 }): ReactNode {
@@ -94,7 +95,7 @@ function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSub
   const withDraft = () => {
     const label = draft.trim()
     // A default dimension is known by its name in either language: 「Positioning」 is 定位, not another one.
-    const known = new Set([...DEFAULT_LABELS, ...DEFAULT_DIMENSIONS.map(dimension => labelOf(t, dimension)), ...extra].map(sameLabel))
+    const known = new Set([...fixed.flatMap(dimension => [dimension.label, labelOf(t, dimension)]), ...extra].map(sameLabel))
     return label && !known.has(sameLabel(label)) && extra.length < MAX_EXTRA_DIMENSIONS ? [...extra, label] : extra
   }
   const addDimension = () => {
@@ -129,7 +130,7 @@ function TrackForm({ initial, submitLabel, busyLabel, busy, problem, hint, onSub
     <div className="op-field">
       <div className="op-field-head"><span id={`${ids}-dimensions`}>{t('new.dimensions')}</span></div>
       <div className="op-chips" role="group" aria-labelledby={`${ids}-dimensions`}>
-        {DEFAULT_DIMENSIONS.map(dimension => <span key={dimension.key} className="op-chip">{labelOf(t, dimension)}</span>)}
+        {fixed.map(dimension => <span key={dimension.key} className="op-chip">{labelOf(t, dimension)}</span>)}
         {extra.map(label => <span key={label} className="op-chip" data-custom="">
           {label}
           <button type="button" className="op-chip-remove" aria-label={t('new.dimensionRemove', { label })}
@@ -178,7 +179,7 @@ function CreateTrack(): ReactNode {
   return <div className="op-page op-newtrack">
     <Steps current={1} minutes={null} />
     <h1 className="op-page-title">{t('page.newTrack')}</h1>
-    <TrackForm initial={{ name: '', brief: '', extra: [] }} submitLabel={t('new.submit')} busyLabel={t('new.creating')} busy={busy} problem={problem}
+    <TrackForm initial={{ name: '', brief: '', extra: [] }} fixed={DEFAULT_DIMENSIONS} submitLabel={t('new.submit')} busyLabel={t('new.creating')} busy={busy} problem={problem}
       hint={t('new.waitHint')} onSubmit={value => { void create(value) }} />
   </div>
 }
@@ -217,7 +218,7 @@ function Summary({ track }: { track: Track }): ReactNode {
     }
   }
   return <div className="op-track-summary" data-editing="">
-    <TrackForm initial={initial} submitLabel={t('new.save')} busyLabel={t('new.saving')} busy={busy} problem={problem}
+    <TrackForm initial={initial} fixed={track.dimensions.filter(dimension => DEFAULT_KEYS.has(dimension.key))} submitLabel={t('new.save')} busyLabel={t('new.saving')} busy={busy} problem={problem}
       onSubmit={value => { void save(value) }} onCancel={() => { setEditing(false) }} />
   </div>
 }

@@ -1,6 +1,7 @@
 /**
- * The 「⋯」 menu of the product's header: pause or resume tracking, the product's own daily budget, and the tracks it is in
- * (移到其他赛道…, 也加到其他赛道…, and 从「X」拿掉 for each of several). A small popover that is opened and closed by its
+ * The 「⋯」 menu of the product's header: pause or resume tracking, the product's own daily budget, its name, company and
+ * official sites (M1.5), the tracks it is in (移到其他赛道…, 也加到其他赛道…, and 从「X」拿掉 for each of several), and
+ * deleting it (M1.5, asked once more in the menu before it is done). A small popover that is opened and closed by its
  * button, closes with Escape (the focus returns to the button), with a click elsewhere and when the focus moves elsewhere,
  * and is walked with the arrow keys. The budget and the choice of a track open inline under their entry; a track is chosen
  * from a list of the menu's own entries, which the arrow keys walk like the others (→ opens it, ← folds it away). A refused
@@ -12,10 +13,15 @@ import { describeError } from '../../api.ts'
 import { useShell } from '../../shell/context.ts'
 import { ChevronIcon } from '../../ui/icons.tsx'
 
-/** What the host takes as a product's daily budget in yuan. */
+/** What the host takes as a product's daily budget in yuan; and a name or company, in characters. */
 const MAX_BUDGET = 100_000
+const MAX_NAME = 30
 
-export type ProductChange = { status?: 'tracking' | 'paused'; dailyBudgetYuan?: number | null }
+export type ProductChange = { status?: 'tracking' | 'paused'; dailyBudgetYuan?: number | null; name?: string; company?: string; officialDomains?: string[] }
+
+/** The official sites as the field shows them, and as the field's text is sent: separated by commas (either width), spaces or 、. */
+const sitesText = (domains: string[]) => domains.join(', ')
+const sitesOf = (text: string) => text.split(/[,，、\s]+/).map(site => site.trim()).filter(Boolean)
 
 /** A track as the menu names it. */
 export interface TrackRef { id: Id; name: string }
@@ -34,9 +40,11 @@ export interface ProductMenuProps {
   tracks: ProductTracks | null
   /** Makes the change, and answers how many cards it asked for (0 for taking a product out of a track). */
   onTracks: (change: TrackChange) => Promise<number>
+  /** Deletes the product (the page then leaves it); a refusal rejects, and the menu says why. */
+  onDelete: () => Promise<void>
 }
 
-export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenuProps): ReactNode {
+export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: ProductMenuProps): ReactNode {
   const { t } = useShell()
   const menuId = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -46,6 +54,9 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
   const budgetItem = useRef<HTMLButtonElement>(null)
   const backToItem = useRef(false)
   const [value, setValue] = useState('')
+  // The form of name, company and sites, and the question before deleting: each opens in the menu in place of its entry.
+  const [profile, setProfile] = useState<{ name: string; company: string; sites: string } | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // Which list of tracks is open, what was done last (said until the next thing is tried), and the entry that takes the
@@ -63,6 +74,8 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
   const close = (refocus: boolean) => {
     setOpen(false)
     setEditing(false)
+    setProfile(null)
+    setConfirming(false)
     setPicking(null)
     setProblem(null)
     setDone(null)
@@ -169,6 +182,36 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
     }
   }
 
+  const saveProfile = (event: FormEvent) => {
+    event.preventDefault()
+    if (!profile) return
+    const name = profile.name.trim()
+    if (!name) { setProblem(t('product.nameRequired')); return }
+    void apply({ name, company: profile.company.trim(), officialDomains: sitesOf(profile.sites) })
+  }
+
+  const remove = async () => {
+    if (working.current) return
+    working.current = true
+    setBusy(true)
+    setProblem(null)
+    try {
+      await onDelete()
+    } catch (error) {
+      if (isOpen.current) setProblem(describeError(t, error instanceof Error ? error : new Error(String(error))))
+    } finally {
+      working.current = false
+      setBusy(false)
+    }
+  }
+
+  /** Opens one of the forms in the menu, closing whatever else was open there. */
+  const openForm = (which: 'profile' | 'confirm') => {
+    setPicking(null); setDone(null); setProblem(null); setEditing(false)
+    setProfile(which === 'profile' ? { name: product.name, company: product.company, sites: sitesText(product.officialDomains) } : null)
+    setConfirming(which === 'confirm')
+  }
+
   const saveBudget = (event: FormEvent) => {
     event.preventDefault()
     const text = value.trim()
@@ -208,7 +251,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
       {settled && <button type="button" role="menuitem" className="op-menu-item" disabled={busy}
         onClick={() => { void apply({ status: product.status === 'paused' ? 'tracking' : 'paused' }) }}>{t(product.status === 'paused' ? 'product.resume' : 'product.pause')}</button>}
       {!editing && <button type="button" role="menuitem" className="op-menu-item" ref={budgetItem}
-        onClick={() => { setValue(product.dailyBudgetYuan === null ? '' : String(product.dailyBudgetYuan)); setPicking(null); setDone(null); setEditing(true) }}>{budget}</button>}
+        onClick={() => { setValue(product.dailyBudgetYuan === null ? '' : String(product.dailyBudgetYuan)); setPicking(null); setDone(null); setProfile(null); setConfirming(false); setEditing(true) }}>{budget}</button>}
       {editing && <form className="op-menu-form" noValidate onSubmit={saveBudget}>
         <label className="op-menu-label">
           <span>{t('product.budget')}</span>
@@ -221,12 +264,45 @@ export function ProductMenu({ product, onChange, tracks, onTracks }: ProductMenu
           <button type="submit" className="op-button" data-size="small" data-variant="primary" disabled={busy}>{t('product.budgetSave')}</button>
         </div>
       </form>}
+      {!profile && <button type="button" role="menuitem" className="op-menu-item" onClick={() => { openForm('profile') }}>{t('product.edit')}</button>}
+      {profile && <form className="op-menu-form" noValidate onSubmit={saveProfile}>
+        <label className="op-menu-label">
+          <span>{t('product.name')}</span>
+          <input className="op-input" value={profile.name} maxLength={MAX_NAME} autoFocus autoComplete="off"
+            onChange={event => { setProfile({ ...profile, name: event.target.value }); setProblem(null) }} />
+        </label>
+        <label className="op-menu-label">
+          <span>{t('product.company')}</span>
+          <input className="op-input" value={profile.company} maxLength={MAX_NAME} autoComplete="off"
+            onChange={event => { setProfile({ ...profile, company: event.target.value }); setProblem(null) }} />
+        </label>
+        <label className="op-menu-label">
+          <span>{t('product.site')}</span>
+          <input className="op-input" value={profile.sites} autoComplete="off" placeholder="example.com"
+            onChange={event => { setProfile({ ...profile, sites: event.target.value }); setProblem(null) }} />
+        </label>
+        <p className="op-menu-hint">{t('product.siteHint')}</p>
+        <p className="op-menu-hint">{t('product.renameHint')}</p>
+        <div className="op-menu-actions">
+          <button type="button" className="op-button" data-size="small" onClick={() => { setProfile(null); setProblem(null) }}>{t('product.editCancel')}</button>
+          <button type="submit" className="op-button" data-size="small" data-variant="primary" disabled={busy}>{t('product.editSave')}</button>
+        </div>
+      </form>}
       {mine.length > 0 && <div className="op-menu-tracks" role="none">
         {mine.length === 1 && pickEntry('move')}
         {pickEntry('link')}
         {nowhere && <p className="op-menu-note" id={ids.note}>{t('product.noOtherTrack')}</p>}
         {mine.length > 1 && mine.map(track => <button key={track.id} type="button" role="menuitem" className="op-menu-item op-menu-clip" title={track.name}
           onClick={() => { void place({ kind: 'unlink', from: track.id }, track.name) }}>{t('product.remove', { track: track.name })}</button>)}
+      </div>}
+      {!confirming && <button type="button" role="menuitem" className="op-menu-item op-menu-danger" onClick={() => { openForm('confirm') }}>{t('product.delete')}</button>}
+      {confirming && <div className="op-menu-form" role="group" aria-label={t('product.delete')}>
+        <p className="op-menu-ask">{t('product.deleteAsk', { name: product.name })}</p>
+        <div className="op-menu-actions">
+          <button type="button" className="op-button" data-size="small" autoFocus onClick={() => { setConfirming(false); setProblem(null) }}>{t('product.editCancel')}</button>
+          <button type="button" className="op-button" data-size="small" data-variant="danger" disabled={busy} aria-busy={busy || undefined}
+            onClick={() => { void remove() }}>{busy ? t('product.deleting') : t('product.deleteConfirm')}</button>
+        </div>
       </div>}
       {done && <p className="op-menu-done" role="status">{done}</p>}
       {problem && <p className="op-menu-problem" role="alert">{problem}</p>}

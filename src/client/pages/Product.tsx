@@ -94,6 +94,13 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
     refresh()
   }
 
+  // Deleting: the product is gone, so the brief is where the reader lands; the column is read again.
+  const remove = async () => {
+    await call('POST products/:id/delete', { id: productId })
+    refresh()
+    navigate({ page: 'today' })
+  }
+
   // Moving, adding and taking out: the answer is how many cards were asked for. The page and the column are read again.
   const changeTracks = async (body: TrackChange) => {
     const toppedUp = body.kind === 'move' ? (await call('POST products/:id/move', { id: productId, body: { from: body.from, to: body.to } })).toppedUp
@@ -160,7 +167,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       {view && <div className="op-phead-actions">
         {tab === 'dossier' && openable.length > 0 && <button type="button" className="op-button" data-size="small"
           onClick={() => { setExpanded(allOpen ? new Set() : new Set(openable)) }}>{t(allOpen ? 'product.collapseAll' : 'product.expandAll')}</button>}
-        <ProductMenu product={view.product} onChange={change} tracks={tracks} onTracks={changeTracks} />
+        <ProductMenu product={view.product} onChange={change} tracks={tracks} onTracks={changeTracks} onDelete={remove} />
         <button type="button" className="op-button" data-variant="primary" disabled={updating} aria-busy={updating || undefined}
           onClick={() => { void startUpdate() }}>{t(updating ? 'product.updating' : 'product.updateNow')}</button>
       </div>}

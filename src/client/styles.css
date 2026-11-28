@@ -180,6 +180,54 @@
   cursor: pointer;
 }
 
+/* A track's head: its fold button, and the 「⋯」 that opens the track's settings (M1.5), shown on hover, focus, or while open. */
+.op-group-top {
+  display: flex;
+  align-items: flex-end;
+}
+
+.op-group-top > .op-group-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-group-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  margin: 0 2px 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.op-group-top:hover > .op-group-more,
+.op-group-top:focus-within > .op-group-more,
+.op-group-more[aria-current="page"] {
+  opacity: 1;
+}
+
+.op-group-more[aria-current="page"] {
+  color: var(--dsw-alias-link);
+}
+
+@media (hover: none) {
+  .op-group-more {
+    opacity: 1;
+  }
+}
+
 .op-group-head > .op-glyph {
   flex: none;
   transition: transform 120ms ease;
@@ -379,6 +427,13 @@
 
 .op-button[data-variant="primary"] {
   background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  box-shadow: none;
+}
+
+/* What cannot be undone (deleting): the error colour, solid. */
+.op-button[data-variant="danger"] {
+  background: var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-label-primary-foreground);
   box-shadow: none;
 }
@@ -1019,6 +1074,62 @@ textarea.op-input {
 
 .op-form-problem {
   grid-column: 1 / -1;
+}
+
+/* 编辑赛道 (M1.5): each dimension a field with × after it, as many to a line as fit; then deleting the track, set apart. */
+.op-dim-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px 12px;
+}
+
+.op-dim-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.op-dim-remove {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.op-form-saved {
+  color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 80%, var(--dsw-alias-label-primary));
+}
+
+.op-danger-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-zone-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.op-zone-text {
+  margin: 0;
+  max-width: 720px;
+  font-size: max(15px, var(--dsh-content-font-size));
+  line-height: 1.6;
 }
 
 /* The six dimensions, and the ones the user adds. */
@@ -1824,6 +1935,20 @@ textarea.op-input {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* 删除产品…: the last entry, set apart by a hairline, in the error colour; and its question before it is done. */
+.op-menu-danger {
+  margin-top: 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 var(--dsw-radius-sm) var(--dsw-radius-sm);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.op-menu-ask {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 20px;
 }
 
 .op-menu-problem {
@@ -2808,6 +2933,16 @@ button.op-run-open {
     color: var(--dsw-alias-label-primary);
   }
 
+  .op-dim-remove:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+
+  .op-group-more:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+
   .op-new-track:hover {
     background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 82%, var(--dsw-alias-link));
   }
@@ -2872,6 +3007,7 @@ button.op-run-open {
 
 .op-row:focus-visible,
 .op-group-head:focus-visible,
+.op-group-more:focus-visible,
 .op-new-track:focus-visible,
 .op-nav-toggle:focus-visible,
 .op-button:focus-visible,
@@ -2885,6 +3021,7 @@ button.op-run-open {
 .op-sources-title a:focus-visible,
 .op-chip-add:focus-visible,
 .op-chip-remove:focus-visible,
+.op-dim-remove:focus-visible,
 .op-cite > a:focus-visible,
 button.op-run-open:focus-visible {
   outline: 2px solid var(--dsw-alias-link);
