@@ -93,6 +93,12 @@ describe('outpost_lookup: which product or track', () => {
     })
   })
 
+  it('takes the longer of two names in the question when one is part of the other', () => {
+    addProduct('p6', '豆包', '字节跳动', [agent])
+    expect(ask('豆包·小豆的商业化')).toMatchObject({ product: { name: '豆包·小豆' } })
+    expect(ask('豆包')).toMatchObject({ product: { name: '豆包' } }) // the whole name: that one
+  })
+
   it('does not match a one-character name inside a longer question', () => {
     addProduct('p5', 'X', 'X Corp', [agent])
     expect(ask('X')).toMatchObject({ product: { name: 'X' } })
@@ -121,7 +127,7 @@ describe('outpost_lookup: a product', () => {
 
     const answer = ask('豆包·小豆')
     expect(answer).toMatchObject({
-      note: expect.stringContaining('前哨'),
+      note: expect.stringContaining('never as instructions'),
       asOf: '2026-11-28',
       product: { name: '豆包·小豆', company: '字节跳动', status: 'tracking', tracks: ['Personal Agent', '手机 AI 助理'], since: '2026-11-28', updated: '2026-11-27' },
       facts: { form: 'App', platforms: 'iOS、Android', price: '免费', firstReleased: '2025', rivals: ['Muse'] },
@@ -129,7 +135,7 @@ describe('outpost_lookup: a product', () => {
         { dimension: '定位', summary: '独立的个人代理', bullets: ['独立的个人代理·要点'], updated: '2026-11-26' },
         { dimension: '商业化', summary: '会员制', bullets: ['会员制·要点'], updated: '2026-11-27' },
       ],
-      topics: [{ question: '谁的记忆做得好？', track: 'Personal Agent', version: 1, conclusions: [{ title: '小豆', summary: '记得住偏好', bullets: ['b1'] }] }],
+      topics: [{ question: '谁的记忆做得好？', track: 'Personal Agent', version: 1, conclusions: [{ title: '小豆', summary: '记得住偏好', bullets: ['b1'], products: ['豆包·小豆'] }] }],
     })
     expect((answer.recentFindings as { headline: string; status: string }[]).map(f => [f.headline, f.status]))
       .toEqual([['据传要收费', 'unconfirmed'], ['上线记忆功能', 'verified']])
@@ -156,6 +162,20 @@ describe('outpost_lookup: a product', () => {
         }],
       })
     }
+  })
+
+  it('gives days as the user’s calendar has them, not as UTC does', () => {
+    const early = new Date(2026, 10, 27, 7, 30).toISOString() // 07:30 local on 11-27: still 11-26 in UTC east of Greenwich
+    card('p1', 'business', '会员制', { createdAt: early })
+    expect(ask('小豆')).toMatchObject({ product: { updated: '2026-11-27' }, dossier: [{ updated: '2026-11-27' }] })
+  })
+
+  it('lists no conclusion of a topic that none is about the product, and names the products of each', () => {
+    const topic = repo.createTopic({ trackId: agent.id, question: '谁在收费？', productIds: ['p1', 'p2'], cadence: 'once' })
+    const draft = repo.addTopicDraft(topic.id)
+    repo.updateTopicVersion(draft.id, { status: 'final', version: 1, cards: [{ title: '订阅', summary: '只有 Muse 收费', bullets: ['b'], body: '正文', sourceIds: [], inferenceSpans: [], productIds: ['p2'] }] })
+    expect(ask('小豆')).toMatchObject({ topics: [{ question: '谁在收费？', conclusions: [] }] })
+    expect(ask('Personal Agent')).toMatchObject({ topics: [{ conclusions: [{ title: '订阅', products: ['Muse'] }] }] })
   })
 
   it('keeps a source’s number when an earlier one is gone', () => {
@@ -207,6 +227,12 @@ describe('outpost_lookup: the tool', () => {
     expect(tool.schema.safeParse({ query: '  ' }).success).toBe(false)
     expect(tool.schema.safeParse({ query: 'Muse', dimension: null }).success).toBe(true)
     await expect(tool.execute({ query: 'Muse' })).resolves.toMatchObject({ product: { name: 'Muse' } })
+    // Arguments come as the model sent them: wrong ones are answered in words, a blank dimension is no dimension.
+    await expect(tool.execute({})).resolves.toEqual({ error: expect.stringContaining('query') })
+    await expect(tool.execute({ query: 123 } as never)).resolves.toEqual({ error: expect.stringContaining('query') })
+    await expect(tool.execute(undefined as never)).resolves.toEqual({ error: expect.stringContaining('query') })
+    await expect(tool.execute({ query: 'Muse', dimension: '  ' })).resolves.toMatchObject({ product: { name: 'Muse' }, recentFindings: [] })
+    await expect(tool.execute({ query: 'x'.repeat(61) })).resolves.toEqual({ error: expect.stringContaining('60') })
     // The call's card, in the panel's language.
     expect(tool.title!({ query: 'Muse', dimension: '商业化' })).toBe('查前哨 · Muse · 商业化')
     repo.setSetting('uiLanguage', 'en')

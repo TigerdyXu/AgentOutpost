@@ -392,6 +392,17 @@ describe('Runtime', () => {
     runtime = undefined
   })
 
+  it('does not offer outpost_lookup again once it is stopping', async () => {
+    runtime = host.create()
+    runtime.start()
+    runtime.setLookup(false)
+    const stopped = runtime.stop()
+    runtime.setLookup(true) // a request that came in as Outpost stopped
+    await stopped
+    expect(host.driver.shared.has('outpost_lookup')).toBe(false)
+    runtime = undefined
+  })
+
   it('runs on when outpost_lookup cannot be offered, and says so in the log', () => {
     const share = vi.spyOn(host.driver, 'share').mockImplementation(() => { throw new Error('tool "outpost_lookup" is already registered in this scope') })
     runtime = host.create()

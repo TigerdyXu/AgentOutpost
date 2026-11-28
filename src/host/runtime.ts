@@ -354,7 +354,7 @@ export class Runtime {
    * failure is logged: Outpost runs on without it.
    */
   private shareLookup(): void {
-    if (this.unshareLookup || this.lookupTurnedOff()) return
+    if (this.unshareLookup || this.stopping || this.lookupTurnedOff()) return
     try { this.unshareLookup = this.driver.share(lookupTool(this.repo, () => this.clock.now())) }
     catch (error) { this.log(`could not offer outpost_lookup to other chats: ${messageOf(error)}`) }
   }
