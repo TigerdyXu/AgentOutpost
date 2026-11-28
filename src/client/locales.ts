@@ -246,6 +246,8 @@ const OWN = {
   'topic.delete': ['删除专题', 'Delete topic'],
   'topic.deleteAsk': ['删掉这个专题和它所有的版本？不能恢复，花费记录保留。', 'Delete this topic and all its versions? This cannot be undone; spending records stay.'],
   'topic.deleteConfirm': ['确认删除', 'Delete for good'],
+  'topic.gaveUp': ['已经连续 3 次没出版，前哨不再自己重试；改改问题或产品，再点「立即更新」。', 'Three rounds in a row made no version, so Outpost no longer tries by itself; adjust the question or the products, then click “Update now”.'],
+  'topic.gaveUpShort': ['不再自动重试', 'no longer retried'],
   'topic.noneForProduct': ['还没有涉及它的专题。在赛道页上可以发起一个。', 'No topic is about it yet. Start one on its track’s page.'],
   // M2.2: weekly suggestions.
   'track.weekly.on': ['每周推荐新产品：开', 'Weekly suggestions: on'],

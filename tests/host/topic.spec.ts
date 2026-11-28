@@ -30,7 +30,7 @@ beforeEach(() => {
   time = instantClock(START)
   repo = new Repo(db, () => time.clock.now())
   driver = new FakeDriver()
-  const settings: RuntimeSettings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: null, verifyModel: null, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
+  const settings: RuntimeSettings = { maxParallel: 3, dailyBudgetYuan: 20, sessionTimeoutMin: 30, model: { provider: 'deepseek', model: 'research' }, verifyModel: { provider: 'deepseek', model: 'check' }, briefModel: null, followupModel: null, billingFor: () => 'metered', pricesOf: () => ({ inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.04 }) }
   const runner = new JobRunner({ repo, driver, clock: time.clock, settings: () => settings, log: vi.fn() })
   deps = { repo, runner, clock: time.clock, icons: { fetch: vi.fn(async () => null) } }
   track = repo.createTrack({ name: 'Personal Agent', brief: '', dimensions: DEFAULT_DIMENSIONS.slice(0, 2), status: 'active' })
@@ -87,6 +87,37 @@ describe('runTopic (M2.3)', () => {
     const runs = repo.runsOfDate(TODAY)
     expect(runs.map(r => [r.kind, r.status, r.trackId, r.subject])).toEqual([['topic', 'done', track.id, topic.question], ['topicCheck', 'done', track.id, topic.question]])
     expect(driver.runs[1]!.prompt).toContain('字节跳动、Meta') // the dossier's checker, told whose pages count as official
+    expect(driver.runs.map(spec => spec.model?.model)).toEqual(['research', 'check']) // on the models chosen for research and checks
+    // The two void sources of the card dropped whole are cited by nothing any more: gone with the round, not left behind.
+    expect(repo.getSources(version!.cards[0]!.sourceIds)).toHaveLength(2)
+    expect(db.prepare("SELECT count(*) AS n FROM sources WHERE url LIKE 'https://c.example/%'").get()).toMatchObject({ n: 0 })
+  })
+
+  it('writes nothing, and does not fail, for a topic deleted while its round runs', async () => {
+    driver.script[RESEARCH] = async r => {
+      await r.call('outpost_submit_topic_card', card('记什么', ['https://a.example/1']))
+      repo.deleteTopic(topic.id) // the user deleted it meanwhile
+      await r.done()
+      return completed()
+    }
+    driver.script[CHECK] = check()
+    await expect(runTopic(deps, topic.id, TODAY)).resolves.toBeNull()
+    expect(repo.topicVersions(topic.id)).toEqual([])
+  })
+
+  it('stops trying by itself after three rounds in a row with no version, until one is asked for', async () => {
+    driver.script[RESEARCH] = research([])
+    for (const day of ['2026-11-28', '2026-11-29', '2026-11-30']) {
+      time.set(new Date(`${day}T10:00:00`))
+      await runTopic(deps, topic.id, day)
+    }
+    expect(topicSchedule(repo, topic, '2026-12-01')).toEqual({ last: null, next: null, gaveUp: true })
+    expect(topicDue(repo, topic, '2026-12-01')).toBe(false)
+    driver.script[RESEARCH] = research([card('记什么', ['https://a.example/1'])])
+    driver.script[CHECK] = check()
+    time.set(new Date('2026-12-01T10:00:00'))
+    await runTopic(deps, topic.id, '2026-12-01') // 立即更新
+    expect(topicSchedule(repo, topic, '2026-12-01')).toMatchObject({ last: '2026-12-01', gaveUp: false })
   })
 
   it('builds the next version on the last, told to the researcher', async () => {
@@ -135,25 +166,40 @@ describe('runTopic (M2.3)', () => {
   })
 
   it('is due weekly after its newest version, a one-off only until it has one, and once a day', async () => {
-    expect(topicSchedule(repo, topic, TODAY)).toEqual({ last: null, next: TODAY })
+    expect(topicSchedule(repo, topic, TODAY)).toEqual({ last: null, next: TODAY, gaveUp: false })
     expect(topicDue(repo, topic, TODAY)).toBe(true)
     driver.script[RESEARCH] = research([card('记什么', ['https://a.example/1'])])
     driver.script[CHECK] = check()
     await runTopic(deps, topic.id, TODAY)
-    expect(topicSchedule(repo, topic, TODAY)).toEqual({ last: TODAY, next: '2026-12-05' })
+    expect(topicSchedule(repo, topic, TODAY)).toEqual({ last: TODAY, next: '2026-12-05', gaveUp: false })
     expect(topicDue(repo, topic, '2026-12-05')).toBe(true)
     const once = repo.updateTopic(topic.id, { cadence: 'once' })
-    expect(topicSchedule(repo, once, '2026-12-05')).toEqual({ last: TODAY, next: null })
+    expect(topicSchedule(repo, once, '2026-12-05')).toEqual({ last: TODAY, next: null, gaveUp: false })
 
     const fresh = repo.createTopic({ trackId: track.id, question: '谁收费', productIds: ['p1'], cadence: 'once' })
     driver.script[RESEARCH] = research([])
     await runTopic(deps, fresh.id, TODAY) // did not make it: tried again tomorrow
-    expect(topicSchedule(repo, fresh, TODAY)).toEqual({ last: null, next: '2026-11-29' })
+    expect(topicSchedule(repo, fresh, TODAY)).toEqual({ last: null, next: '2026-11-29', gaveUp: false })
     expect(topicSchedule(repo, repo.createTopic({ trackId: track.id, question: '新的', productIds: ['p1'], cadence: 'once' }), TODAY, true).next).toBe('2026-11-29')
   })
 })
 
 describe('topics in the store (M2.3)', () => {
+  it('reject the drafts an Outpost that did not stop cleanly left behind', () => {
+    const draft = repo.addTopicDraft(topic.id)
+    repo.rejectTopicDrafts('前哨已停止')
+    expect(repo.getTopicVersion(draft.id)).toMatchObject({ status: 'rejected', changeNote: '前哨已停止' })
+  })
+
+  it('keep a source a topic still cites when a product that also cited it is deleted', () => {
+    const shared = repo.addSource({ url: 'https://shared.example/', title: 't', publisher: 'p', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
+    repo.addCardVersion({ productId: 'p2', dimension: 'positioning', version: 1, summary: 's', bullets: ['b'], body: 'b[1]', sourceIds: [shared.id], inferenceSpans: [], addedSpans: [], changeNote: '建档', findingIds: [], createdAt: START.toISOString() })
+    const draft = repo.addTopicDraft(topic.id)
+    repo.updateTopicVersion(draft.id, { status: 'final', version: 1, cards: [{ title: 't', summary: 's', bullets: ['b'], body: 'b[1]', sourceIds: [shared.id], inferenceSpans: [], productIds: ['p1'] }] })
+    repo.deleteProduct('p2')
+    expect(repo.getSources([shared.id])).toHaveLength(1)
+  })
+
   it('lose a deleted product, and go with their last one or their track, with the sources only they cite', async () => {
     driver.script[RESEARCH] = research([card('记什么', ['https://a.example/1'])])
     driver.script[CHECK] = check()

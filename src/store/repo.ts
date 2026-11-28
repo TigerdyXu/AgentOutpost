@@ -479,6 +479,11 @@ export class Repo {
 
   getTopicVersion(id: Id): TopicVersion | null { return this.get(TOPIC_VERSION, id) ?? null }
 
+  /** Rejects, with `why`, every round still a draft: on start, those an Outpost that did not stop cleanly left behind. */
+  rejectTopicDrafts(why: string): void {
+    this.db.prepare("UPDATE topic_versions SET status = 'rejected', change_note = ? WHERE status = 'draft'").run(why)
+  }
+
   updateTopicVersion(id: Id, patch: Partial<Pick<TopicVersion, 'version' | 'status' | 'cards' | 'changeNote' | 'runId'>>): TopicVersion {
     this.patch(TOPIC_VERSION, id, patch, ['version', 'status', 'cards', 'changeNote', 'runId'])
     return this.require(TOPIC_VERSION, id)
@@ -503,7 +508,7 @@ export class Repo {
   }
 
   /** Deletes the sources among `ids` that no finding, card, card edit or topic round cites any more. */
-  private pruneSources(ids: Iterable<Id>): void {
+  pruneSources(ids: Iterable<Id>): void {
     const stillCited = new Set(this.db.prepare(`SELECT j.value FROM findings, json_each(findings.source_ids) j
       UNION SELECT j.value FROM card_versions, json_each(card_versions.source_ids) j
       UNION SELECT j.value FROM card_edits, json_each(card_edits.source_ids) j

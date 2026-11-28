@@ -19,6 +19,11 @@ import { sourceVerdicts, STOPPED_EARLY, withoutVoidClaims } from './verify.ts'
 
 /** A weekly topic gets a new round this many days after its newest version. */
 export const TOPIC_EVERY_DAYS = 7
+/**
+ * After this many rounds in a row with no version (each one ¥1–2), the topic is not tried again by itself: the question
+ * may be one the web cannot answer with checkable sources. 「立即更新」 still runs a round.
+ */
+export const TOPIC_MAX_MISSES = 3
 /** What a version changed, as the page shows it: the researcher's last words, cut to this many characters. */
 const CHANGE_NOTE_MAX = 60
 
@@ -39,7 +44,8 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
   const products = productsOf(repo, topic)
   const previous = repo.latestTopicVersion(topic.id)
   const draft = repo.addTopicDraft(topic.id)
-  const reject = (why: string) => { repo.updateTopicVersion(draft.id, { status: 'rejected', changeNote: why }); return null }
+  // The topic (and its draft) may be deleted while the round runs: then there is nothing to write.
+  const reject = (why: string) => { if (repo.getTopicVersion(draft.id)) repo.updateTopicVersion(draft.id, { status: 'rejected', changeNote: why }); return null }
   if (!products.length) return reject(say('topicNoProducts'))
 
   let summary = ''
@@ -52,7 +58,7 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
         question: topic.question,
         products: products.map(p => `${p.name}（${p.company}）`).join('、'),
         today: date,
-        round: previous ? `第 ${previous.version! + 1} 版：上一版是 ${previous.createdAt.slice(0, 10)} 的第 ${previous.version} 版，这次在它的基础上更新` : '第一版',
+        round: previous ? `第 ${previous.version! + 1} 版：上一版是 ${dayOf(previous.createdAt)} 的第 ${previous.version} 版，这次在它的基础上更新` : '第一版',
       }),
       tools: onDone => researchTools('topic', {
         repo, runId, trackId: topic.trackId, productId: null, topicId: topic.id, draftId: draft.id, now: () => clock.now(), icons,
@@ -62,7 +68,8 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
   })
   if (research.status !== 'done') return reject(research.error ?? say('runFailed'))
   if (research.error !== null) return reject(STOPPED_EARLY)
-  const handedIn = repo.getTopicVersion(draft.id)!
+  const handedIn = repo.getTopicVersion(draft.id)
+  if (!handedIn) return null // deleted meanwhile
   if (!handedIn.cards.length) return reject(say('topicNoCards'))
 
   const companies = [...new Set(products.map(p => p.company).filter(Boolean))]
@@ -90,16 +97,23 @@ export async function runTopic(deps: JobDeps, topicId: Id, date: string): Promis
     return text ? [{ ...card, ...text }] : []
   })
   if (!kept.length) return reject(say('topicNothingHeld'))
+  if (!repo.getTopicVersion(draft.id)) return null // deleted while it was checked
   const note = chars(summary.trim()).slice(0, CHANGE_NOTE_MAX).join('') || say(previous ? 'topicUpdated' : 'topicFirst')
-  return repo.updateTopicVersion(draft.id, { status: 'final', version: (previous?.version ?? 0) + 1, cards: kept, changeNote: note })
+  const written = repo.updateTopicVersion(draft.id, { status: 'final', version: (previous?.version ?? 0) + 1, cards: kept, changeNote: note })
+  // The sources the check made it drop (void ones, those of cards dropped whole) are cited by nothing now.
+  const still = new Set(kept.flatMap(card => card.sourceIds))
+  repo.pruneSources(handedIn.cards.flatMap(card => card.sourceIds).filter(id => !still.has(id)))
+  return written
 }
 
 /** How a weekly topic stands on `today` (as `weeklyState` says it of a track's suggestions). */
 export interface TopicSchedule {
   /** The day of its newest version, or null. */
   last: string | null
-  /** The day the next round is due, or null for a one-off topic that has a version. */
+  /** The day the next round is due, or null for a one-off topic that has a version, or one that gave up. */
   next: string | null
+  /** It made no version `TOPIC_MAX_MISSES` rounds in a row, and is not tried again by itself. */
+  gaveUp: boolean
 }
 
 /**
@@ -111,10 +125,12 @@ export function topicSchedule(repo: Repo, topic: Topic, today: string, dayOver =
   const rounds = repo.topicVersions(topic.id)
   const latest = repo.latestTopicVersion(topic.id)
   const last = latest ? dayOf(latest.createdAt) : null
-  if (topic.cadence === 'once' && latest) return { last, next: null }
+  const misses = rounds.slice(latest ? rounds.findIndex(r => r.id === latest.id) + 1 : 0).filter(r => r.status === 'rejected').length
+  const gaveUp = misses >= TOPIC_MAX_MISSES
+  if ((topic.cadence === 'once' && latest) || gaveUp) return { last, next: null, gaveUp }
   const due = last === null ? today : shiftDate(last, TOPIC_EVERY_DAYS)
   const triedToday = rounds.some(r => dayOf(r.createdAt) === today)
-  return { last, next: due > today ? due : dayOver || triedToday ? shiftDate(today, 1) : today }
+  return { last, next: due > today ? due : dayOver || triedToday ? shiftDate(today, 1) : today, gaveUp }
 }
 
 /** The local day of an instant. */

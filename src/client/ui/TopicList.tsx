@@ -17,6 +17,7 @@ export function topicMeta(t: T, row: TopicRow): string {
   else if (row.first) parts.push(t('topic.first', { date: shortDay(row.first) ?? '' }))
   else if (row.problem) parts.push(t('topic.noVersion', { reason: told(t, row.problem) }))
   else parts.push(t('topic.noneYet'))
+  if (!row.researching && row.gaveUp) parts.push(t('topic.gaveUpShort'))
   parts.push(t(row.topic.cadence === 'weekly' ? 'topic.weekly' : 'topic.once'))
   if (row.versions > 1 && row.lastNote) parts.push(t('topic.lastNote', { note: row.lastNote }))
   return parts.join(' · ')

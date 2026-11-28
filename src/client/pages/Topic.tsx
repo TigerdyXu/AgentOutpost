@@ -7,7 +7,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import type { Id, Source, TopicCard } from '../../core/types.ts'
 import type { TopicView } from '../../host/api.ts'
-import { call, describeError, usePoll } from '../api.ts'
+import { ApiError, call, describeError, usePoll } from '../api.ts'
 import { useShell } from '../shell/context.ts'
 import { shortDay } from '../time.ts'
 import { SourceChip } from '../ui/SourceChip.tsx'
@@ -27,7 +27,9 @@ export function Topic(): ReactNode {
   const topicId = route.page === 'topic' ? route.topicId : ''
   const answer = usePoll(() => call('GET topics/:id', { id: topicId }), [topicId], view => view?.row.researching ? BUSY_POLL_MS : IDLE_POLL_MS)
   if (route.page !== 'topic') return null
-  const view = answer.data?.row.topic.id === topicId ? answer.data : undefined
+  // Deleted meanwhile (here or in another window): gone, not shown as it was.
+  const gone = answer.error instanceof ApiError && answer.error.status === 404 && !answer.error.starting
+  const view = !gone && answer.data?.row.topic.id === topicId ? answer.data : undefined
   if (!view) {
     return <div className="op-page op-topic-page">
       {answer.error && <p className="op-day-problem" role="alert">{describeError(t, answer.error)}</p>}
@@ -67,7 +69,7 @@ function TopicPage({ view, reload }: { view: TopicView; reload: () => Promise<vo
     t('topic.ofTrack', { track: track.name }),
     t(topic.cadence === 'weekly' ? 'topic.weekly' : 'topic.once'),
     ...version ? [t('topic.versionOf', { n: version.version ?? 0, date: shortDay(version.createdAt) ?? '' })] : [],
-    ...topic.cadence === 'weekly' && row.next ? [t('topic.next', { date: dayLabel(row.next) })] : [],
+    ...row.next ? [t('topic.next', { date: dayLabel(row.next) })] : [],
   ].join(' · ')
 
   return <div className="op-page op-topic-page">
@@ -90,6 +92,7 @@ function TopicPage({ view, reload }: { view: TopicView; reload: () => Promise<vo
     {problem && <p className="op-form-problem" role="alert">{problem}</p>}
     {row.researching && <p className="op-tsection-note" role="status">{t('topic.researchingLong')}</p>}
     {!row.researching && row.problem && <p className="op-form-problem" role="alert">{t('topic.noNewVersion', { reason: told(t, row.problem) })}</p>}
+    {!row.researching && row.gaveUp && <p className="op-tsection-note">{t('topic.gaveUp')}</p>}
     {version?.changeNote && history.length > 1 && <div className="op-gist"><span>{t('topic.changed', { note: version.changeNote })}</span></div>}
 
     {version

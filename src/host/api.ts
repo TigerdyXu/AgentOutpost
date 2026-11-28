@@ -161,6 +161,8 @@ export interface TopicRow {
   problem: string | null
   /** When the next round is due (a weekly topic, or a first round still owed), or null. */
   next: string | null
+  /** It made no version three rounds in a row and is not tried again by itself (「立即更新」 still runs one). */
+  gaveUp: boolean
 }
 /** A 专题's own page (M2.3). */
 export interface TopicView {
@@ -568,6 +570,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    */
   const hasWork = (productId: Id, active = repo.activeRuns()) =>
     active.some(r => r.productId === productId && r.kind !== 'followup')
+    || repo.topicsOfProduct(productId).some(tp => rt.isResearching(tp.id)) // a 专题 round about it (M2.3)
     || rt.scheduler.isBusy(productId) || isBaselining(rt.jobs.runner, productId)
     || active.some(r => r.kind === 'identify' && r.trackId !== null && repo.listCandidates(r.trackId, r.id).some(c => c.productId === productId))
   /** Removes the icon files of products that were erased (`<icons>/<id>.<type>`); a missing one is no matter. */
@@ -597,6 +600,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     const newest = finals.at(-1)
     const lastRound = rounds.at(-1)
     const researching = rt.isResearching(topic.id)
+    const schedule = topicSchedule(repo, topic, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today())
     return {
       topic,
       productNames: topic.productIds.flatMap(id => repo.getProduct(id)?.name ?? []),
@@ -606,7 +610,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       lastNote: newest?.changeNote ?? null,
       researching,
       problem: !researching && lastRound?.status === 'rejected' ? lastRound.changeNote : null,
-      next: topicSchedule(repo, topic, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today()).next,
+      next: schedule.next,
+      gaveUp: schedule.gaveUp,
     }
   }
   const topic = (id: string) => repo.getTopic(id) ?? notFound(say('topicNotFound'))
@@ -856,6 +861,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
 
     'POST topics/:id/update': ({ params }) => {
       const tp = topic(params.id!)
+      if (track(tp.trackId).status === 'archived') throw new ApiError(409, say('trackArchived'))
       if (rt.isResearching(tp.id)) throw new ApiError(409, say('topicBusy'))
       rt.background(rt.researchTopic(tp.id), `topic ${tp.id}`)
       return { ok: true as const }

@@ -321,9 +321,9 @@ export class JobRunner {
 
   // ---- budget, places, time ----
 
-  /** The model the run's session works on: a check on the verify model, everything else on the research model. */
+  /** The model the run's session works on: a check (a dossier's or a 专题's) on the verify model, everything else on the research model. */
   private modelOf(run: Run): ModelRef | null {
-    return modelFor(run.kind === 'verify' ? 'verify' : 'research', this.settings())
+    return modelFor(run.kind === 'verify' || run.kind === 'topicCheck' ? 'verify' : 'research', this.settings())
   }
 
   /** Why the run may not start now on `model`, or null when it may. */

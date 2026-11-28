@@ -2035,7 +2035,10 @@ describe('the track page (M2.1)', () => {
     let page = ok(await host.call('GET', `topics/${topicId}`)).json<ApiResponse<'GET topics/:id'>>()
     expect(page).toMatchObject({ track: { id: t.id, name: 'AI 编程助手' }, version: null, row: { researching: true, versions: 0, productNames: ['Windsurf', 'Cursor'] } })
     expect((await host.call('POST', `topics/${topicId}/update`)).json()).toMatchObject({ error: '这个专题正在深挖，等它跑完' })
+    expect((await host.call('POST', `topics/${topicId}/delete`)).json()).toMatchObject({ error: '这个专题正在深挖，等它跑完' })
     expect((await host.call('POST', `tracks/${t.id}/delete`)).json()).toMatchObject({ error: '这个专题正在深挖，等它跑完' })
+    // A product the round is about is not deleted from under it.
+    expect((await host.call('POST', 'products/p1/delete')).json()).toMatchObject({ error: expect.stringContaining('正在') })
     hold.open()
     for (let i = 0; i < 50 && rt.isResearching(topicId); i++) await flush()
 
@@ -2048,6 +2051,9 @@ describe('the track page (M2.1)', () => {
     expect(ok(await host.call('GET', 'products/p1/topics')).json<ApiResponse<'GET products/:id/topics'>>().topics.map(row => row.topic.question)).toEqual(['谁能记住偏好'])
 
     expect(ok(await host.call('PATCH', `topics/${topicId}`, { cadence: 'once' })).json()).toMatchObject({ cadence: 'once' })
+    repo.updateTrack(t.id, { status: 'archived' })
+    expect((await host.call('POST', `topics/${topicId}/update`)).status).toBe(409)
+    repo.updateTrack(t.id, { status: 'active' })
     ok(await host.call('POST', `topics/${topicId}/delete`))
     expect((await host.call('GET', `topics/${topicId}`)).status).toBe(404)
   })

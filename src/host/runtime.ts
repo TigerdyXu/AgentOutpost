@@ -81,9 +81,9 @@ export class Runtime {
   readonly jobs: BaselineDeps
   /** What the brief is written with. */
   readonly briefs: BriefDeps
-  /** Maps being drawn, by track (`drawMap`). */
   /** 专题 rounds under way, by topic (`researchTopic`). */
   private readonly topicRounds = new Map<Id, Promise<TopicVersion | null>>()
+  /** Maps being drawn, by track (`drawMap`). */
   private readonly drawing = new Map<Id, Promise<Landscape | null>>()
   private readonly db: Db
   private readonly unlock: () => void
@@ -321,6 +321,7 @@ export class Runtime {
   start(): void {
     if (this.unregister || this.stopping) return
     this.reclaimInterruptedRuns()
+    this.repo.rejectTopicDrafts(STOPPED_ERROR) // a round the last Outpost did not see to its end
     this.driver.onChatUsage((sessionId, used) => { this.chargeChat(sessionId, used) })
     this.rebindFollowups()
     this.unregister = registerRoutes(this.ctx, createApi(this))

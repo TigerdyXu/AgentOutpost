@@ -12,7 +12,7 @@ const doubao = product('p1', '豆包·小豆'), muse = product('p2', 'Meta Muse'
 const topicRecord = (over: Partial<TopicRecord> = {}): TopicRecord => ({ id: 'tp1', trackId: 't1', question: '谁能记住用户的偏好', productIds: ['p1', 'p2'], cadence: 'weekly', createdAt: '2026-11-28T01:00:00.000Z', ...over })
 const row = (over: Partial<TopicRow> = {}): TopicRow => ({
   topic: topicRecord(), productNames: ['豆包·小豆', 'Meta Muse'], versions: 2, first: '2026-11-21T01:00:00.000Z', last: '2026-11-28T01:00:00.000Z', lastNote: '补上跨设备',
-  researching: false, problem: null, next: '2026-12-05', ...over,
+  researching: false, problem: null, next: '2026-12-05', gaveUp: false, ...over,
 })
 const version = (over: Partial<TopicVersion> = {}): TopicVersion => ({
   id: 'v2', topicId: 'tp1', version: 2, status: 'final', changeNote: '补上跨设备', runId: 'r2', createdAt: '2026-11-28T01:00:00.000Z',
@@ -75,6 +75,17 @@ describe('专题页 (M2.3)', () => {
     await show(view(), { 'POST topics/:id/update': fail(409, '这个专题正在深挖，等它跑完') })
     await click('立即更新')
     expect(document.querySelector('[role="alert"]')?.textContent).toBe('这个专题正在深挖，等它跑完')
+  })
+
+  it('says when it stopped trying by itself, and that the topic is gone once deleted elsewhere', async () => {
+    await show(view({ row: row({ gaveUp: true, problem: '核查后没有一张卡片站得住', next: null }) }))
+    expect(text()).toContain('已经连续 3 次没出版，前哨不再自己重试')
+    unmount()
+    let deleted = false
+    await show((() => deleted ? fail(404, '找不到这个专题') : view()) as () => TopicView, { 'POST topics/:id/update': () => { deleted = true; return { ok: true } } })
+    await click('立即更新') // the page reads the topic again: it was deleted meanwhile
+    expect(document.querySelector('h1')).toBeNull()
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('找不到这个专题')
   })
 
   it('is a page of its own', () => {
