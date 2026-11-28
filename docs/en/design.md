@@ -26,6 +26,8 @@
 >
 > **M2.4 changes (2026-11-28)**: a batch of fixes for known problems (sessions archived after a day, highlights joined, English singular and plural, session titles in the interface language, the browser research preset registered only when its packages are installed, and more); tracks, and a track's products, can be reordered by dragging, which is also the order of the daily queue. For details see [`docs/en/m2.4-design.md`](m2.4-design.md).
 
+> **M3.1 changes (2026-11-28)**: any chat in DSH (except research and check sessions) can look up a product or track Outpost follows by name with `outpost_lookup`: the dossier's conclusions, the last 14 days of findings, topics and the map by default, a dimension's full text and sources on demand; read-only, and it can be turned off in Settings. Dark mode checked page by page. For details see [`docs/en/m3.1-design.md`](m3.1-design.md).
+
 ## 1. Why build this
 
 The user keeps following product news in directions such as Personal Agent (Meta Muse, 豆包·小豆, OpenAI Dots, Grok Bots, 蚂蚁灵光 and others). Until now they asked an Agent to search each time (for example, on 11-16 in 飞书 (Feishu) they asked dsh-superagent to "check what is new lately among personal agents"). The problems with an ad hoc search: every time it starts from zero, results do not connect, you cannot see "what changed", and it is hard to tell true from false.
@@ -283,6 +285,8 @@ Follow superagent's "front half and back half" plugin package (dsh docs: `docs/u
 | M1 Usable first | Plugin skeleton, sidebar entry, middle column; new track + recommendation (including the one-sentence adjustment); profile building; daily increments + fact check (including the browser fallback for opening WeChat official account, 小红书 and 知乎 pages, decided by the user on 2026-11-25) + summary; Today's brief; product dossier (cards, expand, change history, updates, sources); follow-up; run log; settings; budget | Create a track and see the brief the next morning |
 | M2 See everything | Track page (matrix + positioning map); topics; weekly refresh of candidates | Compare side by side, dig deep into one question |
 | M3 Smooth to use | Other dsh sessions can query Outpost's data (`outpost_read` opened to the outside); matrix export; dark mode checked page by page | In any conversation, ask "how is the memory capability of 豆包·小豆 in Outpost" |
+
+How M3 came out (2026-11-28): the matrix export was done in M2.1; looking Outpost up from other chats became a new tool, `outpost_lookup` (rather than `outpost_read` opened as it is: that one knows a single product, and gives the full text research needs), described with the dark-mode check in [m3.1-design.md](m3.1-design.md).
 
 At the end of each phase, run it for real in the desktop app (real search, real models), and take screenshots at 1440 and 1920 widths to check the UI.
 

@@ -42,6 +42,8 @@ You need:
 
 **6. Compare.** The first row under each track, **Overview**, opens the track's page. The comparison table lays every product's dimensions side by side, marks today's changes and exports to a spreadsheet. The positioning map places the products on two axes, so you can see which ones are alike and which way each is moving. The map and its one-line summary are the AI's reading of the dossiers, marked as an inference. The track page can also start a **topic**: write a question, pick some products, and the AI looks into it and writes a few conclusion cards with sources, checked like the dossiers, once or updated weekly.
 
+**7. Ask from any chat.** In any chat of DeepSeek Harness, ask "what does Outpost have on 小豆's business model?" or "who charges in the Personal Agent track?": the AI looks it up with `outpost_lookup` and answers from the checked dossiers and their sources, saying as of which day. It only reads and costs Outpost nothing; to keep other chats from seeing Outpost, turn it off in Outpost's Settings.
+
 <img src="docs/images/add-product.png" width="760" alt="Add product">
 
 ## Cost
