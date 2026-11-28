@@ -1023,3 +1023,25 @@ describe('Repo: deleting and renaming (M1.5)', () => {
     expect(repo.getProduct(a.product.id)!.officialDomains).toEqual(['cursor.sh', 'anysphere.inc'])
   })
 })
+
+describe('Repo: the user’s order (M2.4)', () => {
+  it('lists tracks, and a track’s products, in the order they were put in, the rest after as before', () => {
+    const repo = newRepo()
+    const [a, , c] = ['甲', '乙', '丙'].map(name => repo.createTrack({ name, brief: '', dimensions: [], status: 'active' }))
+    repo.orderTracks([c!.id, a!.id, 'gone'])
+    expect(repo.listTracks().map(t => t.name)).toEqual(['丙', '甲', '乙'])
+    const d = repo.createTrack({ name: '丁', brief: '', dimensions: [], status: 'active' })
+    expect(repo.listTracks().map(t => t.id).at(-1)).toBe(d.id) // a new one after those placed
+
+    for (const id of ['p1', 'p2', 'p3']) {
+      repo.upsertProduct({ id, name: id, company: '', region: 'domestic', form: 'App', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: null })
+      repo.linkProduct(a!.id, id)
+    }
+    repo.orderProducts(a!.id, ['p3', 'p1', 'p9'])
+    expect(repo.productsOfTrack(a!.id).map(p => p.id)).toEqual(['p3', 'p1', 'p2'])
+    repo.unlinkProduct(a!.id, 'p3')
+    repo.linkProduct(a!.id, 'p3') // back after a move away: at the end
+    expect(repo.productsOfTrack(a!.id).map(p => p.id)).toEqual(['p1', 'p2', 'p3'])
+  })
+})
+

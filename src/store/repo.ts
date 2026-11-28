@@ -81,11 +81,33 @@ export class Repo {
     return this.require(TRACK, id)
   }
 
-  listTracks(): Track[] { return this.select(TRACK, 'ORDER BY rowid') }
+  /** The tracks in the user's order (M2.4: as dragged; those never placed after, in the order they were made). */
+  listTracks(): Track[] { return this.select(TRACK, 'ORDER BY position IS NULL, position, rowid') }
 
-  /** The products linked to the track, in the order they were linked, whatever their status. */
+  /** Puts the tracks named in that order, first; the others follow as they were. Unknown ids are skipped. */
+  orderTracks(trackIds: Id[]): void {
+    this.db.atomic(() => {
+      const named = new Set(trackIds)
+      const order = [...trackIds.filter(id => this.get(TRACK, id)), ...this.listTracks().map(t => t.id).filter(id => !named.has(id))]
+      const set = this.db.prepare('UPDATE tracks SET position = ? WHERE id = ?')
+      order.forEach((id, i) => { set.run(i, id) })
+    })
+  }
+
+  /** Puts the track's products named in that order, first; the others follow as they were. Ids not in the track are skipped. */
+  orderProducts(trackId: Id, productIds: Id[]): void {
+    this.db.atomic(() => {
+      const inTrack = this.productsOfTrack(trackId).map(p => p.id)
+      const named = new Set(productIds)
+      const order = [...productIds.filter(id => inTrack.includes(id)), ...inTrack.filter(id => !named.has(id))]
+      const set = this.db.prepare('UPDATE track_products SET position = ? WHERE track_id = ? AND product_id = ?')
+      order.forEach((id, i) => { set.run(i, trackId, id) })
+    })
+  }
+
+  /** The products linked to the track, in the user's order (M2.4: as dragged; else the order they were linked), whatever their status. */
   productsOfTrack(trackId: Id): Product[] {
-    return this.select(PRODUCT, 'JOIN track_products tp ON tp.product_id = products.id WHERE tp.track_id = ? ORDER BY tp.rowid', trackId)
+    return this.select(PRODUCT, 'JOIN track_products tp ON tp.product_id = products.id WHERE tp.track_id = ? ORDER BY tp.position IS NULL, tp.position, tp.rowid', trackId)
   }
 
   /**

@@ -38,7 +38,7 @@ You need:
 
 **4. Add products and move them between tracks.** Under a track, click **+ Add a product**. Type a product's name, or ask Outpost for another round of recommendations. Outpost also suggests newly appeared products for each track once a week, under **Suggestions** (you can turn this off on the track's page). The **⋯** menu on a product page moves the product to another track, or adds it there too.
 
-**5. Rename or delete.** The same **⋯** menu changes a product's name, company and official site, or deletes the product. The **⋯** beside a track's name opens its settings: its name, what it follows, its dimensions, and deleting the track. Deleting asks once more and can't be undone; spending records stay.
+**5. Rename or delete.** The same **⋯** menu changes a product's name, company and official site, or deletes the product. The **⋯** beside a track's name opens its settings: its name, what it follows, its dimensions, and deleting the track. Drag tracks, and the products within a track, to reorder them (or Alt+↑/↓). Deleting asks once more and can't be undone; spending records stay.
 
 **6. Compare.** The first row under each track, **Overview**, opens the track's page. The comparison table lays every product's dimensions side by side, marks today's changes and exports to a spreadsheet. The positioning map places the products on two axes, so you can see which ones are alike and which way each is moving. The map and its one-line summary are the AI's reading of the dossiers, marked as an inference. The track page can also start a **topic**: write a question, pick some products, and the AI looks into it and writes a few conclusion cards with sources, checked like the dossiers, once or updated weekly.
 

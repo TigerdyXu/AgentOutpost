@@ -22,6 +22,8 @@ const OWN = {
   'nav.picked': ['已选 {count}', '{count} picked'],
   'nav.candidates': ['候选推荐', 'Suggestions'],
   'nav.overview': ['赛道概览', 'Overview'],
+  'nav.reorder': ['拖动调整顺序，或 Alt+↑/↓', 'Drag to reorder, or Alt+↑/↓'],
+  'nav.dragging': ['调整顺序', 'Reordering'],
   'nav.candidatesWaiting': ['{count} 条待看', '{count} to review'],
   'nav.baselining': ['建档中', 'Building profile'],
   'nav.progress': ['{done}/{total}', '{done}/{total}'],

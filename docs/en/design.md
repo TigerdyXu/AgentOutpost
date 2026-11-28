@@ -23,6 +23,8 @@
 > **M2.2 changes (2026-11-28)**: weekly suggestions (§7.1 "weekly refresh"): for each started track whose last finished recommendation is 7 days old or older, a new batch is recommended after the brief and the maps, asking only for products that appeared or moved since; the candidates show under 「候选推荐」 (Suggestions) as before. A switch per track on the track page, on by default. For details see [`docs/en/m2.2-design.md`](m2.2-design.md).
 >
 > **M2.3 changes (2026-11-28)**: topics (§5.6): on the track page, write a question, pick 1–8 products, once or weekly; a research session hands in 2–6 conclusion cards, which the dossier's checker checks by the dossier's rules, and what holds becomes a version; a topic page, and a 「专题」 (Topics) tab on the product page. Placed between the map and the table on the track page. For details see [`docs/en/m2.3-design.md`](m2.3-design.md). This completes M2.
+>
+> **M2.4 changes (2026-11-28)**: a batch of fixes for known problems (sessions archived after a day, highlights joined, English singular and plural, session titles in the interface language, the browser research preset registered only when its packages are installed, and more); tracks, and a track's products, can be reordered by dragging, which is also the order of the daily queue. For details see [`docs/en/m2.4-design.md`](m2.4-design.md).
 
 ## 1. Why build this
 

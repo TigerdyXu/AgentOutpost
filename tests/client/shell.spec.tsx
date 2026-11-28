@@ -120,6 +120,43 @@ describe('middle column', () => {
     expect(JSON.parse(localStorage.getItem('outpost.route')!)).toEqual({ page: 'addProduct', trackId: 't2' })
   })
 
+  it('puts products in order within their track by dragging, and tracks with Alt+↑/↓ (M2.4)', async () => {
+    const api = stubApi({
+      'GET state': state({ tracks: [
+        track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse')), tracked(product('p2', '豆包·小豆'))]),
+        track('t2', 'AI 眼镜', [tracked(product('p3', 'Rokid'))]),
+      ] }),
+      'POST tracks/:id/reorder': { ok: true }, 'POST tracks/reorder': { ok: true },
+    })
+    await mount(<App t={t} />)
+    const fire = (target: Element, type: string, clientY = 0) => act(() => {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY }))
+    })
+    const sent = () => api.requests.filter(r => r.method === 'POST').map(r => [r.path, r.body])
+    // Muse dragged onto the lower half of 豆包·小豆: after it.
+    await fire(row('Meta Muse')!, 'dragstart')
+    await fire(row('豆包·小豆')!, 'dragover', 100)
+    expect(row('豆包·小豆')!.dataset.drop).toBe('after')
+    await fire(row('豆包·小豆')!, 'drop', 100)
+    await settle()
+    expect(sent()).toEqual([['tracks/t1/reorder', { productIds: ['p2', 'p1'] }]])
+    expect(row('豆包·小豆')!.dataset.drop).toBeUndefined()
+    // Not into another track: Rokid takes no drop of Muse.
+    await fire(row('Meta Muse')!, 'dragstart')
+    await fire(row('Rokid')!, 'dragover', 100)
+    expect(row('Rokid')!.dataset.drop).toBeUndefined()
+    await fire(row('Rokid')!, 'drop', 100)
+    await fire(row('Meta Muse')!, 'dragend')
+    await settle()
+    expect(sent()).toHaveLength(1)
+    // A track moves down a place from the keyboard, on its header.
+    const head = all('.op-group-head')[0]!
+    expect(head.closest('.op-group-top')?.getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown')
+    await act(() => { head.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true })) })
+    await settle()
+    expect(sent().at(-1)).toEqual(['tracks/reorder', { trackIds: ['t2', 't1'] }])
+  })
+
   it('shows picking, baselining and waiting candidates as each track stands', async () => {
     const api = stubApi({
       'GET state': state({ tracks: [

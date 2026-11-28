@@ -1,7 +1,7 @@
 {
   "name": "dsh-outpost",
   "license": "MIT",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "前哨：盯住一个赛道里的产品，每天自动调研、核查，出一份今日哨报。DSH (DeepSeek Harness) 插件。",
   "keywords": [

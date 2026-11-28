@@ -224,6 +224,11 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX topic_versions_topic ON topic_versions (topic_id, created_at);
   `,
+  // 7: the order the user dragged tracks, and a track's products, into (M2.4); null until then, after those placed.
+  `
+  ALTER TABLE tracks ADD COLUMN position INTEGER;
+  ALTER TABLE track_products ADD COLUMN position INTEGER;
+  `,
 ]
 
 /**

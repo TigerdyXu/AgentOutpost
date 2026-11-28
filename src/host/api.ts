@@ -251,6 +251,10 @@ export interface Api {
   'POST topics/:id/delete': { response: { ok: true } }
   /** The 专题 about the product, oldest first (its 专题 tab). */
   'GET products/:id/topics': { response: { topics: TopicRow[] } }
+  /** The tracks in the order the user dragged them into (M2.4): those named first, in that order; the rest after. */
+  'POST tracks/reorder': { body: { trackIds: Id[] }; response: { ok: true } }
+  /** The track's products in the order the user dragged them into (M2.4), likewise. */
+  'POST tracks/:id/reorder': { body: { productIds: Id[] }; response: { ok: true } }
   /** The panel's language (`zh` for Chinese, else English), in which the sessions Outpost opens are named (src/host/titles.ts). */
   'POST language': { body: { language: string }; response: { ok: true } }
   /** Turns the track's weekly suggestions (M2.2) on or off; they are on unless turned off. */
@@ -385,6 +389,9 @@ const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const axisEnd = text(AXIS_LABEL_MAX).min(1, '轴的两端都要写')
 const Weekly = z.object({ on: z.boolean() })
 const Language = z.object({ language: z.string().max(40) })
+const ids = z.array(z.string().min(1)).max(500)
+const TrackOrder = z.object({ trackIds: ids })
+const ProductOrder = z.object({ productIds: ids })
 const MAX_QUESTION = 60
 const MAX_TOPIC_PRODUCTS = 8
 const cadence = z.enum(['once', 'weekly'])
@@ -895,6 +902,19 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const { on } = Weekly.parse(await req.body())
       repo.setSetting(weeklyOffKey(t.id), on ? undefined : true)
       return weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today())
+    },
+
+    'POST tracks/reorder': async req => {
+      const { trackIds } = TrackOrder.parse(await req.body())
+      repo.orderTracks(trackIds)
+      return { ok: true as const }
+    },
+
+    'POST tracks/:id/reorder': async req => {
+      const t = track(req.params.id!)
+      const { productIds } = ProductOrder.parse(await req.body())
+      repo.orderProducts(t.id, productIds)
+      return { ok: true as const }
     },
 
     'POST language': async req => {

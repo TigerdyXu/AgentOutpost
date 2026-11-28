@@ -3,12 +3,13 @@
  * one foldable group per track with its products (blue dot for new findings, 建档中 while baselined) and 「＋ 添加产品」,
  * 挑产品 while the track is being picked and 候选推荐 while candidates wait; 运行记录 (today's spend) and 设置 pinned at the bottom.
  * Each track that is on starts with 「赛道概览」, its page with the 定位地图 and the 对比矩阵 (M2.1); the 「⋯」 beside a
- * track's name opens its settings (M1.5).
+ * track's name opens its settings (M1.5). Tracks, and the products within a track, are put in order by dragging them, or
+ * with Alt+↑/↓ on one that has the focus (M2.4); a product moves to another track from its page's 「⋯」, not by dragging.
  */
-import { useState, type ReactNode } from 'react'
+import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
-import { describeError, useCandidates } from '../api.ts'
+import { call, describeError, useCandidates } from '../api.ts'
 import { BriefIcon, CheckIcon, ChevronIcon, OverviewIcon, RunsIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { useShell } from './context.ts'
@@ -26,13 +27,15 @@ export const yuan = (amount: number) => String(Number(amount.toFixed(amount < 1 
  * One entry of the column: a button that shows `to`, selected (light blue, blue, bold) while that page is shown. Choosing
  * the product shown keeps its tab; choosing 今日哨报 always comes back to today's.
  */
-function Row({ to, icon, label, end, endTone, dot, quiet, onChoose }: {
+function Row({ to, icon, label, end, endTone, dot, quiet, onChoose, drag }: {
   to: Route; icon: ReactNode; label: string; end?: ReactNode; endTone?: 'accent'; dot?: string; quiet?: boolean; onChoose?: () => void
+  /** What makes it movable (a product among its track's): the drag and keyboard handlers, and where a drop would land. */
+  drag?: DragProps
 }): ReactNode {
   const { route, navigate } = useShell()
   const current = samePage(route, to)
   return <button type="button" className="op-row" data-quiet={quiet ? '' : undefined} aria-current={current ? 'page' : undefined}
-    onClick={() => { if (!current || to.page === 'today') navigate(to); onChoose?.() }}>
+    {...drag} onClick={() => { if (!current || to.page === 'today') navigate(to); onChoose?.() }}>
     <span className="op-row-icon">{icon}</span>
     <span className="op-row-label">{label}</span>
     {end !== undefined && <span className="op-row-end" data-tone={endTone}>{end}</span>}
@@ -78,13 +81,86 @@ function DefaultPickRow({ trackId, tracked, onChoose }: { trackId: Id; tracked: 
   return <PickRow trackId={trackId} count={count} onChoose={onChoose} />
 }
 
-function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folded: boolean; onFold: () => void; onChoose: () => void }): ReactNode {
+/** The handlers that let an entry be dragged and dropped among its kind, and moved with Alt+↑/↓. */
+type DragProps = {
+  draggable: true
+  'data-drop'?: 'before' | 'after'
+  'aria-keyshortcuts': string
+  onDragStart: (event: DragEvent) => void
+  onDragOver: (event: DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (event: DragEvent) => void
+  onDragEnd: () => void
+  onKeyDown: (event: KeyboardEvent) => void
+}
+
+/**
+ * Putting a list in order (M2.4): the ids of what is listed, in order, and what saves a new order. An entry dragged over
+ * another lands before it (upper half) or after it (lower half); Alt+↑/↓ moves the focused one a place. Only entries of the
+ * same list (`group`) take a drop: a product does not land among another track's.
+ */
+function useReorder(group: string, ids: readonly Id[], save: (order: Id[]) => void) {
+  const { t } = useShell()
+  const [dragging, setDragging] = useState<{ group: string; id: Id } | null>(dragged)
+  const [over, setOver] = useState<{ id: Id; side: 'before' | 'after' } | null>(null)
+  const place = (id: Id, target: Id, side: 'before' | 'after') => {
+    if (id === target) return
+    const rest = ids.filter(other => other !== id)
+    const at = rest.indexOf(target) + (side === 'after' ? 1 : 0)
+    save([...rest.slice(0, at), id, ...rest.slice(at)])
+  }
+  return (id: Id): DragProps => ({
+    draggable: true,
+    ...over?.id === id ? { 'data-drop': over.side } : {},
+    'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown',
+    onDragStart: event => {
+      dragged = { group, id }
+      setDragging(dragged)
+      try { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', t('nav.dragging')) } catch { /* some browsers want data to drag */ }
+    },
+    onDragOver: event => {
+      const from = dragged ?? dragging
+      if (!from || from.group !== group || from.id === id) return
+      event.preventDefault()
+      const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      const side = event.clientY < box.top + box.height / 2 ? 'before' : 'after'
+      if (over?.id !== id || over.side !== side) setOver({ id, side })
+    },
+    onDragLeave: () => { if (over?.id === id) setOver(null) },
+    onDrop: event => {
+      const from = dragged ?? dragging
+      event.preventDefault()
+      if (from && from.group === group && over) place(from.id, id, over.side)
+      dragged = null
+      setDragging(null)
+      setOver(null)
+    },
+    onDragEnd: () => { dragged = null; setDragging(null); setOver(null) },
+    onKeyDown: event => {
+      if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+      event.preventDefault()
+      const at = ids.indexOf(id)
+      const to = event.key === 'ArrowUp' ? at - 1 : at + 1
+      if (at < 0 || to < 0 || to >= ids.length) return
+      place(id, ids[to]!, event.key === 'ArrowUp' ? 'before' : 'after')
+    },
+  })
+}
+/** What is being dragged, across the lists (a drag starts in one list's hook and may pass over another's). */
+let dragged: { group: string; id: Id } | null = null
+
+function TrackGroup({ view, folded, onFold, onChoose, move }: { view: TrackView; folded: boolean; onFold: () => void; onChoose: () => void; move: DragProps }): ReactNode {
   const { t, picks, route, navigate } = useShell()
   const { track, products, candidatesToReview } = view
   const picking = track.status === 'picking'
   const editing = route.page === 'editTrack' && route.trackId === track.id
+  const { refresh } = useShell()
+  const productIds = products.map(item => item.product.id)
+  const moveProduct = useReorder(`products:${track.id}`, productIds, order => {
+    call('POST tracks/:id/reorder', { id: track.id, body: { productIds: order } }).then(() => { refresh() }, () => { refresh() })
+  })
   return <div className="op-group" role="group" aria-label={track.name}>
-    <div className="op-group-top">
+    <div className="op-group-top" {...move} title={t('nav.reorder')}>
       <button type="button" className="op-group-head" aria-expanded={!folded} onClick={onFold}>
         <ChevronIcon />
         <span className="op-group-name">{track.name}</span>
@@ -103,7 +179,7 @@ function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folde
           ? `${t('nav.baselining')}${progress ? ` ${t('nav.progress', { done: progress.done, total: progress.total })}` : ''}`
           : product.status === 'paused' ? t('nav.paused') : undefined
         return <Row key={product.id} to={{ page: 'product', productId: product.id, tab: 'dossier' }} icon={<ProductIcon product={product} size={20} />}
-          label={product.name} end={end} dot={hasNew ? t('nav.new') : undefined} onChoose={onChoose} />
+          label={product.name} end={end} dot={hasNew ? t('nav.new') : undefined} onChoose={onChoose} drag={moveProduct(product.id)} />
       })}
       {/* A track still being picked has no products to add to yet: its 挑产品 page is where they come from. */}
       {!picking && <Row to={{ page: 'addProduct', trackId: track.id }} icon={null} label={t('add.row')} quiet onChoose={onChoose} />}
@@ -115,9 +191,12 @@ function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folde
 
 /** The column; `onChoose` runs after any entry is chosen (the narrow layout closes the column then). */
 export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void }): ReactNode {
-  const { t, state, stateError, navigate } = useShell()
+  const { t, state, stateError, navigate, refresh } = useShell()
   const [folded, toggleFold] = useFolded()
   const tracks = state?.tracks ?? []
+  const moveTrack = useReorder('tracks', tracks.map(view => view.track.id), order => {
+    call('POST tracks/reorder', { body: { trackIds: order } }).then(() => { refresh() }, () => { refresh() })
+  })
   const todayEnd = state === undefined ? undefined : state.todayUnread > 0 ? t('nav.todayNew', { count: state.todayUnread })
     : tracks.length === 0 ? t('nav.todayNone') : undefined
   return <nav className="op-mid" aria-label={t('nav.label')}>
@@ -130,7 +209,7 @@ export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void })
     <Row to={{ page: 'today' }} icon={<BriefIcon />} label={t('nav.today')} end={todayEnd}
       endTone={state && state.todayUnread > 0 ? 'accent' : undefined} onChoose={onChoose} />
     <div className="op-mid-tracks">
-      {tracks.map(view => <TrackGroup key={view.track.id} view={view} folded={folded.has(view.track.id)}
+      {tracks.map(view => <TrackGroup key={view.track.id} view={view} folded={folded.has(view.track.id)} move={moveTrack(view.track.id)}
         onFold={() => { toggleFold(view.track.id) }} onChoose={onChoose} />)}
     </div>
     <div className="op-mid-foot">

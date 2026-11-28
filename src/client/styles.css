@@ -3496,3 +3496,9 @@ button.op-run-open:focus-visible {
 
 /* A piece of a line that wraps as a whole (a date, 「下次 12-05」). */
 .op-keep { white-space: nowrap; }
+
+/* Putting tracks and products in order by dragging (M2.4): a line where the dragged one would land. */
+.op-row[data-drop="before"],
+.op-group-top[data-drop="before"] { box-shadow: inset 0 2px 0 var(--dsw-alias-link); }
+.op-row[data-drop="after"],
+.op-group-top[data-drop="after"] { box-shadow: inset 0 -2px 0 var(--dsw-alias-link); }
