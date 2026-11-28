@@ -188,11 +188,14 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
     </header>
     {updateNote && <p className="op-phead-error" role="alert">{updateNote}</p>}
     {view && (() => {
+      // The note block stays mounted (it shows nothing with no note and no box open), so that closing the box can hand
+      // focus back to 「＋ 写笔记」.
       const note = savedNote !== undefined ? savedNote : view.note
-      return note || writingNote
-        ? <NoteBlock kind="product" subjectId={view.product.id} note={note} about={view.product.name} editing={writingNote} onEditing={setWritingNote}
+      return <>
+        <NoteBlock kind="product" subjectId={view.product.id} note={note} about={view.product.name} editing={writingNote} onEditing={setWritingNote}
           onSaved={kept => { setSavedNote(kept); void reloadProfile() }} returnFocus={() => { setTimeout(() => { addNote.current?.focus() }) }} />
-        : <button ref={addNote} type="button" className="op-link op-note-add" onClick={() => { setWritingNote(true) }}>{t('note.addProduct')}</button>
+        {!note && !writingNote && <button ref={addNote} type="button" className="op-link op-note-add" onClick={() => { setWritingNote(true) }}>{t('note.addProduct')}</button>}
+      </>
     })()}
     {!view && profile.error && <p className="op-day-problem" role="alert">{describeError(t, profile.error)}</p>}
 

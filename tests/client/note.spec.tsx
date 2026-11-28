@@ -48,7 +48,13 @@ describe('a note on a product', () => {
     await click(find('删除笔记'))
     expect(api.requests.filter(r => r.method === 'POST').at(-1)!.body).toEqual({ text: '' })
     expect(document.querySelector('.op-note')).toBeNull()
-    expect(find('＋ 写笔记')).toBeTruthy()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(document.activeElement).toBe(find('＋ 写笔记')) // focus back where a note can be written again
+    // Esc on a new note: nothing kept, focus back on 「＋ 写笔记」 too.
+    await click(find('＋ 写笔记'))
+    await act(async () => { document.querySelector('.op-note textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(document.activeElement).toBe(find('＋ 写笔记'))
   })
 
   it('shows a note the host has, and says why one could not be kept', async () => {
