@@ -72,8 +72,8 @@ function occurrences(text: string, terms: string[]): Span[] {
   return merged
 }
 
-/** A field as it is searched: citation marks [n] dropped, line breaks as spaces. */
-const plain = (text: string) => text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim()
+/** A field as it is searched: citation marks [n] dropped (with the space before a Chinese stop they leave), line breaks as spaces. */
+const plain = (text: string) => text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').replace(/ (?=[，。；：！？、）」』])/g, '').trim()
 
 /**
  * The snippet of the thing's fields that `terms` all appear in, or null when one is missing: from the field holding the

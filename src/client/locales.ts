@@ -545,7 +545,6 @@ const OWN = {
   'search.group.cards': ['档案', 'Dossier cards'],
   'search.group.findings': ['动态', 'Findings'],
   'search.group.topics': ['专题', 'Topics'],
-  'search.unproven': ['已过期未证实', 'Expired without proof'],
 } as const satisfies Record<string, readonly [string, string]>
 
 /** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */

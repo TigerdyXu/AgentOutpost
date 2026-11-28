@@ -70,6 +70,7 @@ describe('matching', () => {
     expect(hit.text.endsWith('…')).toBe(true)
     expect(hit.text).toContain('会员按月收费 ')
     expect(hit.text).not.toContain('[1]')
+    expect(matchFields(['Cue Pro 会员 [2]。推论'], ['会员'])!.text).toBe('Cue Pro 会员。推论') // no space left before the stop
     expect(hit.text.slice(hit.marks[0]!.start, hit.marks[0]!.end)).toBe('会员')
   })
 })

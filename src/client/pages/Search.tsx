@@ -81,7 +81,7 @@ export function Search(): ReactNode {
         {current.findings.map(hit => <Hit key={hit.id} to={{ page: 'product', productId: hit.productId, tab: 'feed', finding: hit.id }}
           head={<><b>{hit.product}</b><span className="op-search-meta">{hit.date.slice(5)}</span>
             {hit.status === 'unconfirmed' && <Tag kind="unconfirmed" />}
-            {hit.status === 'unproven' && <span className="op-search-meta">{t('search.unproven')}</span>}
+            {hit.status === 'unproven' && <span className="op-search-meta">{t('feed.unproven')}</span>}
             {/* Found in why it matters: the headline still says which finding it is. */}
             {hit.snippet.text !== hit.headline && <span className="op-search-headline">{hit.headline}</span>}</>}
           snippet={hit.snippet} />)}
