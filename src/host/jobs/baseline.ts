@@ -33,6 +33,14 @@ export const NO_CARDS_ERROR = say('noCards')
 const inFlight = new WeakMap<JobRunner, Map<Id, Promise<void>>>()
 
 /**
+ * Whether a baseline of the product is in flight on this runner, its check included (deleting the product waits for it:
+ * between the profile session and its check there is no run queued or running).
+ */
+export function isBaselining(runner: JobRunner, productId: Id): boolean {
+  return inFlight.get(runner)?.has(productId) ?? false
+}
+
+/**
  * Starts each product's baseline in the background and returns without waiting: a product not tracked yet is marked
  * `baselining` at once; a tracked one keeps its status. A product whose baseline is already running is left to it.
  * Unknown product ids are skipped.

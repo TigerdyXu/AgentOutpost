@@ -30,7 +30,7 @@ export function Citation({ n, source }: { n: number; source: Source | undefined 
     {open && <span className="op-cite-card" id={id} role="tooltip" data-align={open}>
       <span className="op-cite-title">{source.title}</span>
       {meta && <span className="op-cite-meta">{meta}</span>}
-      {source.quote && <span className="op-cite-quote">「{source.quote}」</span>}
+      {source.quote && <span className="op-cite-quote">{t('source.quote', { quote: source.quote })}</span>}
     </span>}
   </sup>
 }

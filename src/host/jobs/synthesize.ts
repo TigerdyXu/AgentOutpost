@@ -128,7 +128,8 @@ function dayFindings(repo: Repo, date: string): Finding[] {
 /** The products looked at on `date` (in tracking order) and those named as not updated, from the day's daily runs. */
 function dayProducts(repo: Repo, date: string): { tracked: Id[]; skipped: Brief['skipped'] } {
   const runs = new Map<Id, Run[]>()
-  for (const run of repo.runsOfDate(date, 'daily')) if (run.productId) runs.set(run.productId, [...runs.get(run.productId) ?? [], run])
+  // A deleted product's runs stay (what was spent), but the product is no longer in any brief.
+  for (const run of repo.runsOfDate(date, 'daily')) if (run.productId && repo.getProduct(run.productId)) runs.set(run.productId, [...runs.get(run.productId) ?? [], run])
   const order = new Set([...repo.listTracks().flatMap(t => repo.productsOfTrack(t.id).map(p => p.id)), ...runs.keys()])
   const tracked: Id[] = []
   const skipped: Brief['skipped'] = []

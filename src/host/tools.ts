@@ -12,6 +12,8 @@ import type { Id, Source, Span } from '../core/types.ts'
 import { canonicalUrl } from '../core/url.ts'
 import type { Repo } from '../store/repo.ts'
 import type { IconFetcher, ToolSpec } from './ports.ts'
+import { say } from '../core/messages.ts'
+import { rm } from 'node:fs/promises'
 
 export type RunToolKind = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'followup'
 
@@ -218,7 +220,8 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
     if (!candidates.length) return
     void Promise.resolve()
       .then(() => scope.icons.fetch(productId, candidates))
-      .then(path => { if (path) repo.setProductIcon(productId, path) })
+      // A product deleted (or merged away) while its icon was being fetched leaves no file behind.
+      .then(async path => { if (!path) return; if (repo.getProduct(productId)) repo.setProductIcon(productId, path); else await rm(path, { force: true }) })
       .catch(() => { /* an icon is a nicety: no icon, no problem */ })
   }
 
@@ -270,7 +273,7 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
 
     tool('outpost_submit_card',
       '建档：提交一个维度的档案卡片。dimension 必须是这个产品的维度（outpost_read 里有）；summary ≤30 字；bullets 1–3 条、每条 ≤40 字；body ≤1500 字，正文里用 [n] 引用 sources 里的第 n 个来源（从 1 数起）；sources 至少 1 个，每个来源的 quote 是原文里的一句原话（1–200 字，逐字抄，不要改写）；你自己归纳、推测的句子，把原句逐字放进 inferenceQuotes（必须在 body 里逐字存在），它们会被标成「推论」。只写有来源支撑的话。成功返回 { cardEditId }；卡片要等核查通过才会生效。',
-      SubmitCard, args => writeCard(needProduct(), args, { changeNote: '建档', findingIds: [] })),
+      SubmitCard, args => writeCard(needProduct(), args, { changeNote: say('profiled'), findingIds: [] })),
 
     tool('outpost_submit_facts',
       '提交或修改这个产品的关键事实：form（形态，≤20 字）、platforms（平台）、price（价格）、firstReleased（首发时间）各一句话，rivals 最多 5 个竞品名。不知道的写空字符串，不要编。和现有的完全一样就不会新增版本。成功返回 { factsVersion }。',

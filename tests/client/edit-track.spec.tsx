@@ -62,6 +62,20 @@ describe('编辑赛道 (M1.5)', () => {
     ] })
   })
 
+  it('in English, takes a default typed back under its English name as that default, and checks names twice as sent (review 3, 9)', async () => {
+    const { api } = await show({ t: tEn, state: state({ tracks: [track('t1', 'Personal Agent', [], { dimensions: [{ key: 'positioning', label: '定位' }, { key: 'audience', label: '目标人群' }] })] }) })
+    await click(find('Remove “Audience”'))
+    await click('+ Add a dimension')
+    await type(fields().at(-1)!, 'audience ')
+    await click('Save')
+    expect(sent(api, 'PATCH')[0]![1]).toMatchObject({ dimensions: [{ key: 'positioning', label: '定位' }, { label: '目标人群' }] })
+    // 「定位」 typed beside the Positioning row is the same dimension twice, as the host would say.
+    await type(fields().at(-1)!, '定位')
+    await click('Save')
+    expect(find('The dimension “定位” is listed twice', '[role="alert"]')).toBeTruthy()
+    expect(sent(api, 'PATCH')).toHaveLength(1)
+  })
+
   it('does not send a page with an empty dimension, one named twice, or none at all', async () => {
     const { api } = await show()
     await type(fields()[2]!, ' ')

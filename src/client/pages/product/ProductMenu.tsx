@@ -57,6 +57,15 @@ export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: P
   // The form of name, company and sites, and the question before deleting: each opens in the menu in place of its entry.
   const [profile, setProfile] = useState<{ name: string; company: string; sites: string } | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Leaving either with 取消 puts the focus back on the entry that opened it (as the budget editor does), so the menu keeps
+  // its keys.
+  const profileItem = useRef<HTMLButtonElement>(null)
+  const deleteItem = useRef<HTMLButtonElement>(null)
+  const backTo = useRef<'profile' | 'delete' | null>(null)
+  useEffect(() => {
+    const entry = backTo.current === 'profile' && !profile ? profileItem.current : backTo.current === 'delete' && !confirming ? deleteItem.current : null
+    if (entry) { backTo.current = null; entry.focus() }
+  }, [profile, confirming])
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // Which list of tracks is open, what was done last (said until the next thing is tried), and the entry that takes the
@@ -264,7 +273,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: P
           <button type="submit" className="op-button" data-size="small" data-variant="primary" disabled={busy}>{t('product.budgetSave')}</button>
         </div>
       </form>}
-      {!profile && <button type="button" role="menuitem" className="op-menu-item" onClick={() => { openForm('profile') }}>{t('product.edit')}</button>}
+      {!profile && <button type="button" role="menuitem" className="op-menu-item" ref={profileItem} onClick={() => { openForm('profile') }}>{t('product.edit')}</button>}
       {profile && <form className="op-menu-form" noValidate onSubmit={saveProfile}>
         <label className="op-menu-label">
           <span>{t('product.name')}</span>
@@ -284,7 +293,7 @@ export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: P
         <p className="op-menu-hint">{t('product.siteHint')}</p>
         <p className="op-menu-hint">{t('product.renameHint')}</p>
         <div className="op-menu-actions">
-          <button type="button" className="op-button" data-size="small" onClick={() => { setProfile(null); setProblem(null) }}>{t('product.editCancel')}</button>
+          <button type="button" className="op-button" data-size="small" onClick={() => { backTo.current = 'profile'; setProfile(null); setProblem(null) }}>{t('product.editCancel')}</button>
           <button type="submit" className="op-button" data-size="small" data-variant="primary" disabled={busy}>{t('product.editSave')}</button>
         </div>
       </form>}
@@ -295,11 +304,11 @@ export function ProductMenu({ product, onChange, tracks, onTracks, onDelete }: P
         {mine.length > 1 && mine.map(track => <button key={track.id} type="button" role="menuitem" className="op-menu-item op-menu-clip" title={track.name}
           onClick={() => { void place({ kind: 'unlink', from: track.id }, track.name) }}>{t('product.remove', { track: track.name })}</button>)}
       </div>}
-      {!confirming && <button type="button" role="menuitem" className="op-menu-item op-menu-danger" onClick={() => { openForm('confirm') }}>{t('product.delete')}</button>}
+      {!confirming && <button type="button" role="menuitem" className="op-menu-item op-menu-danger" ref={deleteItem} onClick={() => { openForm('confirm') }}>{t('product.delete')}</button>}
       {confirming && <div className="op-menu-form" role="group" aria-label={t('product.delete')}>
         <p className="op-menu-ask">{t('product.deleteAsk', { name: product.name })}</p>
         <div className="op-menu-actions">
-          <button type="button" className="op-button" data-size="small" autoFocus onClick={() => { setConfirming(false); setProblem(null) }}>{t('product.editCancel')}</button>
+          <button type="button" className="op-button" data-size="small" autoFocus onClick={() => { backTo.current = 'delete'; setConfirming(false); setProblem(null) }}>{t('product.editCancel')}</button>
           <button type="button" className="op-button" data-size="small" data-variant="danger" disabled={busy} aria-busy={busy || undefined}
             onClick={() => { void remove() }}>{busy ? t('product.deleting') : t('product.deleteConfirm')}</button>
         </div>

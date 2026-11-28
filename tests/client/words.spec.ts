@@ -9,6 +9,7 @@ describe('words the panel did not write', () => {
     expect(told(t, say('timeout', { minutes: 30 }))).toBe('超过 30 分钟没有结束，已停止')
     expect(told(tEn, say('retried', { reason: say('sessionError'), count: 3 }))).toBe('The session ran into an error (tried again 3 times)')
     expect(told(tEn, 'fetch failed')).toBe('fetch failed')
+    expect(told(tEn, say('profiled'))).toBe('Profile built') // a card's first change note (review 5)
     expect(told(tEn, '模型自己写的一句说明')).toBe('模型自己写的一句说明')
   })
 

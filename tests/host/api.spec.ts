@@ -1684,6 +1684,48 @@ describe('deleting and editing tracks and products (M1.5)', () => {
     expect(repo.listTracks()).toHaveLength(1)
   })
 
+  it('waits for a baseline between its profile session and its check before deleting the product (review 1)', async () => {
+    addProduct('p1', 'Cursor', 'baselining', addTrack().id)
+    const held = gate()
+    const release = host.driver.release.bind(host.driver)
+    host.driver.release = async (id: string) => { if (id.startsWith(BASELINE)) await held.promise; return release(id) }
+    host.driver.script[BASELINE] = async round => {
+      await round.call('outpost_submit_card', { dimension: 'positioning', summary: 's', bullets: ['b'], body: 'x[1]', sources: [{ url: 'https://e.com/', title: 't', publisher: 'p', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q' }] })
+      await round.done('ok')
+      return completed()
+    }
+    ok(await host.call('POST', 'products/p1/update-now'))
+    await vi.waitFor(() => { expect(repo.listRuns('').find(r => r.kind === 'baseline')?.status).toBe('done') })
+    // The profile session is over and its check not started yet: no run is queued or running, and still it waits.
+    expect(repo.activeRuns('p1')).toEqual([])
+    const reply = await host.call('POST', 'products/p1/delete', {})
+    expect(reply.status).toBe(409)
+    held.open()
+    await rt.jobs.runner.idle()
+    ok(await host.call('POST', 'products/p1/delete', {}))
+  })
+
+  it('waits for a confirmation of another track that handed the product in (review 8)', async () => {
+    const t1 = addTrack(), t2 = addTrack({ name: '别的赛道' })
+    addProduct('p1', 'Cursor', 'tracking', t1.id)
+    const confirming = addRun('identify', { status: 'running' }, TODAY, { trackId: t2.id })
+    repo.addCandidate({ trackId: t2.id, batchId: confirming.id, productId: 'p1', tier: 'strong', oneLiner: '', reason: '', heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: true })
+    expect((await host.call('POST', 'products/p1/delete', {})).status).toBe(409)
+  })
+
+  it('does not bring a deleted product back when the brief is written again (review 7)', async () => {
+    const track = addTrack()
+    for (const id of ['p1', 'p2']) {
+      addProduct(id, id === 'p1' ? 'Cursor' : 'Windsurf', 'tracking', track.id)
+      addRun('daily', { status: 'done', startedAt: `${TODAY}T00:00:00.000Z`, endedAt: `${TODAY}T00:10:00.000Z` }, TODAY, { productId: id })
+    }
+    await rt.scheduler.rewriteBrief(TODAY)
+    expect(repo.getBrief(TODAY)!.quietProductIds).toEqual(['p1', 'p2'])
+    ok(await host.call('POST', 'products/p1/delete', {}))
+    await rt.scheduler.rewriteBrief(TODAY)
+    expect(repo.getBrief(TODAY)!.quietProductIds).toEqual(['p2'])
+  })
+
   it('PATCH products/:id renames, refuses a name another followed product has, and keeps the official sites as host names', async () => {
     const track = addTrack()
     addProduct('p1', 'Cursor', 'tracking', track.id)
@@ -1723,6 +1765,22 @@ describe('deleting and editing tracks and products (M1.5)', () => {
     expect(await refusal([{ key: 'positioning', label: '定位' }, { label: ' 定位 ' }])).toEqual({ error: '维度「定位」重复了' })
     expect(await refusal([{ key: 'nope', label: '别的' }])).toEqual({ error: '维度 nope 不是这个赛道的' })
     expect(repo.listTracks()[0]!.dimensions).toEqual(DEFAULT_DIMENSIONS)
+  })
+
+  it('PATCH tracks/:id with extraDimensions keeps a label’s key in its own track, whatever another track renamed (review 2)', async () => {
+    const custom = [...DEFAULT_DIMENSIONS, { key: 'pricing', label: 'Pricing' }]
+    const a = addTrack({ name: 'A', dimensions: custom }), b = addTrack({ name: 'B', status: 'picking', dimensions: custom })
+    ok(await host.call('PATCH', `tracks/${a.id}`, { dimensions: [...DEFAULT_DIMENSIONS, { key: 'pricing', label: 'Fees' }, { label: 'Pricing' }] }))
+    const saved = ok(await host.call('PATCH', `tracks/${b.id}`, { name: 'B2', extraDimensions: ['Pricing'] })).json<ApiResponse<'PATCH tracks/:id'>>()
+    expect(saved.dimensions.at(-1)).toEqual({ key: 'pricing', label: 'Pricing' })
+  })
+
+  it('PATCH tracks/:id takes as many custom dimensions as the defaults the track keeps leave room for (review 6)', async () => {
+    const track = addTrack({ status: 'picking', dimensions: [{ key: 'positioning', label: '定位' }] })
+    const many = Array.from({ length: 19 }, (_, i) => `维度${i + 1}`)
+    const saved = ok(await host.call('PATCH', `tracks/${track.id}`, { extraDimensions: many })).json<ApiResponse<'PATCH tracks/:id'>>()
+    expect(saved.dimensions).toHaveLength(20)
+    expect((await host.call('PATCH', `tracks/${track.id}`, { extraDimensions: [...many, '再一个'] })).status).toBe(400)
   })
 
   it('PATCH tracks/:id with extraDimensions keeps the defaults as the track has them', async () => {

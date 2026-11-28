@@ -56,6 +56,7 @@ const OWN = {
   'tag.unchecked': ['AI 整理 · 未核查', 'Compiled by AI · unchecked'],
 
   'source.open': ['打开原文：{title}', 'Open the source: {title}'],
+  'source.quote': ['「{quote}」', '“{quote}”'],
 
   // The six default dimensions (src/core/dimensions.ts), shown in the reader's language while a track keeps their label.
   'dimension.positioning': ['定位', 'Positioning'],
@@ -186,12 +187,12 @@ const OWN = {
   'track.save': ['保存', 'Save'],
   'track.saving': ['正在保存…', 'Saving…'],
   'track.saved': ['已保存', 'Saved'],
-  'track.toppedUp': ['已保存 · {count} 个产品马上补新维度的卡片', 'Saved · {count} products get the new dimensions’ cards now'],
+  'track.toppedUp': ['已保存 · {count} 个产品马上补新维度的卡片', 'Saved · the new dimensions are being filled in now, for {count} tracked product(s)'],
   'track.delete': ['删除赛道', 'Delete track'],
   'track.deleteStart': ['删除这个赛道…', 'Delete this track…'],
   'track.deleteIntro': ['删除这个赛道和它的推荐记录，不能恢复。', 'Deletes this track and its suggestions. This cannot be undone.'],
   'track.deleteProducts': ['只在这个赛道里的 {count} 个产品会一起删掉：{names}。它们的档案、发现和在哨报里的条目都会删掉；花费记录保留。想留下哪个，先把它移到别的赛道。',
-    'The {count} products that are only in this track are deleted with it: {names}. Their profiles, findings and items in past briefs go too; spending records stay. To keep one, move it to another track first.'],
+    'Products only in this track are deleted with it ({count}): {names}. Their profiles, findings and items in past briefs go too; spending records stay. To keep one, move it to another track first.'],
   'track.deleteNone': ['没有只在这个赛道里的产品，不会删掉任何产品。', 'No product is only in this track, so no product is deleted.'],
   'track.deleteShared': ['同时在别的赛道里的 {names} 会留下。', 'Also in other tracks, so they stay: {names}.'],
   'track.deleteConfirm': ['确认删除', 'Delete for good'],

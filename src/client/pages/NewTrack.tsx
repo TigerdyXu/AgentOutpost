@@ -26,7 +26,8 @@ const MAX_NAME = 20
 const MAX_BRIEF = 100
 const MAX_REFINE = 60
 const MAX_DIMENSION_LABEL = 20
-const MAX_EXTRA_DIMENSIONS = 14
+/** Dimensions of a track in all: the defaults it keeps and the custom ones (6 + 14 for a new track). */
+const MAX_DIMENSIONS = 20
 
 /** What a product's first profile takes: about 5 minutes, and 3 products at a time (the default of 同时跑几个产品). */
 const BASELINE_MINUTES = 5
@@ -96,7 +97,7 @@ function TrackForm({ initial, fixed, submitLabel, busyLabel, busy, problem, hint
     const label = draft.trim()
     // A default dimension is known by its name in either language: 「Positioning」 is 定位, not another one.
     const known = new Set([...fixed.flatMap(dimension => [dimension.label, labelOf(t, dimension)]), ...extra].map(sameLabel))
-    return label && !known.has(sameLabel(label)) && extra.length < MAX_EXTRA_DIMENSIONS ? [...extra, label] : extra
+    return label && !known.has(sameLabel(label)) && extra.length < MAX_DIMENSIONS - fixed.length ? [...extra, label] : extra
   }
   const addDimension = () => {
     setExtra(withDraft())
@@ -146,7 +147,7 @@ function TrackForm({ initial, fixed, submitLabel, busyLabel, busy, problem, hint
               }} />
             <button type="button" className="op-button" data-size="small" onClick={addDimension}>{t('new.dimensionAdd')}</button>
           </span>
-          : extra.length < MAX_EXTRA_DIMENSIONS && <button type="button" className="op-chip op-chip-add" onClick={() => { setAdding(true) }}>{t('new.addDimension')}</button>}
+          : extra.length < MAX_DIMENSIONS - fixed.length && <button type="button" className="op-chip op-chip-add" onClick={() => { setAdding(true) }}>{t('new.addDimension')}</button>}
       </div>
     </div>
     {problem && <p className="op-form-problem" role="alert">{problem}</p>}

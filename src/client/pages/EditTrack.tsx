@@ -8,6 +8,7 @@
  * under its stored name, so that saving the page in English does not rename it.
  */
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { DEFAULT_DIMENSIONS } from '../../core/dimensions.ts'
 import type { DimensionKey } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
 import { call, describeError } from '../api.ts'
@@ -60,14 +61,24 @@ function TrackEditor({ view, others }: { view: TrackView; others: TrackView[] })
   const removeRow = (id: string) => { setRows(rows.filter(row => row.id !== id)); setProblem(null); setSaved(null) }
   const addRow = () => { setRows([...rows, { id: `new-${added}`, text: '' }]); setAdded(added + 1); setSaved(null) }
 
-  /** Why the page cannot be sent as it is, or null: no dimension, one without a name, or one named twice. */
+  // A default dimension typed under its name in the reader's language is that default (sent under its stored name), so
+  // that removing 「Audience」 and typing it back brings its cards back instead of making a new dimension.
+  const defaultNamed = new Map(DEFAULT_DIMENSIONS.map(dimension => [sameLabel(labelOf(t, dimension)), dimension.label] as const))
+  /** The dimensions as sent: one left under the name it was shown under keeps its stored name (the default one, in Chinese). */
+  const toSend = () => rows.map(row => {
+    const text = row.text.trim()
+    return row.key === undefined ? { label: defaultNamed.get(sameLabel(text)) ?? text }
+      : { key: row.key, label: text === row.shown ? row.stored! : defaultNamed.get(sameLabel(text)) ?? text }
+  })
+
+  /** Why the page cannot be sent as it is, or null: no dimension, one without a name, or one named twice (as sent). */
   const check = (): string | null => {
     if (rows.length === 0) return t('said.dimensionsNeeded')
     if (rows.some(row => !row.text.trim())) return t('track.dimensionEmpty')
     const seen = new Set<string>()
-    for (const row of rows) {
-      if (seen.has(sameLabel(row.text))) return t('said.dimensionTwice', { label: row.text.trim() })
-      seen.add(sameLabel(row.text))
+    for (const [i, dimension] of toSend().entries()) {
+      if (seen.has(sameLabel(dimension.label))) return t('said.dimensionTwice', { label: rows[i]!.text.trim() })
+      seen.add(sameLabel(dimension.label))
     }
     return null
   }
@@ -80,9 +91,7 @@ function TrackEditor({ view, others }: { view: TrackView; others: TrackView[] })
     setBusy(true)
     setProblem(null)
     setSaved(null)
-    // A dimension left under the name it was shown under keeps its stored name (the default one, in Chinese).
-    const dimensions = rows.map(row => row.key === undefined ? { label: row.text.trim() }
-      : { key: row.key, label: row.text.trim() === row.shown ? row.stored! : row.text.trim() })
+    const dimensions = toSend()
     try {
       const answer = await call('PATCH tracks/:id', { id: track.id, body: { name: name.trim(), brief: brief.trim(), dimensions } })
       refresh()

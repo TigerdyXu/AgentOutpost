@@ -13,6 +13,7 @@ import { SourceChip } from '../../ui/SourceChip.tsx'
 import { Tag } from '../../ui/Tag.tsx'
 import { RichText } from './richText.tsx'
 import { labelOf } from '../../words.ts'
+import { told } from '../../words.ts'
 
 /**
  * What the strip says of `facts`: five cells, 「—」 for what is not known. The facts cite no source and no check looks at
@@ -95,7 +96,7 @@ function DimensionCard({ dimension, label, card, history, sources, open, baselin
             {versions.map((version, i) => <li key={version.version} className="op-history-item" data-latest={i === 0 ? '' : undefined}>
               <span className="op-history-date">{shortDay(version.createdAt) ?? ''}</span>
               <span className="op-history-dot" aria-hidden="true" />
-              <span className="op-history-note">{version.changeNote}</span>
+              <span className="op-history-note">{told(t, version.changeNote)}</span>
             </li>)}
           </ol>
         </aside>

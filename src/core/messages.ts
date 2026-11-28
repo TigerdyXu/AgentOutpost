@@ -42,7 +42,8 @@ export const SAID = {
   internal: ['前哨内部出错，详情见 DSH 日志', 'Something went wrong inside Outpost; the details are in the DSH log'],
   notJson: ['请求必须是 JSON', 'The request must be JSON'],
 
-  // A finding's note from the check.
+  // A card's first version (its change note), and a finding's note from the check.
+  profiled: ['建档', 'Profile built'],
   quoteUnsupported: ['引句在原文中找不到或不支持结论', 'The quote is not in the source, or does not support the claim'],
   unopened: ['原文打不开', 'The source could not be opened'],
   oneSource: ['只有一个来源', 'Only one source'],

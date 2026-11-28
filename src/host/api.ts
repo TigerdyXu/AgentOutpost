@@ -22,6 +22,7 @@ import { BASIC_AGENT_PRESET } from './dsh-sessions.ts'
 import { startFollowup } from './followup.ts'
 import { ApiError, matchRoute, RawReply, type ApiRequestParts } from './http.ts'
 import { ICON_TYPES } from './icons.ts'
+import { isBaselining } from './jobs/baseline.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { startRecommendation } from './jobs/recommend.ts'
@@ -272,7 +273,8 @@ const label = z.string().trim().min(1, '维度名不能为空').max(MAX_DIMENSIO
 const productName = text(MAX_PRODUCT_NAME).min(1).refine(hasNameKey, '请填产品名')
 const NewTrack = z.object({ name: text(MAX_NAME).min(1), brief: text(MAX_BRIEF).default(''), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).default([]) })
 const TrackPatch = z.object({
-  name: text(MAX_NAME).min(1).optional(), brief: text(MAX_BRIEF).optional(), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).optional(),
+  // How many custom ones fit depends on the defaults the track still has (`MAX_DIMENSIONS` in all), checked by the route.
+  name: text(MAX_NAME).min(1).optional(), brief: text(MAX_BRIEF).optional(), extraDimensions: z.array(label).max(MAX_DIMENSIONS).optional(),
   dimensions: z.array(z.object({ key: z.string().min(1).max(100).optional(), label })).max(MAX_DIMENSIONS).optional(),
 })
 const Recommend = z.object({ refine: text(MAX_REFINE).optional() })
@@ -346,10 +348,11 @@ const DEFAULT_KEYS = new Set(DEFAULT_DIMENSIONS.map(d => d.key))
  * `slugDimension` of its label, with `-2`, `-3`… appended while that key is a default's, another dimension's of any
  * track, or one some card was written under (a removed dimension's cards must not turn up under a new label).
  */
-function trackDimensions(rt: Runtime, labels: string[], base: readonly Dimension[] = DEFAULT_DIMENSIONS): Dimension[] {
+function trackDimensions(rt: Runtime, labels: string[], base: readonly Dimension[] = DEFAULT_DIMENSIONS, own: readonly Dimension[] = []): Dimension[] {
   const dimensions: Dimension[] = [...base]
   const labelsHere = new Set(dimensions.map(d => sameLabel(d.label)))
-  const keyOfLabel = new Map<string, DimensionKey>()
+  // The track's own labels first: a label it has keeps its key, whatever another track (renamed since) has under it.
+  const keyOfLabel = new Map<string, DimensionKey>(own.map(d => [sameLabel(d.label), d.key]))
   const taken = new Set<DimensionKey>([...DEFAULT_DIMENSIONS.map(d => d.key), ...rt.repo.cardDimensions()])
   for (const track of rt.repo.listTracks()) {
     for (const d of track.dimensions) {
@@ -471,9 +474,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   const toppedUp = (joined: Joined | undefined) => joined?.work === 'top-up' ? joined.missing.length : 0
   /**
    * Whether the product has work in flight that deleting it must wait for: a run of it queued or running (a 追问 chat
-   * aside: it is the user's, and over once opened), or the scheduler's own work on it, waiting for its turn included.
+   * aside: it is the user's, and over once opened); the scheduler's own work on it, waiting for its turn included; a
+   * baseline between its profile session and its check; or a confirmation of a product added by name, for any track,
+   * that handed it in and has not joined it to its track yet.
    */
-  const hasWork = (productId: Id, active = repo.activeRuns()) => active.some(r => r.productId === productId && r.kind !== 'followup') || rt.scheduler.isBusy(productId)
+  const hasWork = (productId: Id, active = repo.activeRuns()) =>
+    active.some(r => r.productId === productId && r.kind !== 'followup')
+    || rt.scheduler.isBusy(productId) || isBaselining(rt.jobs.runner, productId)
+    || active.some(r => r.kind === 'identify' && r.trackId !== null && repo.listCandidates(r.trackId, r.id).some(c => c.productId === productId))
   /** Removes the icon files of products that were erased (`<icons>/<id>.<type>`); a missing one is no matter. */
   const removeIcons = (ids: Id[]) => rt.background(Promise.all(ids.filter(id => /^[\w-]+$/.test(id))
     .flatMap(id => Object.keys(ICON_TYPES).map(ext => rm(join(rt.iconsDir, `${id}.${ext}`), { force: true })))), 'removing the icons of deleted products')
@@ -649,8 +657,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const body = TrackPatch.parse(await req.body())
       if (body.dimensions && body.extraDimensions) badRequest('dimensions and extraDimensions cannot both be given')
       // The track's own dimensions are among the keys in use, so a label it keeps keeps its key; its defaults stay as they are.
+      const defaults = current.dimensions.filter(d => DEFAULT_KEYS.has(d.key))
+      if (body.extraDimensions && defaults.length + body.extraDimensions.length > MAX_DIMENSIONS) badRequest(`at most ${MAX_DIMENSIONS - defaults.length} custom dimensions`)
       const dimensions = body.dimensions ? editedDimensions(rt, current, body.dimensions)
-        : body.extraDimensions && trackDimensions(rt, body.extraDimensions, current.dimensions.filter(d => DEFAULT_KEYS.has(d.key)))
+        : body.extraDimensions && trackDimensions(rt, body.extraDimensions, defaults, current.dimensions)
       const updated = repo.updateTrack(current.id, { name: body.name, brief: body.brief, dimensions })
       // The user asked for these: fill them in now (Ruling 25), not after the 7 days that pace automatic top-ups.
       const had = new Set(current.dimensions.map(d => d.key))

@@ -702,6 +702,18 @@ describe('the ⋯ menu', () => {
     expect(document.querySelector('[role="menu"] [role="alert"]')?.textContent).toBe('已经有一个「Meta Muse」在跟踪了。想合并的话，删掉其中一个')
   })
 
+  it('puts the focus back on the entry after 取消 in the name form and in the question (review 4)', async () => {
+    await show()
+    await click(more())
+    await click(control('编辑名称和官网…'))
+    await click(find('取消', '[role="menu"] button'))
+    expect(document.activeElement).toBe(control('编辑名称和官网…'))
+    await click(control('删除产品…'))
+    await click(find('取消', '[role="menu"] button'))
+    expect(document.activeElement).toBe(control('删除产品…'))
+    expect(document.querySelector('[role="menu"]')).not.toBeNull()
+  })
+
   it('deletes the product after asking once more, and goes to the brief (M1.5)', async () => {
     const { api, context } = await show(view(), {}, { 'POST products/:id/delete': { ok: true } })
     await click(more())
