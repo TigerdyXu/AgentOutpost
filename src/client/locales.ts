@@ -551,6 +551,8 @@ const OWN = {
   'note.add': ['写笔记', 'Add a note'],
   'note.addProduct': ['＋ 写笔记：你对这个产品的看法、要盯的事', '+ Add a note: what you think of this product, what to watch'],
   'note.edit': ['编辑', 'Edit'],
+  'note.editAbout': ['编辑笔记：{about}', 'Edit the note on {about}'],
+  'note.over': ['超过 {max} 字了，删掉一些再保存', 'Over {max} characters; shorten it to save'],
   'note.save': ['保存', 'Save'],
   'note.saving': ['保存中…', 'Saving…'],
   'note.cancel': ['取消', 'Cancel'],

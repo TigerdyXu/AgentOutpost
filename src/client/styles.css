@@ -3729,6 +3729,10 @@ button.op-run-open:focus-visible {
   font-size: 13px;
 }
 
+.op-note-count[data-over] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .op-link[data-tone="danger"] {
   color: var(--dsw-alias-state-error-primary);
 }

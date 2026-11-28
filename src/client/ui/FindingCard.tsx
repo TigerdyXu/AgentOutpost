@@ -39,6 +39,7 @@ export interface FindingCardProps {
 
 export function FindingCard({ finding, product, trackName, sources, changed, promoted, read = false, minor, onRead, focused = false, note = null, onNoteSaved }: FindingCardProps): ReactNode {
   const [writing, setWriting] = useState(false)
+  const addNote = useRef<HTMLButtonElement>(null)
   const { t, navigate } = useShell()
   const card = useRef<HTMLElement>(null)
   useLeaveViewport(card, read || !onRead, () => { onRead?.(finding.id) })
@@ -75,12 +76,12 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
       <span className="op-card-actions">
         {changed.length > 0 && <button type="button" className="op-link"
           onClick={() => { navigate({ page: 'product', productId: finding.productId, tab: 'dossier', expand: changed[0]!.key }) }}>{t('today.look')}</button>}
-        {onNoteSaved && !note && !writing && <button type="button" className="op-link" onClick={() => { setWriting(true) }}>{t('note.add')}</button>}
+        {onNoteSaved && !note && !writing && <button ref={addNote} type="button" className="op-link" onClick={() => { setWriting(true) }}>{t('note.add')}</button>}
         <button type="button" className="op-link" disabled={asking} aria-busy={asking || undefined} onClick={() => { void ask() }}>{t('today.followup')}</button>
       </span>
     </div>
-    {onNoteSaved && <NoteBlock kind="finding" subjectId={finding.id} note={note} editing={writing} onEditing={setWriting}
-      onSaved={kept => { onNoteSaved(finding.id, kept) }} />}
+    {onNoteSaved && <NoteBlock kind="finding" subjectId={finding.id} note={note} about={finding.headline} editing={writing} onEditing={setWriting}
+      onSaved={kept => { onNoteSaved(finding.id, kept) }} returnFocus={() => { setTimeout(() => { addNote.current?.focus() }) }} />}
     {problem && <p className="op-card-error" role="alert">{problem}</p>}
   </article>
 }

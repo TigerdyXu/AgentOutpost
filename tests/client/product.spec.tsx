@@ -1423,6 +1423,24 @@ describe('inside the shell', () => {
     expect(JSON.parse(localStorage.getItem('outpost.route')!)).toEqual({ page: 'product', productId: 'p1', tab: 'dossier' })
   })
 
+  it('keeps a note saved on the 动态 tab when the reader leaves the tab and comes back before the next read (M3.3)', async () => {
+    const one = finding('f1', 'p1', { headline: '安卓全量开放' })
+    stubApi({
+      'GET state': shellState, 'GET products/:id': view(),
+      'GET products/:id/findings': { findings: [one], sources: [], changed: {}, notes: {} }, // the host's answer stays as it was
+      'POST notes/:kind/:id': { note: { kind: 'finding', subjectId: 'f1', text: '要实测', updatedAt: '2026-11-28T09:00:00.000Z' } },
+    })
+    localStorage.setItem('outpost.route', JSON.stringify({ page: 'product', productId: 'p1', tab: 'feed' }))
+    await mount(<App t={t} />)
+    await click(find('写笔记'))
+    await type('.op-note textarea', '要实测')
+    await click(find('保存'))
+    expect(document.querySelector('.op-card .op-note-text')?.textContent).toBe('要实测')
+    await click(find('档案'))
+    await click(find('动态'))
+    expect(document.querySelector('.op-card .op-note-text')?.textContent).toBe('要实测')
+  })
+
   it('opens the product page on the card the route names, and moves between its tabs', async () => {
     stubApi({
       'GET state': shellState, 'GET products/:id': view(), 'GET products/:id/findings': noFindings,

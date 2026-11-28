@@ -14,14 +14,15 @@ import { labelOf } from '../../words.ts'
 /** Newest first; one with no readable time goes last. */
 const byNewest = (a: Finding, b: Finding) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)
 
-export function FeedTab({ product, findings, sources, dimensions, changed = {}, focus, notes }: {
+export function FeedTab({ product, findings, sources, dimensions, changed = {}, focus, notes, onNoteSaved }: {
   product: Product; findings: Finding[]; sources: Source[]; dimensions: Dimension[]
   /** The dimensions each finding changed (from the API); a finding absent changed none. */
   changed?: Record<Id, DimensionKey[]>
   /** A finding a link asked to show (a search hit, M3.2): scrolled to and marked, its fold opened if it is in one. */
   focus?: Id
-  /** The user's notes on the findings (M3.3). */
+  /** The user's notes on the findings (M3.3), and who else hears of one saved here (the page, which outlives this tab). */
   notes?: Readonly<Record<Id, Note>>
+  onNoteSaved?: (findingId: Id, note: Note | null) => void
 }): ReactNode {
   const { t, state } = useShell()
   const { noteOf, saved: noteSaved } = useNotes(notes)
@@ -57,7 +58,7 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {}, 
     // A dimension that no track of the product lists is not on the profile: not named, and not what 看改动 opens.
     changed={finding.status === 'verified' ? (changed[finding.id] ?? []).flatMap(key => labels.has(key) ? [{ key, label: labels.get(key)! }] : []) : []}
     promoted={finding.status === 'verified' && finding.statusNote === PROMOTED} focused={finding.id === focus}
-    note={noteOf(finding.id)} onNoteSaved={noteSaved} />
+    note={noteOf(finding.id)} onNoteSaved={(id, note) => { noteSaved(id, note); onNoteSaved?.(id, note) }} />
 
   if (shown.length === 0 && unproven.length === 0) return <p className="op-day-empty">{t('feed.empty')}</p>
   return <div className="op-feed" ref={list}>

@@ -4,13 +4,14 @@
  * read every 5 s (2 s while it is being built or updated), so a card the baseline just wrote, or the update the reader
  * asked for, shows up by itself.
  */
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { DimensionKey, Id, Note } from '../../core/types.ts'
 import { call, describeError, usePoll } from '../api.ts'
 import { useShell } from '../shell/context.ts'
 import type { ProductTab, Route } from '../shell/route.ts'
 import { clockTime, localDay, shortDay } from '../time.ts'
 import { NoteBlock } from '../ui/NoteBlock.tsx'
+import { useNotes } from '../ui/useNotes.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
@@ -47,6 +48,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
   // The user's note on the product (M3.3): the one saved here, until the next read of the profile brings it.
   const [savedNote, setSavedNote] = useState<Note | null | undefined>(undefined)
   const [writingNote, setWritingNote] = useState(false)
+  const addNote = useRef<HTMLButtonElement>(null)
   useEffect(() => { if (expand) setExpanded(previous => previous.has(expand) ? previous : new Set(previous).add(expand)) }, [expand])
 
   const profile = usePoll(() => call('GET products/:id', { id: productId }), [productId],
@@ -55,6 +57,13 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
   const view = profile.data
   const { reload: reloadProfile } = profile
   const { reload: reloadFeed } = feed
+  // Once the profile read brings what was saved here, it speaks for itself again (a change from elsewhere then shows too).
+  const readNote = view ? view.note : undefined
+  useEffect(() => {
+    if (savedNote !== undefined && readNote !== undefined && (readNote?.updatedAt ?? null) === (savedNote?.updatedAt ?? null)) setSavedNote(undefined)
+  }, [readNote, savedNote])
+  // The findings' notes saved on the 动态 tab, kept here so that leaving the tab and coming back shows them.
+  const findingNotes = useNotes(feed.data?.notes)
 
   // 立即更新: the run the host started is asked about until it is over; then the profile and the column are read again.
   useEffect(() => {
@@ -181,9 +190,9 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
     {view && (() => {
       const note = savedNote !== undefined ? savedNote : view.note
       return note || writingNote
-        ? <NoteBlock kind="product" subjectId={view.product.id} note={note} editing={writingNote} onEditing={setWritingNote}
-          onSaved={kept => { setSavedNote(kept); void reloadProfile() }} />
-        : <button type="button" className="op-link op-note-add" onClick={() => { setWritingNote(true) }}>{t('note.addProduct')}</button>
+        ? <NoteBlock kind="product" subjectId={view.product.id} note={note} about={view.product.name} editing={writingNote} onEditing={setWritingNote}
+          onSaved={kept => { setSavedNote(kept); void reloadProfile() }} returnFocus={() => { setTimeout(() => { addNote.current?.focus() }) }} />
+        : <button ref={addNote} type="button" className="op-link op-note-add" onClick={() => { setWritingNote(true) }}>{t('note.addProduct')}</button>
     })()}
     {!view && profile.error && <p className="op-day-problem" role="alert">{describeError(t, profile.error)}</p>}
 
@@ -199,7 +208,9 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       <div className="op-tabpanel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-${tab}`}>
         {tab === 'dossier' && <DossierTab view={view} expanded={expanded} onToggle={toggle} focus={expand} now={now} />}
         {tab === 'feed' && (feed.data
-          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} focus={finding} notes={feed.data.notes} />
+          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} focus={finding}
+            notes={Object.fromEntries(feed.data.findings.flatMap(f => { const kept = findingNotes.noteOf(f.id); return kept ? [[f.id, kept]] : [] }))}
+            onNoteSaved={(id, note) => { findingNotes.saved(id, note); void reloadFeed() }} />
           : feed.error && <p className="op-day-problem" role="alert">{describeError(t, feed.error)}</p>)}
         {tab === 'sources' && <SourcesTab view={view} />}
         {tab === 'topics' && <TopicsTab productId={view.product.id} />}

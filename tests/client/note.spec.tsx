@@ -26,14 +26,21 @@ describe('a note on a product', () => {
     await mount(<Product />, { route: { page: 'product', productId: 'p1', tab: 'dossier' }, state: state() })
     await click(find('＋ 写笔记'))
     const field = document.querySelector<HTMLTextAreaElement>('.op-note textarea')!
-    expect(field.maxLength).toBe(2000)
     expect(document.activeElement).toBe(field)
+    // Counted as the host counts: an emoji is one; over the limit it says so and cannot be saved.
+    await type(field, '😀'.repeat(3))
+    expect(text()).toContain('3/2000')
+    await type(field, '长'.repeat(2001))
+    expect(text()).toContain('超过 2000 字了')
+    expect(find('保存').hasAttribute('disabled')).toBe(true)
+    await type(field, '')
     expect(find('保存').hasAttribute('disabled')).toBe(true) // nothing to keep yet
     await type(field, '要盯它的定价')
     expect(text()).toContain('6/2000')
     await click(find('保存'))
     expect(api.requests.filter(r => r.method === 'POST').map(r => [r.path, r.body])).toEqual([['notes/product/p1', { text: '要盯它的定价' }]])
     expect(document.querySelector('.op-note-text')?.textContent).toBe('要盯它的定价')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('编辑笔记：小豆') // focus back on the note's 编辑
     expect(document.querySelector('.op-note-label')?.textContent).toBe('我的笔记')
     expect(document.querySelector('.op-note-date')?.textContent).toBe('11-28')
     await click(find('编辑'))
@@ -66,11 +73,16 @@ describe('a note on a finding', () => {
     await mount(<FeedTab product={p} findings={[finding('f1', 'p1')]} sources={[]} dimensions={[]} notes={{}} />)
     await click(find('写笔记'))
     let field = document.querySelector<HTMLTextAreaElement>('.op-note textarea')!
-    expect(field.maxLength).toBe(500)
     await type(field, '先不写了')
+    expect(text()).toContain('4/500')
+    // Esc while an input method composes is the input method's: the note stays open.
+    await act(async () => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })) })
+    expect(document.querySelector('.op-note textarea')).not.toBeNull()
     await act(async () => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     expect(document.querySelector('.op-note')).toBeNull()
     expect(api.requests.filter(r => r.method === 'POST')).toEqual([])
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(document.activeElement?.textContent).toBe('写笔记') // focus back on the card's 写笔记
     await click(find('写笔记'))
     field = document.querySelector<HTMLTextAreaElement>('.op-note textarea')!
     expect(field.value).toBe('') // it starts again from what is kept
