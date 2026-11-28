@@ -8,10 +8,11 @@
 import type { ReactNode } from 'react'
 import { isOwnSource } from '../../../core/credibility.ts'
 import { canonicalUrl } from '../../../core/url.ts'
-import type { Source, SourceKind } from '../../../core/types.ts'
+import type { Dimension, Source, SourceKind } from '../../../core/types.ts'
 import type { ProductView } from '../../../host/api.ts'
 import { useShell } from '../../shell/context.ts'
 import { Tag } from '../../ui/Tag.tsx'
+import { labelOf } from '../../words.ts'
 
 const KINDS: Record<SourceKind, 'sources.kind.official' | 'sources.kind.media' | 'sources.kind.review' | 'sources.kind.appstore' | 'sources.kind.social'> = {
   official: 'sources.kind.official', media: 'sources.kind.media', review: 'sources.kind.review', appstore: 'sources.kind.appstore', social: 'sources.kind.social',
@@ -29,15 +30,16 @@ const rank = (s: Source) => isOwnSource(s) ? 0 : s.openedVia === 'unopened' ? 3 
 /**
  * The pages the profile cites, one row each however many cards cite them (M1.6: each card keeps its own copy of a source,
  * so one article cited by four cards is four stored sources), shown as their best copy (`rank`), in the order the view
- * lists them; and which dimensions cite each (by label, in the order the page lists the dimensions, each once), keyed by
+ * lists them; and which dimensions cite each (by `name`, in the order the page lists the dimensions, each once), keyed by
  * that copy's id. A card of a dimension that no track of the product lists is not on the page, so what only it cites is
  * not listed, and the dimension is not named.
  */
-export function citations(view: Pick<ProductView, 'cards' | 'dimensions' | 'sources'>): { citedBy: Map<string, string[]>; sources: Source[] } {
+export function citations(view: Pick<ProductView, 'cards' | 'dimensions' | 'sources'>, name: (dimension: Dimension) => string = dimension => dimension.label): { citedBy: Map<string, string[]>; sources: Source[] } {
   const byId = new Map(view.sources.map(source => [source.id, source]))
   const labelsOf = new Map<string, string[]>() // by page
-  for (const { key, label } of view.dimensions) {
-    const card = view.cards.find(item => item.dimension === key)
+  for (const dimension of view.dimensions) {
+    const label = name(dimension)
+    const card = view.cards.find(item => item.dimension === dimension.key)
     for (const id of card?.sourceIds ?? []) {
       const source = byId.get(id)
       if (!source) continue
@@ -63,7 +65,7 @@ export function citations(view: Pick<ProductView, 'cards' | 'dimensions' | 'sour
 
 export function SourcesTab({ view }: { view: ProductView }): ReactNode {
   const { t } = useShell()
-  const { citedBy, sources } = citations(view)
+  const { citedBy, sources } = citations(view, dimension => labelOf(t, dimension)) // a default dimension in the reader's language
   const count = (source: Source) => citedBy.get(source.id)?.length ?? 0
   const rows = [...sources].sort((a, b) => count(b) - count(a)
     || (b.publishedAt ? Date.parse(b.publishedAt) || 0 : 0) - (a.publishedAt ? Date.parse(a.publishedAt) || 0 : 0))

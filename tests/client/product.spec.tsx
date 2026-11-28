@@ -1381,6 +1381,10 @@ describe('the sources tab', () => {
     expect(cells(list()[0]!)[4]).toBe('被 2 条结论引用定位、目标人群')
     expect(tags(list()[0]!, 'unopened')).toHaveLength(0) // another copy of it was opened
     expect(control('来源2').getAttribute('aria-selected')).toBe('true') // the tab counts pages
+    unmount()
+    // In English, the default dimensions that cite it are named in English too.
+    await show(view({ sources: copies, cards: cited }), { route: route({ tab: 'sources' }), t: tEn })
+    expect(cells(list()[0]!)[4]).toBe('Cited by 2 conclusionsPositioning, Audience')
   })
 
   it('calls a source official only when the check agreed, and says when it did not (M1.6)', async () => {
