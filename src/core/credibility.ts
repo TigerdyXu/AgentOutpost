@@ -5,7 +5,7 @@ import { say } from './messages.ts'
 /** What one source contributed to one finding, as recorded by the verify step. */
 export interface Evidence {
   url: string
-  /** The source speaks for the product's maker, as both the researcher and the checker said (`isOwnSource`). */
+  /** The source speaks for the product's maker, as the checker said (`isOwnSource`). */
   isOfficial: boolean
   syndicationGroup: string | null
   openedVia: OpenedVia
@@ -26,11 +26,11 @@ type Seen = Pick<Evidence, 'openedVia' | 'quoteFound' | 'supportsClaim'>
 export const isVoidEvidence = (e: Seen): boolean => (e.openedVia === 'http' || e.openedVia === 'browser') && (e.quoteFound === false || e.supportsClaim === false)
 
 /**
- * Whether a source speaks for the product's maker: the researcher said so and the checker, having seen the page, agreed
- * (M1.6). Either alone is one agent's say-so: the researcher once marked another company's site, and a regulator's, as
- * official.
+ * Whether a source speaks for the product's maker: the checker, having seen the page, said the maker published it (M1.6).
+ * Whoever handed the source in (the researcher, or the checker adding a second source) also marks it `isOfficial`, but
+ * that is only a hint: the researcher once marked another company's site, and a regulator's, as official.
  */
-export const isOwnSource = (s: { isOfficial: boolean; officialConfirmed: boolean | null }): boolean => s.isOfficial && s.officialConfirmed === true
+export const isOwnSource = (s: { officialConfirmed: boolean | null }): boolean => s.officialConfirmed === true
 
 /** Valid: the quote was matched (on the page, or in a search snippet when the page would not open) and nothing says it fails the claim. */
 export const isValidEvidence = (e: Seen): boolean => e.quoteFound === true && e.supportsClaim !== false

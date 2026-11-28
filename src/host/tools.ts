@@ -5,7 +5,7 @@
  */
 import { z } from 'zod'
 import { normalizeDate } from '../core/dates.ts'
-import { isValidEvidence, isVoidEvidence } from '../core/credibility.ts'
+import { isOwnSource, isValidEvidence, isVoidEvidence } from '../core/credibility.ts'
 import { findingKey, isDuplicate, type RecentFinding } from '../core/dedupe.ts'
 import { weeklyHeat } from '../core/hotness.ts'
 import type { Id, Source, Span } from '../core/types.ts'
@@ -262,10 +262,10 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
           product: { name: product.name, company: product.company, region: product.region, form: product.form, officialDomains: product.officialDomains },
           dimensions: repo.dimensionsOfProduct(productId),
           facts: facts && { form: facts.form, platforms: facts.platforms, price: facts.price, firstReleased: facts.firstReleased, rivals: facts.rivals },
-          // The whole card, so that a proposed edit can start from its text and keep its citations.
+          // The whole card, so that a proposed edit can start from its text and keep its citations; official as the check found it.
           cards: cards.map(c => ({
             dimension: c.dimension, summary: c.summary, bullets: c.bullets, body: c.body,
-            sources: repo.getSources(c.sourceIds).map(s => ({ url: s.url, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, kind: s.kind, isOfficial: s.isOfficial, quote: s.quote })),
+            sources: repo.getSources(c.sourceIds).map(s => ({ url: s.url, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, kind: s.kind, isOfficial: isOwnSource(s), quote: s.quote })),
           })),
           recentFindings: recent.map(f => ({ headline: f.headline, status: f.status, createdAt: f.createdAt })),
           knownUrls: distinctUrls(known.map(s => s.url)),

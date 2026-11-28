@@ -64,6 +64,8 @@ describe('renderPrompt', () => {
       'outpost_read_pending', 'outpost_report_check', 'outpost_add_source', 'outpost_done', 'web_fetch', 'web_search', '验证页', '登录页', '浏览器工具',
       'snippet', 'unopened', 'http', 'browser', 'syndicationGroup', '原始通稿', '最多搜 3 次', '打开 3 个网页', '不改', '不编造', 'null',
       'needsCheck', '不要再打开', '人机验证', '算没打开', '不要报 http + false',
+      // M1.6: who published the page is the checker's call, by the page, not by the recorded domain.
+      'official：Anysphere 自己发的页面', '官方账号', '论坛帖', '同名', '看不出填 null', '可能记错，以页面为准', '来源的 official 为 true',
     ]) expect(verify, rule).toContain(rule)
     // 待确认 findings: only what was not seen yet is opened again, then the search for a second source.
     expect(verify).toMatch(/unconfirmedFindings：[^\n]*needsCheck 为 true[^\n]*不要再打开[^\n]*第 4 步/)

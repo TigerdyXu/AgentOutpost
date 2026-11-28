@@ -210,6 +210,17 @@ describe('verifyProduct', () => {
     expect(repo.getSources(finding(refused.id).sourceIds)[0]).toMatchObject({ isOfficial: true, officialConfirmed: false })
   })
 
+  it('goes by the checker, not the researcher, on who published a page (M1.6)', async () => {
+    // The researcher did not call the maker's own page official; the checker, having opened it, says it is.
+    const blog = addSource('https://cursor.com/blog/teams', { kind: 'media', isOfficial: false, publisher: 'Cursor' })
+    const f = addFinding([blog])
+    driver.script[VERIFY] = reportCheck({ ...SEEN, official: true })
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(finding(f.id)).toMatchObject({ status: 'verified', statusNote: null })
+  })
+
   it('does not count a page checked before M1.6 as official on the researcher’s word alone', async () => {
     // Checked by an earlier build: the quote matched, nobody asked who published it.
     const old = addSource('https://cursor.com/changelog/1-9', { kind: 'official', isOfficial: true, openedVia: 'http', quoteFound: true, supportsClaim: true })

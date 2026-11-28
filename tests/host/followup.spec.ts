@@ -97,6 +97,19 @@ describe('startFollowup', () => {
     expect(prompt).not.toMatch(/\{\{|\}\}/)
   })
 
+  it('calls a source 官方 only when the check found the maker published it (M1.6)', async () => {
+    const claimed = repo.addSource({ url: 'https://cursor.example/blog', title: '同名公司的博客', publisher: 'Cursor Inc.', publishedAt: null, kind: 'official', isOfficial: true, quote: '原话', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: false })
+    const run = repo.createRun({ kind: 'daily', date: TODAY, trackId: null, productId: 'p1' })
+    const other = repo.addFinding({
+      productId: 'p1', runId: run.id, headline: '另一条', why: '为什么', importance: 'notable', claimKind: 'self', sourceIds: [claimed.id, official.id], status: 'unconfirmed',
+      statusNote: '只有一个来源', unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'k2', verifiedOn: null,
+    })
+    await startFollowup(deps, other.id)
+    const lines = driver.interactive[0]!.prompt.split('\n')
+    expect(lines.find(line => line.includes('同名公司的博客'))).not.toContain('官方')
+    expect(lines.find(line => line.includes('Cursor 2.1 更新日志'))).toContain('官方')
+  })
+
   it('says when a finding is still 待确认, and when the product has no card yet', async () => {
     repo.updateFinding(finding.id, { status: 'unconfirmed', statusNote: '原文打不开', verifiedOn: null })
     const bare = repo.upsertProduct({ name: 'Windsurf', company: 'Codeium', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: null })

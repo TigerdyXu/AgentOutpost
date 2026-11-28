@@ -98,8 +98,8 @@ it('shows a source chip with its publisher and date, marking official and unreac
   const thisYear = new Date().getFullYear()
   await mount(<>
     <SourceChip source={source({ publishedAt: `${thisYear}-11-25` })} n={1} />
-    <SourceChip source={source({ id: 's3', publishedAt: `${thisYear - 1}-03-02`, isOfficial: false })} />
-    <SourceChip source={source({ id: 's2', isOfficial: false, kind: 'media', publisher: '36氪', publishedAt: null, openedVia: 'unopened', quoteFound: null })} />
+    <SourceChip source={source({ id: 's3', publishedAt: `${thisYear - 1}-03-02`, isOfficial: false, officialConfirmed: false })} />
+    <SourceChip source={source({ id: 's2', isOfficial: false, kind: 'media', publisher: '36氪', publishedAt: null, openedVia: 'unopened', quoteFound: null, officialConfirmed: null })} />
   </>)
   const [official, lastYear, unopened] = all<HTMLAnchorElement>('a.op-source')
   // A date of this year shows as month-day; an older one keeps its year.
@@ -120,7 +120,7 @@ it('marks a source 官方 only when the check agreed that the maker published it
     <SourceChip source={source({ id: 's3', officialConfirmed: null })} />
   </>)
   const marked = all('a.op-source').map(chip => [...chip.querySelectorAll<HTMLElement>('.op-tag')].some(tag => tag.dataset.kind === 'official'))
-  expect(marked).toEqual([true, false, false]) // the researcher called all three official
+  expect(marked).toEqual([true, false, false]) // whoever handed them in called all three official: the check decides
 })
 
 it('styles with theme variables only: no color literals, hairline borders, selection without a side bar', () => {

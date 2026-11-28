@@ -2,8 +2,8 @@
  * 来源 (design §5.4): every source the profile cites: its title (a link), who published it and when, what kind of source it
  * is, whether it is the product's own, and which conclusions cite it. The most cited come first, then the newest.
  *
- * 官方 is what the check agreed to (`isOwnSource`): a source the researcher called the maker's own reads 「官方（未核实）」
- * until a check has seen it, and 「不是官方」 once the check said someone else published it.
+ * 官方 is what the check found (`isOwnSource`): a source handed in as an 「官方发布」 reads 「官方（未核实）」 until a check has
+ * said who published it, and 「不是官方」 once the check said someone else did.
  */
 import type { ReactNode } from 'react'
 import { isOwnSource } from '../../../core/credibility.ts'

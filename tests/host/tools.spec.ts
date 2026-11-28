@@ -498,8 +498,8 @@ describe('outpost_read', () => {
     atDaysAgo(20, () => seedFinding({ headline: '二十天前的发现' }, { url: 'https://seed.example/ancient' }))
     atDaysAgo(3, () => seedFinding({ headline: '三天前的发现', status: 'verified', dedupeKey: 'three' }, { url: 'https://seed.example/known' }))
     seedFinding({ headline: '今天的发现', status: 'unconfirmed', dedupeKey: 'today' }, { url: 'https://www.seed.example/today/?utm_source=x' })
-    const cardSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
-    const twice = repo.addSource({ url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
+    const cardSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: true })
+    const twice = repo.addSource({ url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: true, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
     repo.addCardVersion({ productId: product.id, dimension: 'pricing', version: 1, summary: '旧摘要', bullets: ['旧'], body: '旧[1]', sourceIds: [cardSource.id, twice.id], inferenceSpans: [], addedSpans: [], changeNote: '', findingIds: [], createdAt: time.toISOString() })
     repo.addCardVersion({ productId: product.id, dimension: 'pricing', version: 2, summary: '新摘要', bullets: ['新一', '新二'], body: '新[1]', sourceIds: [cardSource.id, twice.id], inferenceSpans: [], addedSpans: [], changeNote: '', findingIds: [], createdAt: time.toISOString() })
     repo.addFacts({ productId: product.id, ...facts })
@@ -512,7 +512,8 @@ describe('outpost_read', () => {
     expect(r.facts).toEqual(facts)
     expect(r.cards).toEqual([{
       dimension: 'pricing', summary: '新摘要', bullets: ['新一', '新二'], body: '新[1]',
-      sources: [ // in citation order, with what a proposed edit needs to cite them again
+      // In citation order, with what a proposed edit needs to cite them again; official as the check found it, not as handed in.
+      sources: [
         { url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q' },
         { url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q' },
       ],
