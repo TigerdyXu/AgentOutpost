@@ -71,7 +71,7 @@ describe('middle column', () => {
   it('leads every started track with 「赛道概览」, which opens the track’s page (M2.1); a track being picked has none', async () => {
     stubApi({
       'GET state': state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse'))], {}, 2), track('t3', '新赛道', [], { status: 'picking' })] }),
-      'GET tracks/:id/overview': { track: track('t1', 'Personal Agent', []).track, products: [], landscape: null, since: null, drawing: false, mappable: 0 },
+      'GET tracks/:id/overview': { track: track('t1', 'Personal Agent', []).track, products: [], landscape: null, since: null, drawing: false, mappable: 0, unmapped: null },
       'GET tracks/:id/candidates': { batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5, candidates: [] },
     })
     await mount(<App t={t} />)

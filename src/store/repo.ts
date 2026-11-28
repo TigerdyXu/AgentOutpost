@@ -423,9 +423,12 @@ export class Repo {
 
   // ---- maps (M2.1) ----
 
-  /** Keeps a drawing of the track's map; earlier ones stay. */
-  addLandscape(l: Omit<Landscape, 'id' | 'createdAt'>): Landscape {
-    const landscape: Landscape = { ...l, id: randomUUID(), createdAt: this.stamp() }
+  /**
+   * Keeps a drawing of the track's map; earlier ones stay. `createdAt` (default now) is the time of the dossiers it was
+   * drawn from: a card written after it is news to the next drawing.
+   */
+  addLandscape(l: Omit<Landscape, 'id' | 'createdAt'> & { createdAt?: string }): Landscape {
+    const landscape: Landscape = { ...l, id: randomUUID(), createdAt: l.createdAt ?? this.stamp() }
     this.insert(LANDSCAPE, landscape)
     return landscape
   }

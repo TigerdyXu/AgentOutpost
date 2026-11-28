@@ -25,7 +25,7 @@ import { ICON_TYPES } from './icons.ts'
 import { isBaselining } from './jobs/baseline.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
-import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable } from './jobs/landscape.ts'
+import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
@@ -135,6 +135,8 @@ export interface TrackOverview {
   drawing: boolean
   /** How many products the map can place (it needs `MAP_MIN_PRODUCTS`): followed ones with at least one card. */
   mappable: number
+  /** The latest drawing ended without a map (skipped, failed, or its answer unusable), and why; null when it drew one. */
+  unmapped: { status: RunStatus; error: string | null; at: string | null } | null
 }
 /** The models DSH offers now, for the four model choices of 设置. */
 export interface ModelsView {
@@ -587,7 +589,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    * too); for a recommendation, the track has a newer batch.
    */
   const redone = (run: Run): boolean => {
-    if (run.kind === 'recommend') return run.trackId !== null && repo.latestRun('recommend', { trackId: run.trackId })?.id !== run.id
+    if (run.kind === 'recommend' || run.kind === 'landscape') return run.trackId !== null && repo.latestRun(run.kind, { trackId: run.trackId })?.id !== run.id
     if (run.kind !== 'daily' && run.kind !== 'verify') return false
     const day = repo.runsOfDate(run.date).filter(r => r.productId === run.productId)
     const later = day.slice(day.findIndex(r => r.id === run.id) + 1)
@@ -701,7 +703,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST tracks/:id/delete': ({ params }) => {
       const t = track(params.id!)
       const active = repo.activeRuns()
-      if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify')) || rt.isDrawing(t.id)) throw new ApiError(409, say('trackBusy'))
+      if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify'))) throw new ApiError(409, say('trackBusy'))
+      if (rt.isDrawing(t.id)) throw new ApiError(409, say('mapDrawing')) // the drawing would outlive its track
       // Those only this track has go with it: none of them may be in the middle of something.
       const busy = repo.productsOfTrack(t.id).find(p => tracksOf(p.id).length === 1 && hasWork(p.id, active))
       if (busy) throw new ApiError(409, say('productBusy', { name: busy.name }))
@@ -724,7 +727,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const landscape = drawings.at(-1) ?? null
       // The dashed circles: the first of the drawings since the axes last changed.
       let first = landscape
-      for (let i = drawings.length - 2; landscape && i >= 0 && JSON.stringify(drawings[i]!.axes) === JSON.stringify(landscape.axes); i--) first = drawings[i]!
+      for (let i = drawings.length - 2; landscape && i >= 0 && sameAxes(drawings[i]!.axes, landscape.axes); i--) first = drawings[i]!
+      const last = repo.latestRun('landscape', { trackId: t.id })
       return {
         track: t,
         products: repo.productsOfTrack(t.id).map(product => ({ product, cards: repo.latestCards(product.id).filter(c => keys.has(c.dimension)) })),
@@ -732,6 +736,9 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         since: landscape && first && first.id !== landscape.id ? { date: first.date, positions: first.positions } : null,
         drawing: rt.isDrawing(t.id),
         mappable: mappable(repo, t).length,
+        // A drawing that ended without a map (budget, failure, an answer that could not be used): the page says why.
+        unmapped: last && !isActive(last) && last.id !== landscape?.runId && (last.status !== 'done' || last.error !== null)
+          ? { status: last.status, error: last.error, at: last.endedAt ?? last.startedAt } : null,
       }
     },
 
@@ -953,6 +960,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           const runId = await startedRun(r => r.kind === 'synthesize' && r.date === run.date,
             () => { rt.background(rt.scheduler.rewriteBrief(run.date), `brief of ${run.date}`) },
             run.date < yesterday ? run.date : yesterday) // its new run is dated with the brief, days ago perhaps
+          return { runId: runId ?? run.id }
+        }
+        case 'landscape': {
+          // Drawn again on the map's own axes (the axes of a failed 换轴 are not kept: they are asked for again).
+          const t = track(run.trackId ?? '')
+          if (t.status === 'archived') throw new ApiError(409, say('trackArchived'))
+          if (rt.isDrawing(t.id)) throw new ApiError(409, say('mapDrawing'))
+          if (mappable(repo, t).length < MAP_MIN_PRODUCTS) throw new ApiError(409, say('mapNeedsProducts'))
+          const runId = await startedRun(r => r.kind === 'landscape' && r.trackId === t.id, () => { rt.background(rt.drawMap(t.id), `map of track ${t.id}`) })
           return { runId: runId ?? run.id }
         }
         case 'followup':

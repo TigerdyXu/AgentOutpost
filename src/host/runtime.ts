@@ -243,6 +243,7 @@ export class Runtime {
    */
   private async drawMaps(date: string): Promise<void> {
     for (const track of this.repo.listTracks()) {
+      if (this.runner.stopSignal.aborted) return // stopping: the next day's brief draws what is left
       if (track.status !== 'active' || this.drawing.has(track.id) || !needsDrawing(this.repo, track)) continue
       const work = drawLandscape(this.briefs, track.id, date).finally(() => { this.drawing.delete(track.id) })
       this.drawing.set(track.id, work)

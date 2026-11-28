@@ -2,11 +2,15 @@
 
 /**
  * `rows` as CSV text: fields with a comma, a quote or a line break quoted (inner quotes doubled), lines ended with CRLF,
- * and a byte-order mark first, so that Excel reads the Chinese as UTF-8 instead of guessing a local code page.
+ * and a byte-order mark first, so that Excel reads the Chinese as UTF-8 instead of guessing a local code page. A field
+ * that a spreadsheet would take for a formula (starting with = + - @) gets a leading apostrophe, so it stays text.
  */
 export function toCsv(rows: readonly (readonly string[])[]): string {
-  const field = (value: string) => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
-  return `﻿${rows.map(row => row.map(field).join(',')).join('\r\n')}\r\n`
+  const field = (raw: string) => {
+    const value = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw
+    return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
+  }
+  return `\uFEFF${rows.map(row => row.map(field).join(',')).join('\r\n')}\r\n`
 }
 
 /** What the desktop app answers a save with (`@deepseek-ai/dsh-client-ui-file-actions` `FileSaveResult`). */

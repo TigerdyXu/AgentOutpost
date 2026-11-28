@@ -46,7 +46,9 @@ export interface Placement { productId: Id; x: number; y: number; why: string }
  * page can draw where a product stood at the first drawing on the same axes. All of it is the model's reading of the
  * dossiers: an inference, shown as one.
  */
-export interface Landscape { id: Id; trackId: Id; date: string; gist: string; axes: Axes; positions: Placement[]; runId: Id | null; createdAt: string }
+export interface Landscape { id: Id; trackId: Id; date: string; gist: string; axes: Axes; positions: Placement[]; runId: Id | null
+  /** When the dossiers it was drawn from were read (before the model was asked): cards written later are news to the next drawing. */
+  createdAt: string }
 
 export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
   /**

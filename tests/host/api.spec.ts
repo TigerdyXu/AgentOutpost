@@ -1859,7 +1859,7 @@ describe('the track page (M2.1)', () => {
     ok(await host.call('POST', `tracks/${t.id}/map`))
     expect((await overview(t.id)).drawing).toBe(true)
     expect((await host.call('POST', `tracks/${t.id}/map`)).json()).toMatchObject({ error: '地图正在画，等它画完' })
-    expect((await host.call('POST', `tracks/${t.id}/delete`)).status).toBe(409) // the drawing would outlive its track
+    expect((await host.call('POST', `tracks/${t.id}/delete`)).json()).toMatchObject({ error: '地图正在画，等它画完' }) // it would outlive its track
     hold.open()
     await settled(t.id)
 
@@ -1867,6 +1867,54 @@ describe('the track page (M2.1)', () => {
     expect((await host.call('POST', `tracks/${t.id}/map`, { axes: blank })).status).toBe(400)
     repo.updateTrack(t.id, { status: 'archived' })
     expect((await host.call('POST', `tracks/${t.id}/map`)).status).toBe(409)
+  })
+
+  it('says why the last drawing made no map, and draws a failed one again on 重试 (once)', async () => {
+    const t = seed()
+    host.complete.mockRejectedValueOnce(new Error('429 Too Many Requests'))
+    await rt.drawMap(t.id)
+    const failed = repo.runsOfDate(TODAY, 'landscape')[0]!
+    expect((await overview(t.id)).unmapped).toMatchObject({ status: 'failed', error: '429 Too Many Requests' })
+
+    host.complete.mockResolvedValue(drawn())
+    const { runId } = ok(await host.call('POST', `runs/${failed.id}/retry`)).json<{ runId: Id }>()
+    expect(runId).not.toBe(failed.id)
+    await settled(t.id)
+    const view = await overview(t.id)
+    expect(view.unmapped).toBeNull()
+    expect(view.landscape?.runId).toBe(runId)
+    expect((await host.call('POST', `runs/${failed.id}/retry`)).json()).toMatchObject({ error: '已经重新跑过了' })
+  })
+
+  it('draws the maps of the tracks that are on and whose dossiers changed, after the day, and stops when Outpost does', async () => {
+    const t = seed()
+    const other = addTrack({ name: '手机 AI 助理', dimensions: DEFAULT_DIMENSIONS.slice(0, 1) })
+    repo.linkProduct(other.id, 'p1')
+    repo.linkProduct(other.id, 'p2')
+    const picking = addTrack({ name: '挑选中', status: 'picking', dimensions: DEFAULT_DIMENSIONS.slice(0, 1) })
+    repo.linkProduct(picking.id, 'p1')
+    repo.linkProduct(picking.id, 'p2')
+    host.complete.mockResolvedValue(drawn())
+    const drawMaps = (date: string) => (rt as unknown as { drawMaps(date: string): Promise<void> }).drawMaps(date)
+    await drawMaps(TODAY)
+    expect(repo.runsOfDate(TODAY, 'landscape').map(r => r.trackId)).toEqual([t.id, other.id]) // not the one being picked
+    await drawMaps(TODAY)
+    expect(repo.runsOfDate(TODAY, 'landscape')).toHaveLength(2) // nothing changed: nothing spent
+
+    // Stopped while the first map is drawn: the second is left for the next day.
+    repo.addCardVersion({ productId: 'p1', dimension: 'positioning', version: 2, summary: '改了', bullets: [], body: '改了', sourceIds: [], inferenceSpans: [], addedSpans: [],
+      changeNote: '改了定位', findingIds: [], createdAt: '2026-11-25T08:00:00.000Z' }) // after the drawings above
+    const hold = gate()
+    host.complete.mockImplementation(async (_request, signal) => {
+      await Promise.race([hold.promise, new Promise((_, reject) => { signal?.addEventListener('abort', () => { reject(new Error('aborted')) }) })])
+      return drawn()
+    })
+    const day = drawMaps(TODAY)
+    await flush()
+    expect(repo.activeRuns().filter(r => r.kind === 'landscape').map(r => r.trackId)).toEqual([t.id])
+    await rt.stop() // gives the drawing up (its run is then interrupted), and closes the store
+    await day
+    expect(host.complete).toHaveBeenCalledTimes(3) // the second track was not asked for
   })
 
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {

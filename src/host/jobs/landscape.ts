@@ -40,6 +40,8 @@ export const WHY_MAX = 40
 const TIMEOUT_MS = 2 * 60_000
 
 const chars = (text: string) => [...text].length
+/** Two sets of axes are one when each end reads the same. */
+export const sameAxes = (a: Axes, b: Axes) => a.x.low === b.x.low && a.x.high === b.x.high && a.y.low === b.y.low && a.y.high === b.y.high
 
 /** A product the map places, with the newest card of each of the track's dimensions it has. */
 export interface Mapped { product: Product; cards: CardVersion[] }
@@ -72,8 +74,9 @@ export function needsDrawing(repo: Repo, track: Track): boolean {
 }
 
 /**
- * Draws the track's map for `date` and keeps it. `axes` are the user's (换轴); without them the newest drawing's axes
- * are kept, and the first drawing has the model propose them. Returns the drawing, or null when none was made: too few
+ * Draws the track's map for `date` and keeps it. `axes` are the user's (换轴); without them, or when they are the newest
+ * drawing's own, that drawing's axes are kept (and the last positions told), and the first drawing has the model propose
+ * them. Returns the drawing, or null when none was made: too few
  * products (no run), the day's budget spent, the call failed or was cut short, or its answer could not be used (the run
  * says which).
  * @throws When the track does not exist.
@@ -82,10 +85,14 @@ export async function drawLandscape(deps: LandscapeDeps, trackId: Id, date: stri
   const { repo, model, clock, settings } = deps
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
+  // The dossiers as of now: a card written while the model is asked is newer than the drawing, so the next one sees it.
+  const readAt = clock.now().toISOString()
   const items = mappable(repo, track)
   if (items.length < MAP_MIN_PRODUCTS) return null
   const latest = repo.latestLandscape(trackId)
-  const fixed = axes ?? latest?.axes ?? null
+  // 换轴 to the axes the map has already is a plain redraw: the dashed circles go on (`since` compares axes alone).
+  const newAxes = axes !== null && !(latest && sameAxes(axes, latest.axes)) ? axes : null
+  const fixed = newAxes ?? latest?.axes ?? null
 
   const run = repo.createRun({ kind: 'landscape', date, trackId, productId: null })
   const end = (patch: Parameters<Repo['updateRun']>[1]) => { repo.updateRun(run.id, { endedAt: clock.now().toISOString(), ...patch }) }
@@ -98,7 +105,7 @@ export async function drawLandscape(deps: LandscapeDeps, trackId: Id, date: stri
   repo.updateRun(run.id, { status: 'running', startedAt: clock.now().toISOString() })
   try {
     // The user's own axes start the trail again: the last positions were on other axes.
-    const previous = axes ? null : latest
+    const previous = newAxes ? null : latest
     const user = describeTrack(track, items, date, fixed, previous)
     const timeout = AbortSignal.timeout(TIMEOUT_MS)
     const { text, usage } = await model.complete({ system: renderPrompt('landscape', {}), user }, deps.stop ? AbortSignal.any([timeout, deps.stop]) : timeout)
@@ -108,7 +115,7 @@ export async function drawLandscape(deps: LandscapeDeps, trackId: Id, date: stri
       end({ status: 'done', usage, costYuan: cost, error: say('unusableMap', { max: MAP_GIST_MAX }) })
       return null
     }
-    const landscape = repo.addLandscape({ trackId, date, gist: drawn.gist, axes: drawn.axes, positions: drawn.positions, runId: run.id })
+    const landscape = repo.addLandscape({ trackId, date, gist: drawn.gist, axes: drawn.axes, positions: drawn.positions, runId: run.id, createdAt: readAt })
     end({ status: 'done', usage, costYuan: cost, error: null })
     return landscape
   } catch (error) {

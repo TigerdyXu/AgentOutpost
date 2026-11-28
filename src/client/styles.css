@@ -3343,3 +3343,9 @@ button.op-run-open:focus-visible {
   .op-map { aspect-ratio: 4 / 3; }
   .op-axes-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.op-map-point[data-side="left"] {
+  flex-direction: row-reverse;
+  padding: 3px 4px 3px 9px;
+  transform: translate(calc(-100% + 12px), -50%);
+}

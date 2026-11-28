@@ -217,6 +217,7 @@ const OWN = {
   'track.map.draw': ['画地图', 'Draw the map'],
   'track.map.none': ['还没画过地图。地图是 AI 读这些产品的档案后给的判断，标「推论」；以后每天哨报写完，档案有变化就重画一次。', 'No map yet. The map is the AI’s reading of these products’ profiles, marked as an inference; after each day’s brief it is drawn again if a profile changed.'],
   'track.map.cost': ['每次几分钱，用「写哨报总结」的模型，算进每日预算', 'A few fen each time, on the brief-writing model, counted in the daily budget'],
+  'track.map.failed': ['这次没画成：{reason}', 'The last drawing did not work out: {reason}'],
   'track.map.needsProducts': ['至少要有两个建好档的产品，才画得出地图。', 'A map needs at least two products with a profile.'],
   'track.map.toward': ['偏「{end}」', 'toward “{end}”'],
   'track.map.between': ['在「{low}」和「{high}」之间', 'between “{low}” and “{high}”'],

@@ -18,15 +18,18 @@ import { useShell } from '../shell/context.ts'
 import { localDay, shortDay } from '../time.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { Tag } from '../ui/Tag.tsx'
-import { labelOf } from '../words.ts'
+import { labelOf, told } from '../words.ts'
 
 /** How often the page reads the track again: quickly while the map is drawn, slowly otherwise (a dossier may change). */
 const DRAWING_POLL_MS = 2000
 const IDLE_POLL_MS = 15_000
 /** Each end of an axis, as the host allows (src/host/jobs/landscape.ts `AXIS_LABEL_MAX`). */
 const MAX_AXIS_LABEL = 12
-/** The map's inner margin, in percent of its size: a point at an end still shows whole. */
-const INSET = 9
+/** The map's inner margin, in percent of its size: a point at an end still shows whole, clear of the axes' labels. */
+const INSET = 11
+/** Two labels closer than this (in percent of the map: across, up and down) would cover each other: the later one moves down. */
+const CLOSE_X = 16
+const CLOSE_Y = 6
 /** A product moved this far (in -100…100 units) since the dashed circle is drawn with its circle and line. */
 const MOVED = 6
 
@@ -34,6 +37,24 @@ const errorOf = (failure: unknown) => failure instanceof Error ? failure : new E
 /** Where a coordinate (-100…100) sits on the map, in percent: x from the left, y from the top (high is up). */
 const left = (x: number) => INSET + (x + 100) / 200 * (100 - 2 * INSET)
 const top = (y: number) => INSET + (100 - y) / 200 * (100 - 2 * INSET)
+
+/** `MM-DD` for a local day `YYYY-MM-DD` of this year, else the day as it is (read as text: no time zone moves it). */
+const dayLabel = (day: string) => day.startsWith(`${new Date().getFullYear()}-`) ? day.slice(5) : day
+
+/**
+ * Where each label goes, in percent: at its point, except that one landing on a label placed before it (in the drawing's
+ * order) moves down a step until it is clear, or up once it reaches the bottom.
+ */
+export function labelSpots(points: { x: number; y: number }[]): { left: number; top: number }[] {
+  const placed: { left: number; top: number }[] = []
+  for (const p of points) {
+    const spot = { left: left(p.x), top: top(p.y) }
+    const step = spot.top > 100 - INSET - CLOSE_Y ? -CLOSE_Y : CLOSE_Y
+    for (let i = 0; i < points.length && placed.some(o => Math.abs(o.left - spot.left) < CLOSE_X && Math.abs(o.top - spot.top) < CLOSE_Y); i++) spot.top += step
+    placed.push(spot)
+  }
+  return placed
+}
 
 /** The newest card of each dimension of the product, by dimension. */
 const cardsByDimension = (cards: CardVersion[]) => new Map(cards.map(card => [card.dimension, card]))
@@ -48,10 +69,14 @@ export function matrixRows(t: T, view: Pick<TrackOverview, 'track' | 'products'>
 }
 
 export function Track(): ReactNode {
-  const { t, route } = useShell()
+  const { t, route, state } = useShell()
   const trackId = route.page === 'track' ? route.trackId : ''
   const overview = usePoll(() => call('GET tracks/:id/overview', { id: trackId }), [trackId], view => view?.drawing ? DRAWING_POLL_MS : IDLE_POLL_MS)
   if (route.page !== 'track') return null
+  // A track deleted meanwhile (here, or on another window) is gone, not shown as it was.
+  if (state && !state.tracks.some(entry => entry.track.id === trackId)) {
+    return <div className="op-page op-track-page"><p className="op-day-problem" role="alert">{t('track.notFound')}</p></div>
+  }
   const view = overview.data?.track.id === trackId ? overview.data : undefined
   if (!view) {
     return <div className="op-page op-track-page">
@@ -94,7 +119,7 @@ function TrackPage({ view, reload }: { view: TrackOverview; reload: () => Promis
 
 function MapSection({ view, reload, titleId }: { view: TrackOverview; reload: () => Promise<void>; titleId: string }): ReactNode {
   const { t } = useShell()
-  const { track, landscape, since, drawing, mappable } = view
+  const { track, landscape, since, drawing, mappable, unmapped } = view
   const [asking, setAsking] = useState(false) // 换轴 is open
   const [sending, setSending] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -114,8 +139,7 @@ function MapSection({ view, reload, titleId }: { view: TrackOverview; reload: ()
     }
   }
 
-  const hint = since ? t('track.map.since', { date: shortDay(since.date) ?? since.date })
-    : landscape ? t('track.map.drawn', { date: shortDay(landscape.createdAt) ?? landscape.date }) : null
+  const hint = since ? t('track.map.since', { date: dayLabel(since.date) }) : landscape ? t('track.map.drawn', { date: dayLabel(landscape.date) }) : null
   return <section className="op-tsection" aria-labelledby={titleId}>
     <div className="op-tsection-head">
       <h2 className="op-zone-title" id={titleId}>{t('track.map.title')}</h2>
@@ -129,6 +153,8 @@ function MapSection({ view, reload, titleId }: { view: TrackOverview; reload: ()
     {asking && landscape && <AxesForm axes={landscape.axes} busy={busy} onSend={axes => { void draw(axes) }} onCancel={() => { setAsking(false) }} />}
     {problem && <p className="op-form-problem" role="alert">{problem}</p>}
     {drawing && <p className="op-tsection-note" role="status">{t('track.map.drawing')}</p>}
+    {!drawing && !problem && unmapped && <p className="op-form-problem" role="alert">
+      {t('track.map.failed', { reason: unmapped.error ? told(t, unmapped.error) : t('runs.noReason') })}</p>}
     {landscape
       ? <MapView view={view} />
       : mappable >= 2
@@ -150,9 +176,11 @@ function AxesForm({ axes, busy, onSend, onCancel }: { axes: Axes; busy: boolean;
   const ids = useId()
   const [ends, setEnds] = useState({ xLow: axes.x.low, xHigh: axes.x.high, yLow: axes.y.low, yHigh: axes.y.high })
   const filled = Object.values(ends).every(end => end.trim())
+  // The same four ends are not new axes: that is 「重画」.
+  const changed = ends.xLow.trim() !== axes.x.low || ends.xHigh.trim() !== axes.x.high || ends.yLow.trim() !== axes.y.low || ends.yHigh.trim() !== axes.y.high
   const send = (event: FormEvent) => {
     event.preventDefault()
-    if (!filled || busy) return
+    if (!filled || !changed || busy) return
     onSend({ x: { low: ends.xLow.trim(), high: ends.xHigh.trim() }, y: { low: ends.yLow.trim(), high: ends.yHigh.trim() } })
   }
   const field = (key: keyof typeof ends, label: string) => <div className="op-field">
@@ -167,7 +195,7 @@ function AxesForm({ axes, busy, onSend, onCancel }: { axes: Axes; busy: boolean;
     </div>
     <p className="op-form-hint">{t('track.axes.hint')}</p>
     <div className="op-form-actions">
-      <button type="submit" className="op-button" data-variant="primary" disabled={!filled || busy}>{t('track.axes.send')}</button>
+      <button type="submit" className="op-button" data-variant="primary" disabled={!filled || !changed || busy}>{t('track.axes.send')}</button>
       <button type="button" className="op-button" onClick={onCancel}>{t('track.axes.cancel')}</button>
     </div>
   </form>
@@ -193,6 +221,7 @@ function MapView({ view }: { view: TrackOverview }): ReactNode {
     return was && Math.hypot(was.x - p.x, was.y - p.y) >= MOVED ? [{ was, p }] : []
   })
   const { axes } = landscape
+  const spots = labelSpots(points.map(({ p }) => p))
   return <div className="op-map" role="group" aria-label={t('track.map.title')}>
     <svg className="op-map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <line x1={INSET} y1="50" x2={100 - INSET} y2="50" vectorEffect="non-scaling-stroke" />
@@ -204,9 +233,11 @@ function MapView({ view }: { view: TrackOverview }): ReactNode {
     <span className="op-map-axis" data-end="y-high">↑ {axes.y.high}</span>
     <span className="op-map-axis" data-end="y-low">↓ {axes.y.low}</span>
     {moved.map(({ was }) => <span key={`was-${was.productId}`} className="op-map-was" style={{ left: `${left(was.x)}%`, top: `${top(was.y)}%` }} aria-hidden="true" />)}
-    {points.map(({ p, product }) => {
+    {points.map(({ p, product }, i) => {
       const said = placementText(t, product.name, axes, p)
-      return <button key={p.productId} type="button" className="op-map-point" style={{ left: `${left(p.x)}%`, top: `${top(p.y)}%` }}
+      // Right of the middle the label grows leftward from its point, so that it stays inside the map.
+      return <button key={p.productId} type="button" className="op-map-point" data-side={p.x > 20 ? 'left' : undefined}
+        style={{ left: `${spots[i]!.left}%`, top: `${spots[i]!.top}%` }}
         title={said} aria-label={said} onClick={() => { navigate({ page: 'product', productId: product.id, tab: 'dossier' }) }}>
         <ProductIcon product={product} size={20} />
         <span className="op-map-name">{product.name}</span>

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Axes, Dimension, Landscape } from '../../src/core/types.ts'
 import type { TrackOverview } from '../../src/host/api.ts'
 import { toCsv } from '../../src/client/csv.ts'
-import { matrixRows, Track } from '../../src/client/pages/Track.tsx'
+import { labelSpots, matrixRows, Track } from '../../src/client/pages/Track.tsx'
 import { parseRoute } from '../../src/client/shell/route.ts'
 import type { Shell } from '../../src/client/shell/context.ts'
 import { all, card, click, find, mount, product, state, stubApi, t, tEn, text, track, type, unmount } from '../fixtures/client.tsx'
@@ -26,12 +26,12 @@ const overview = (over: Partial<TrackOverview> = {}): TrackOverview => ({
     { product: muse, cards: [card('p2', 'positioning', { summary: '住在社交 App 里的助手' })] },
     { product: zed, cards: [] },
   ],
-  landscape: landscape(), since: null, drawing: false, mappable: 2, ...over,
+  landscape: landscape(), since: null, drawing: false, mappable: 2, unmapped: null, ...over,
 })
 
 async function show(view: TrackOverview | (() => TrackOverview) = overview(), shell: Partial<Shell> = {}, extra: Record<string, unknown> = {}) {
   const api = stubApi({ 'GET tracks/:id/overview': typeof view === 'function' ? view : () => view, 'POST tracks/:id/map': { ok: true }, ...extra })
-  const context = await mount(<Track />, { state: state({ runTime: '08:00' }), route: { page: 'track', trackId: 't1' }, ...shell })
+  const context = await mount(<Track />, { state: state({ runTime: '08:00', tracks: [track('t1', 'Personal Agent', [])] }), route: { page: 'track', trackId: 't1' }, ...shell })
   return { api, context }
 }
 const cells = () => all('.op-matrix tbody tr').map(row => [...row.querySelectorAll('th, td')].map(cell => cell.textContent))
@@ -70,7 +70,7 @@ describe('赛道页 (M2.1)', () => {
     expect(matrixRows(t, overview())).toEqual([
       ['维度', '豆包·小豆', 'Meta Muse', 'Zed'], ['定位', '独立的个人代理', '住在社交 App 里的助手', ''], ['商业化', '免费，三档订阅', '', ''], ['记忆', '', '', ''],
     ])
-    expect(toCsv([['维度', 'a,b'], ['说 "好"', '一\n二']])).toBe('﻿维度,"a,b"\r\n"说 ""好""","一\n二"\r\n')
+    expect(toCsv([['维度', 'a,b'], ['说 "好"', '一\n二']])).toBe('\uFEFF维度,"a,b"\r\n"说 ""好""","一\n二"\r\n')
     const made: Blob[] = []
     vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { made.push(blob as Blob); return 'blob:matrix' })
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -108,8 +108,10 @@ describe('赛道页 (M2.1)', () => {
     const { context } = await show()
     const points = all<HTMLButtonElement>('.op-map-point')
     expect(points.map(point => point.textContent)).toEqual(['豆豆包·小豆', 'MMeta Muse']) // each with its icon
-    expect(points[0]!.style.left).toBe(`${9 + 160 / 200 * 82}%`)
-    expect(points[0]!.style.top).toBe(`${9 + 30 / 200 * 82}%`)
+    expect(points[0]!.style.left).toBe(`${11 + 160 / 200 * 78}%`)
+    expect(points[0]!.style.top).toBe(`${11 + 30 / 200 * 78}%`)
+    // Right of the middle a label grows leftward, so that it stays inside the map.
+    expect(points.map(point => point.dataset.side)).toEqual(['left', undefined])
     expect(points[0]!.getAttribute('aria-label')).toBe('豆包·小豆：偏「独立 App」，偏「替你办事」。独立 App，主打代办')
     expect(all('.op-map-axis').map(axis => axis.textContent)).toEqual(['← 寄生在 App 里', '独立 App →', '↑ 替你办事', '↓ 陪聊问答'])
     expect(document.querySelector('.op-tsection-head')?.textContent).toContain('推论')
@@ -122,7 +124,7 @@ describe('赛道页 (M2.1)', () => {
     await show(overview({ since: { date: '2026-11-20', positions: [{ productId: 'p1', x: 0, y: 70, why: '' }, { productId: 'p2', x: -48, y: -20, why: '' }] } }))
     expect(all('.op-map-was')).toHaveLength(1) // Muse moved 2 units: not drawn
     expect(all('.op-map-lines .op-map-trail')).toHaveLength(1)
-    expect(text()).toContain('虚线圈是 11-20 时的位置')
+    expect(text()).toContain(`虚线圈是 ${new Date().getFullYear() === 2026 ? '11-20' : '2026-11-20'} 时的位置`)
   })
 
   it('offers to draw the map when there is none, and says why it cannot with fewer than two products', async () => {
@@ -146,6 +148,7 @@ describe('赛道页 (M2.1)', () => {
     await click('换轴')
     const ends = all<HTMLInputElement>('.op-axes-form input')
     expect(ends.map(end => end.value)).toEqual(['寄生在 App 里', '独立 App', '陪聊问答', '替你办事'])
+    expect(find('按这两条轴重画').hasAttribute('disabled')).toBe(true) // the same axes are 「重画」, not new ones
     await type(ends[0]!, '')
     expect(find('按这两条轴重画').hasAttribute('disabled')).toBe(true)
     await type(ends[0]!, '免费')
@@ -173,6 +176,36 @@ describe('赛道页 (M2.1)', () => {
     expect(find('Export table')).toBeTruthy()
     expect(all('.op-map-point')[0]!.getAttribute('aria-label')).toBe('豆包·小豆: toward “独立 App”; toward “替你办事”. 独立 App，主打代办')
     expect(matrixRows(tEn, overview())[0]![0]).toBe('Dimension')
+  })
+
+  it('says why the last drawing made no map, until a drawing works', async () => {
+    await show(overview({ unmapped: { status: 'skipped', error: '今日总预算已用完', at: '2026-11-28T01:00:00.000Z' } }))
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('这次没画成：今日总预算已用完')
+    unmount()
+    await show(overview({ unmapped: { status: 'skipped', error: '今日总预算已用完', at: null } }), { t: tEn })
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('The last drawing did not work out: Today’s total budget is used up')
+    unmount()
+    await show(overview({ drawing: true, unmapped: { status: 'failed', error: null, at: null } }))
+    expect(document.querySelector('[role="alert"]')).toBeNull() // a new drawing is under way
+  })
+
+  it('says the track is gone once it is deleted, instead of showing it as it was', async () => {
+    await show(overview(), { state: state({ tracks: [] }) })
+    expect(text()).toContain('找不到这个赛道')
+    expect(document.querySelector('.op-matrix')).toBeNull()
+  })
+
+  it('moves a label that would cover an earlier one down a step, or up at the bottom', () => {
+    const [first, near, far] = labelSpots([{ x: 0, y: 0 }, { x: 5, y: 2 }, { x: 80, y: 0 }])
+    expect(first!.top).toBe(50)
+    expect(near!.top - first!.top).toBeGreaterThanOrEqual(6) // moved down until clear of the first
+    expect(far!.top).toBe(50) // far enough across: left where it is
+    const low = labelSpots([{ x: 0, y: -100 }, { x: 0, y: -100 }])
+    expect(low[1]!.top).toBeLessThan(low[0]!.top)
+  })
+
+  it('keeps a spreadsheet from reading a cell as a formula', () => {
+    expect(toCsv([['=1+1', '+30%', '-', '@x', '正常']])).toBe("\uFEFF'=1+1,'+30%,'-,'@x,正常\r\n")
   })
 
   it('is a page of its own, remembered with its track', () => {

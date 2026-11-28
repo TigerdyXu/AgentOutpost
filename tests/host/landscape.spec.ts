@@ -165,6 +165,24 @@ describe('drawLandscape', () => {
     expect(asked).not.toContain('上次的位置')
   })
 
+  it('dates the drawing by when it read the dossiers, so a card written while the model was asked is news next time', async () => {
+    complete.mockImplementationOnce(async () => {
+      now = new Date('2026-11-28T09:01:00.000Z') // a check finishing while the map is drawn
+      card('p2', 'positioning', '开始做平台', now.toISOString(), 2)
+      now = new Date('2026-11-28T09:02:00.000Z')
+      return { text: answer(), usage: usage({}) }
+    })
+    const drawn = await drawLandscape(deps, track.id, TODAY)
+    expect(drawn!.createdAt).toBe('2026-11-28T09:00:00.000Z')
+    expect(needsDrawing(repo, track)).toBe(true)
+  })
+
+  it('takes the map’s own axes sent again for a plain redraw, telling the last positions', async () => {
+    await drawLandscape(deps, track.id, TODAY)
+    await drawLandscape(deps, track.id, TODAY, { x: { ...AXES.x }, y: { ...AXES.y } })
+    expect(complete.mock.calls[1]![0].user).toContain('上次的位置')
+  })
+
   it('draws nothing, and starts no run, with fewer than two products to place', async () => {
     const lone = repo.createTrack({ name: '一个', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'active' })
     repo.linkProduct(lone.id, 'p1')
