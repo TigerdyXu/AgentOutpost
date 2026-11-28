@@ -1367,6 +1367,22 @@ describe('the sources tab', () => {
     expect(control('来源').textContent).toBe('来源')
   })
 
+  it('lists a page once however many cards cite it, naming each card that cites it once (M1.6)', async () => {
+    // Each card keeps its own copy of what it cites: the same report, under three spellings of its address.
+    const copies = [
+      source('a1', { url: 'https://news.example/xd?utm_source=feed', title: '同一篇报道', openedVia: 'unopened', quoteFound: null }),
+      source('a2', { url: 'https://www.news.example/xd', title: '同一篇报道' }),
+      source('a3', { url: 'https://news.example/xd/', title: '同一篇报道' }),
+      source('b1', { url: 'https://other.example/a', title: '另一篇' }),
+    ]
+    const cited = [card('p1', 'positioning', { sourceIds: ['a1', 'b1'] }), card('p1', 'audience', { sourceIds: ['a2', 'a3'] })]
+    await show(view({ sources: copies, cards: cited }), { route: route({ tab: 'sources' }) })
+    expect(list().map(row => row.querySelector('a')?.textContent)).toEqual(['同一篇报道', '另一篇'])
+    expect(cells(list()[0]!)[4]).toBe('被 2 条结论引用定位、目标人群')
+    expect(tags(list()[0]!, 'unopened')).toHaveLength(0) // another copy of it was opened
+    expect(control('来源2').getAttribute('aria-selected')).toBe('true') // the tab counts pages
+  })
+
   it('calls a source official only when the check agreed, and says when it did not (M1.6)', async () => {
     const claimed = (id: string, title: string, officialConfirmed: boolean | null) => source(id, { title, kind: 'official', isOfficial: true, officialConfirmed })
     const three = [claimed('s1', '官网', true), claimed('s2', '同名公司', false), claimed('s3', '旧来源', null)]

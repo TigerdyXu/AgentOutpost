@@ -7,6 +7,7 @@
  */
 import type { ReactNode } from 'react'
 import { isOwnSource } from '../../../core/credibility.ts'
+import { canonicalUrl } from '../../../core/url.ts'
 import type { Source, SourceKind } from '../../../core/types.ts'
 import type { ProductView } from '../../../host/api.ts'
 import { useShell } from '../../shell/context.ts'
@@ -22,18 +23,42 @@ function kindKey(source: Source): (typeof KINDS)[SourceKind] | 'sources.kind.off
   return source.officialConfirmed === false ? 'sources.kind.officialRefused' : 'sources.kind.officialUnchecked'
 }
 
+/** Which of a page's stored copies speaks for it: one the check found the maker's own, then one that opened (one the check turned down first), then the rest. */
+const rank = (s: Source) => isOwnSource(s) ? 0 : s.openedVia === 'unopened' ? 3 : s.officialConfirmed === false ? 1 : 2
+
 /**
- * Which dimensions cite each source (by label, in the order the page lists the dimensions), and the sources a card on the
- * page cites. A card of a dimension that no track of the product lists is not on the page, so what only it cites is not
- * listed, and the dimension is not named.
+ * The pages the profile cites, one row each however many cards cite them (M1.6: each card keeps its own copy of a source,
+ * so one article cited by four cards is four stored sources), shown as their best copy (`rank`), in the order the view
+ * lists them; and which dimensions cite each (by label, in the order the page lists the dimensions, each once), keyed by
+ * that copy's id. A card of a dimension that no track of the product lists is not on the page, so what only it cites is
+ * not listed, and the dimension is not named.
  */
 export function citations(view: Pick<ProductView, 'cards' | 'dimensions' | 'sources'>): { citedBy: Map<string, string[]>; sources: Source[] } {
-  const citedBy = new Map<string, string[]>()
+  const byId = new Map(view.sources.map(source => [source.id, source]))
+  const labelsOf = new Map<string, string[]>() // by page
   for (const { key, label } of view.dimensions) {
     const card = view.cards.find(item => item.dimension === key)
-    for (const id of new Set(card?.sourceIds)) citedBy.set(id, [...citedBy.get(id) ?? [], label])
+    for (const id of card?.sourceIds ?? []) {
+      const source = byId.get(id)
+      if (!source) continue
+      const page = canonicalUrl(source.url)
+      const labels = labelsOf.get(page) ?? []
+      if (!labels.includes(label)) labels.push(label)
+      labelsOf.set(page, labels)
+    }
   }
-  return { citedBy, sources: view.sources.filter(source => citedBy.has(source.id)) }
+  const copies = new Map<string, Source[]>() // by page, in the view's order
+  for (const source of view.sources) {
+    const page = canonicalUrl(source.url)
+    if (labelsOf.has(page)) copies.set(page, [...copies.get(page) ?? [], source])
+  }
+  const citedBy = new Map<string, string[]>()
+  const sources = [...copies].map(([page, all]) => {
+    const best = all.reduce((kept, source) => rank(source) < rank(kept) ? source : kept)
+    citedBy.set(best.id, labelsOf.get(page)!)
+    return best
+  })
+  return { citedBy, sources }
 }
 
 export function SourcesTab({ view }: { view: ProductView }): ReactNode {
