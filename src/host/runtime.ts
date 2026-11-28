@@ -22,6 +22,7 @@ import { DshModelClient } from './dsh-model.ts'
 import {
   chooseResearchPreset, DshSessionDriver, profileBrowserProvider, researchPresetRuns, type AgentPresets, type ResearchPresetChoice,
 } from './dsh-sessions.ts'
+import { browserPackagesInstalled, browserPresetDefinition } from './browser-preset.ts'
 import { registerRoutes } from './http.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
@@ -53,6 +54,8 @@ export interface RuntimeParts {
   model?: ModelClient
   clock?: Clock
   icons?: IconFetcher
+  /** Whether the browser packages are installed in the profile (`browserPackagesInstalled`); tests say. */
+  browserInstalled?: () => boolean
 }
 
 /** Everything a run and the scheduler read from the configuration, read anew on each use. */
@@ -81,6 +84,10 @@ export class Runtime {
   readonly jobs: BaselineDeps
   /** What the brief is written with. */
   readonly briefs: BriefDeps
+  /** The browser preset's registration (M2.4): settled once it is registered, or known not to be; `researchPreset` waits for it. */
+  private browserPreset: Promise<void> = Promise.resolve()
+  private unregisterBrowserPreset: (() => Promise<void>) | null = null
+  private readonly browserInstalled: () => boolean
   /** 专题 rounds under way, by topic (`researchTopic`). */
   private readonly topicRounds = new Map<Id, Promise<TopicVersion | null>>()
   /** Maps being drawn, by track (`drawMap`). */
@@ -124,6 +131,7 @@ export class Runtime {
     this.driver = parts.driver ?? new DshSessionDriver(ctx, this.workspaceDir)
     this.model = parts.model ?? new DshModelClient(ctx, () => modelFor('brief', this.settings()))
     this.icons = parts.icons ?? new NodeIconFetcher(this.iconsDir)
+    this.browserInstalled = parts.browserInstalled ?? (() => browserPackagesInstalled())
     this.runner = new JobRunner({ repo: this.repo, driver: this.driver, clock: this.clock, settings: () => this.settings(), log })
     const jobs: JobDeps = { repo: this.repo, runner: this.runner, clock: this.clock, icons: this.icons }
     this.jobs = { ...jobs, verifyProduct: (productId, scope) => verifyProduct(jobs, productId, scope) }
@@ -225,8 +233,25 @@ export class Runtime {
    * one does not load either can no research session start: every recommendation, baseline, check and daily run then
    * fails at once with `RESEARCH_PRESET_BROKEN`, and 设置 says that instead (`researchBroken`).
    */
-  researchPreset(): Promise<ResearchPresetChoice> {
+  async researchPreset(): Promise<ResearchPresetChoice> {
+    await this.browserPreset // registered by now, or known not to be
     return chooseResearchPreset(this.ctx)
+  }
+
+  /**
+   * Registers the research preset with the browser (src/host/browser-preset.ts) when the browser packages are installed;
+   * without them it is not registered, so DSH shows no preset failing to load, and research runs on the basic one.
+   */
+  private async registerBrowserPreset(): Promise<void> {
+    const presets = this.ctx.get('agentPresets') as AgentPresets | null | undefined
+    if (!presets?.register || !this.browserInstalled()) return
+    try {
+      const unregister = await presets.register(browserPresetDefinition())
+      if (this.stopping) await unregister() // stopped while it loaded
+      else this.unregisterBrowserPreset = unregister
+    } catch (error) {
+      this.log(`the research preset with the browser could not be registered: ${messageOf(error)}`)
+    }
   }
 
   /**
@@ -320,6 +345,7 @@ export class Runtime {
    */
   start(): void {
     if (this.unregister || this.stopping) return
+    this.browserPreset = this.registerBrowserPreset()
     this.reclaimInterruptedRuns()
     this.repo.rejectTopicDrafts(STOPPED_ERROR) // a round the last Outpost did not see to its end
     this.driver.onChatUsage((sessionId, used) => { this.chargeChat(sessionId, used) })
@@ -340,6 +366,7 @@ export class Runtime {
         await this.runner.idle() // what the scheduler's last steps started
       } finally {
         this.driver.close()
+        try { await this.browserPreset; await this.unregisterBrowserPreset?.() } catch (error) { this.log(`the browser preset could not be unregistered: ${messageOf(error)}`) }
         this.db.close()
         this.unlock()
       }

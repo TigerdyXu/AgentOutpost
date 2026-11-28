@@ -65,8 +65,8 @@ export function apiHost(options: { now?: When; config?: (dataDir: string) => Out
   const icons = { fetch: vi.fn(async (_productId: string, _candidates: string[]) => null as string | null) }
   const config = options.config?.(dataDir) ?? Config({ dataDir })
 
-  /** A runtime on this host (not started). */
-  const create = () => new Runtime(ctx as never, config, { driver, model: { complete }, clock: clock.clock, icons })
+  /** A runtime on this host (not started); `browserInstalled`: whether the browser packages are there (by default not). */
+  const create = (browserInstalled = false) => new Runtime(ctx as never, config, { driver, model: { complete }, clock: clock.clock, icons, browserInstalled: () => browserInstalled })
 
   /**
    * Sends `METHOD /outpost/api/<path>` with an optional JSON body (a string is sent as is). A change (anything but GET) is

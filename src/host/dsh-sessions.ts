@@ -100,6 +100,8 @@ export function isResearchAgent(agent: Pick<Agent, 'id'> & { readonly session?: 
  * composing a new agent from it during its setup, and which modules each retained revision has running.
  */
 export interface AgentPresets {
+  /** Registers a preset definition (M2.4: the browser one), resolving with its disposer once it loaded or failed. */
+  register?(definition: { id: string; plugins: readonly unknown[] }): Promise<() => Promise<void>>
   resolve(id: string): Promise<{ id: string; broken?: string }>
   mount(agentCtx: Context, id: string): Promise<{ id: string }>
   inspectCompositions(): readonly { readonly id: string; readonly modules: readonly { readonly moduleName: string }[] }[]

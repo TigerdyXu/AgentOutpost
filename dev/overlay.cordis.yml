@@ -6,85 +6,13 @@
       name: /Users/tiger/Projects/AgentOutpost/lib/index.js
       config:
         dataDir: /Users/tiger/Projects/AgentOutpost-data/dev
-    # The preset of research sessions (outpost-researcher). It reads the web and nothing else: no shell, no file tools, no
-    # subagents. A preset row cannot hide itself from the preset picker, so its name and description say whom it is for.
-    - id: outpost-researcher-preset
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: outpost-researcher
-        name: 前哨调研员
-        description: 前哨的调研会话专用，不供手动选择。只能联网搜索和读网页，没有命令行和文件工具。
-        order: 92
-        plugins:
-          - id: persona
-            name: '@deepseek-ai/dsh-persona'
-            config:
-              prefix: You are a product research analyst powered by the {{model}} model.
-          - id: time-context
-            name: '@deepseek-ai/dsh-time-context'
-          - id: tool-web
-            name: '@deepseek-ai/dsh-tool-web'
-            config:
-              fetch: true
-              searchTimeoutMs: 60000
-          # Browser fallback, on (the user's choice, 2026-11-26): a page plain fetching cannot read (WeChat articles,
-          # Xiaohongshu, Zhihu) is opened in a headless Chrome. It lives in this preset, so only research sessions get it,
-          # never a session of the user's own; the browser-use service is isolated to the group, as DSH requires of a
-          # service inside a preset. What it costs:
-          # - Every research session gets the `mcp__playwright-mcp__*` tools, and they run without approval while the
-          #   session reads pages nobody vetted. Outpost refuses it `browser_run_code_unsafe` (arbitrary JavaScript in the
-          #   Playwright process, by Playwright's own description) with a guard on the session's agent; opening, reading
-          #   and clicking through pages stay.
-          # - Every live research session runs a Playwright MCP server (about 125 MB), and one that opened a page a headless
-          #   Chrome (0.7 GB on a blank page, more on real ones). Outpost ends a research session's live agent when its run
-          #   is over, which closes both, so only the sessions running now hold one; a research session opened later in DSH
-          #   starts its server again, until DSH restarts.
-          # Both packages must be installed in the profile (`dsh plugin add @deepseek-ai/dsh-browser-use
-          # @deepseek-ai/dsh-experimental-browser-use-playwright-mcp`; install.sh does it). The Desktop does not ship them,
-          # so a plain `dsh plugin add` of Outpost lacks them: this preset then does not load, research runs on
-          # `outpost-researcher-basic` below, without a browser, and 设置 says how to install them. A Playwright provider
-          # turned on for the whole profile clashes with this one (DSH would refuse the session: "serverName
-          # "playwright-mcp" is already in use"); research then runs on the basic preset too, which the profile's browser
-          # reaches. executablePath is this machine's Chrome; elsewhere, point it at a Chromium-based browser, or drop the
-          # line to let Playwright find one. To change it, or to turn the fallback off, override the
-          # `outpost-researcher-preset` row in the profile's cordis.patch.yml: an override replaces the whole `config`, so
-          # restate it from this file with the line changed, or without the `browser` group. Off, a finding whose source
-          # will not open stays 「待确认」.
-          - id: browser
-            name: cordis:group
-            group: true
-            isolate:
-              browserUse: true
-            config:
-              - id: browser-use
-                name: '@deepseek-ai/dsh-browser-use'
-              - id: browser-use-playwright
-                name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
-                config:
-                  mode: launch
-                  headless: true
-                  executablePath: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-          - id: compaction
-            name: cordis:group
-            group: true
-            isolate:
-              compaction: true
-              toolResultPruner: true
-            config:
-              - id: compaction-basic
-                name: '@deepseek-ai/dsh-compaction-basic'
-              - id: command-compact
-                name: '@deepseek-ai/dsh-command-compact'
-              - id: tool-result-pruner
-                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
-                config:
-                  thresholdChars: 8192
-                  headChars: 4096
-                  tailChars: 1024
-    # The same preset without the browser (outpost-researcher-basic), for research sessions when the one above does not
-    # load or clashes with a Playwright browser of the whole profile: src/host/dsh-sessions.ts picks between the two before
-    # each new research session. Keep its plugins those of the row above, less the `browser` group (tests/build.spec.ts
-    # checks). It too shows in the preset picker, so it too says whom it is for.
+    # The research preset with the browser fallback (outpost-researcher) is not a row here: Outpost registers it itself,
+    # only when the browser packages are installed in the profile (src/host/browser-preset.ts, M2.4), so that a plain
+    # `dsh plugin add` does not show it failing to load among DSH's presets.
+    # The research preset without the browser (outpost-researcher-basic), for research sessions when the one with it is
+    # not registered (no browser packages) or clashes with a Playwright browser of the whole profile: src/host/dsh-sessions.ts
+    # picks between the two before each new research session. Keep its plugins those of src/host/browser-preset.ts, less
+    # the `browser` group (tests/build.spec.ts checks). It shows in the preset picker, so it says whom it is for.
     - id: outpost-researcher-basic-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:

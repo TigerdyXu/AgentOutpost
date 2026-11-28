@@ -1,3 +1,4 @@
+import { browserPresetDefinition } from '../src/host/browser-preset.ts'
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
@@ -45,42 +46,50 @@ function withoutPlugin(plugins: string, id: string): string {
   return lines.join('\n')
 }
 
-it('repeats both research preset rows, unchanged, in the development overlay', () => {
-  for (const id of ['outpost-researcher-preset', 'outpost-researcher-basic-preset'])
-    expect(rowOf('dev/overlay.cordis.yml', id), id).toBe(rowOf('cordis.patch.yml', id))
-})
-
-it('keeps the browser fallback inside the research preset, on, in both patch files', () => {
-  const shipped = rowOf('cordis.patch.yml', 'outpost-researcher-preset')
-  // The browser-use service and its provider in a group of their own, the service isolated to it (a preset's service
-  // must be, or DSH refuses the preset), launching the local Chrome without a window; nothing in the row is off.
-  expect(shipped).toContain([
-    '          - id: browser',
-    '            name: cordis:group',
-    '            group: true',
-    '            isolate:',
-    '              browserUse: true',
-    '            config:',
-    "              - id: browser-use",
-    "                name: '@deepseek-ai/dsh-browser-use'",
-    "              - id: browser-use-playwright",
-    "                name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'",
-    '                config:',
-    '                  mode: launch',
-    '                  headless: true',
-    '                  executablePath: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ].join('\n'))
-  expect(shipped).not.toMatch(/disabled:/)
-  // No browser for the whole profile any more: every session of the user's own would get one.
+it('repeats the research preset row, unchanged, in the development overlay, and ships no browser preset row', () => {
+  expect(rowOf('dev/overlay.cordis.yml', 'outpost-researcher-basic-preset')).toBe(rowOf('cordis.patch.yml', 'outpost-researcher-basic-preset'))
   for (const file of PATCH_FILES) {
-    expect(readFileSync(file, 'utf8')).not.toMatch(/^ {4}- id: outpost-browser-use/m)
+    const text = readFileSync(file, 'utf8')
+    // M2.4: the browser one is registered by Outpost when its packages are installed (src/host/browser-preset.ts).
+    expect(text, file).not.toMatch(/^ {4}- id: outpost-researcher-preset/m)
+    // No browser for the whole profile either: every session of the user's own would get one.
+    expect(text, file).not.toMatch(/^ {4}- id: outpost-browser-use/m)
   }
 })
 
-// M1.4: research runs on this one when the browser preset does not load (its packages are not installed, as after a plain
+it('keeps the browser fallback inside the research preset Outpost registers, launching the local Chrome without a window', () => {
+  const browser = browserPresetDefinition('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+  expect(browser).toMatchObject({ id: 'outpost-researcher', name: '前哨调研员', order: 92 })
+  // The browser-use service and its provider in a group of their own, the service isolated to it (a preset's service
+  // must be, or DSH refuses the preset); nothing in it is off.
+  expect(browser.plugins.find(plugin => plugin.id === 'browser')).toEqual({
+    id: 'browser', name: 'cordis:group', group: true, isolate: { browserUse: true },
+    config: [
+      { id: 'browser-use', name: '@deepseek-ai/dsh-browser-use' },
+      { id: 'browser-use-playwright', name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp', config: { mode: 'launch', headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } },
+    ],
+  })
+  expect(JSON.stringify(browser)).not.toMatch(/disabled/)
+  // Without Chrome where the Mac keeps it, Playwright looks for a browser itself.
+  expect(JSON.stringify(browserPresetDefinition(null))).not.toMatch(/executablePath/)
+})
+
+/** A preset's plugins as `key=value` lines (and bare `key` for an object or list), depth first, quotes left out. */
+function flatYaml(plugins: string): string[] {
+  return plugins.split('\n').slice(1).filter(line => line.trim()).map(line => {
+    const [key, ...rest] = line.trim().replace(/^- /, '').split(': ')
+    const value = rest.join(': ').replace(/^'(.*)'$/, '$1')
+    return value ? `${key}=${value}` : key!.replace(/:$/, '')
+  })
+}
+function flatObject(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(flatObject)
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, v]) => v !== null && typeof v === 'object' ? [key, ...flatObject(v)] : [`${key}=${String(v)}`])
+}
+
+// M1.4: research runs on this one when the browser preset is not there (its packages are not installed, as after a plain
 // `dsh plugin add` of Outpost) or clashes with a Playwright browser of the whole profile (src/host/dsh-sessions.ts).
 it('ships a research preset without the browser that is otherwise the browser preset', () => {
-  const browser = rowOf('cordis.patch.yml', 'outpost-researcher-preset')
   const basic = rowOf('cordis.patch.yml', 'outpost-researcher-basic-preset')
   expect(basic).toContain([
     '    - id: outpost-researcher-basic-preset',
@@ -90,12 +99,12 @@ it('ships a research preset without the browser that is otherwise the browser pr
     '        name: 前哨调研员（无浏览器）',
   ].join('\n'))
   // It shows in the user's preset list (a preset row cannot hide itself), right after the browser one, saying whom it is for.
-  expect(browser).toContain('        order: 92\n')
   expect(basic).toContain('        order: 93\n')
   expect(basic).toMatch(/^ {8}description: 前哨的调研会话专用.*不供手动选择/m)
   // No browser of its own: neither the group nor either package, so it loads in a profile that has neither.
   expect(basic).not.toMatch(/- id: browser|dsh-browser-use|playwright/)
   expect(basic).not.toMatch(/disabled:/)
   // Everything else as the browser preset has it: the persona, the web tools, compaction.
-  expect(pluginsOf(basic)).toBe(withoutPlugin(pluginsOf(browser), 'browser'))
+  const browser = browserPresetDefinition(null)
+  expect(flatYaml(pluginsOf(basic))).toEqual(flatObject(browser.plugins.filter(plugin => plugin.id !== 'browser')))
 })

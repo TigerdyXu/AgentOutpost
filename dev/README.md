@@ -112,7 +112,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    这是正式数据目录；开发版 dsh 用的是 `/Users/tiger/Projects/AgentOutpost-data/dev`，两个不要混用（同一个目录同时只能被一个前哨打开）。
 
-6. **浏览器兜底（默认打开，只给前哨的调研会话用）。** 公众号、小红书、知乎这类有验证页的原文，靠它用无界面 Chrome 打开核实。它装在包里的 `outpost-researcher` 预设里（`browser` 那一组：`@deepseek-ai/dsh-browser-use` 服务和 `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 提供方，`mode: launch`、`headless: true`、`executablePath` 指向本机 Chrome），所以只有前哨的调研会话有浏览器，你自己的会话没有。
+6. **浏览器兜底（默认打开，只给前哨的调研会话用）。** 公众号、小红书、知乎这类有验证页的原文，靠它用无界面 Chrome 打开核实。它在 `outpost-researcher` 预设里（M2.4 起由前哨自己在启动时注册，只在两个浏览器包装了时才注册，所以只装前哨时 DSH 的预设列表里不会出现一个「加载失败」的；`browser` 那一组：`@deepseek-ai/dsh-browser-use` 服务和 `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` 提供方，`mode: launch`、`headless: true`、`executablePath` 指向本机 Chrome），所以只有前哨的调研会话有浏览器，你自己的会话没有。
 
    - **两个包要装进 profile**：桌面版 0.2.3-alpha.2 不自带它们。没装的话带浏览器的调研预设起不来，前哨改用不带浏览器的 `outpost-researcher-basic` 照常调研，只是打不开公众号这类网页，设置页顶上显示「浏览器兜底没开：…」和安装命令（M1.4 起；之前是推荐、建档、核查、日更全都跑不了）。同样要在桌面版退出时装（会从 npm 下载 `@playwright/mcp` 等约 10 个包，不下载 Chromium；提示「declares no dsh.bundle — installed as a plain dependency」是正常的）：
 
@@ -128,7 +128,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    - **代价**（2026-11-26 开发环境实测）：每个活着的调研会话带一个 Playwright MCP 进程（约 125 MB），打开过网页的再带一个无界面 Chrome（空白页约 0.7 GB，真实网页更多）。前哨在每次调研结束时结束这个会话的实时状态，两样随之关掉，所以只有正在跑的调研会话占着。之后你在 dsh 里点开某个已结束的调研会话看，它会重新起一个 Playwright 进程，直到桌面版重启。调研会话有整组 `browser_*` 工具，调用不经确认，而调研会话读的是不可信网页；其中 `browser_run_code_unsafe` 按 Playwright 自己的说明等同远程代码执行，前哨在调研会话里把它拦下了，dsh 自己重新打开的调研会话（启动时回到上次那页、从侧栏或「运行记录」点开）也一样（模型调它只会收到「前哨的调研会话不能用这个工具」），打开、读取、点击网页的工具照常能用。
    - **侧栏**（这一条是读 dsh 代码得出的，还没在桌面版里亲眼看到）：调研会话结束后会从 dsh 侧栏「前哨」工作区里暂时消失，会话列表刷新后（重开桌面版或断线重连）才回来，会话记录一直在；从前哨「运行记录」点那一行（「在 DSH 里打开这次运行的会话」）照样能打开。
-   - **关掉或换浏览器**：在 profile 补丁里覆盖 `outpost-researcher-preset` 这一行。覆盖会整段替换 `config`，所以要把包里 `cordis.patch.yml` 的这一行整段抄过来，去掉 `browser` 那一组（关掉），或改 `executablePath`（换成别的 Chromium 内核浏览器；删掉这一行则让 Playwright 自己找）。关掉后打不开的原文按「待确认」处理。
+   - **关掉或换浏览器**（M2.4 起）：关掉就是把两个浏览器包从 profile 里拿掉（`"$DSH" plugin --profile desktop remove @deepseek-ai/dsh-browser-use @deepseek-ai/dsh-experimental-browser-use-playwright-mcp`），重启后前哨不再注册带浏览器的预设，调研改用不带浏览器的那个；打不开的原文按「待确认」处理。浏览器在 Mac 上用 `/Applications/Google Chrome.app` 里的 Chrome，没有就让 Playwright 自己找（`src/host/browser-preset.ts`）。
 
 7. **（按需）指定模型。** 前哨有四处用到模型（M1.1，设计见 `docs/m1.1-设计.md`），在 `outpost` 行里各是一个字段：
 

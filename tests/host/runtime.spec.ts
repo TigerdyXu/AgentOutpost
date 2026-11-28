@@ -313,6 +313,31 @@ describe('Runtime', () => {
     await rt.stop() // twice is harmless
   })
 
+  it('registers the research preset with the browser only when its packages are installed, and takes it back on stop (M2.4)', async () => {
+    const unregister = vi.fn(async () => {})
+    const register = vi.fn(async (_definition: { id: string; plugins: readonly unknown[] }) => unregister)
+    const presets = host.services.agentPresets as Record<string, unknown>
+    presets.register = register
+    runtime = host.create(false)
+    runtime.start()
+    await runtime.researchPreset()
+    expect(register).not.toHaveBeenCalled() // a plain install: no preset to fail among DSH's
+    await runtime.stop()
+    runtime = undefined
+
+    const other = apiHost()
+    other.services.agentPresets = { ...(other.services.agentPresets as object), register }
+    const installed = other.create(true)
+    installed.start()
+    const choice = await installed.researchPreset() // waits for the registration
+    expect(register).toHaveBeenCalledOnce()
+    expect(register.mock.calls[0]![0]).toMatchObject({ id: 'outpost-researcher', order: 92 })
+    expect(choice.preset).toBe('outpost-researcher')
+    await installed.stop()
+    expect(unregister).toHaveBeenCalledOnce()
+    other.cleanup()
+  })
+
   it('says the browser fallback is on when the research preset composes an active browser provider', () => {
     runtime = host.create()
     const module = (moduleName: string) => ({ moduleName, useHostBase: true })
