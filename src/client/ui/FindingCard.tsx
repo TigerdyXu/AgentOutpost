@@ -29,9 +29,11 @@ export interface FindingCardProps {
   minor?: boolean
   /** Called when the card has been in the viewport and left it; without it, the card is never marked read by being seen. */
   onRead?: (id: Id) => void
+  /** The one a link asked to show (a search hit): outlined. */
+  focused?: boolean
 }
 
-export function FindingCard({ finding, product, trackName, sources, changed, promoted, read = false, minor, onRead }: FindingCardProps): ReactNode {
+export function FindingCard({ finding, product, trackName, sources, changed, promoted, read = false, minor, onRead, focused = false }: FindingCardProps): ReactNode {
   const { t, navigate } = useShell()
   const card = useRef<HTMLElement>(null)
   useLeaveViewport(card, read || !onRead, () => { onRead?.(finding.id) })
@@ -44,7 +46,7 @@ export function FindingCard({ finding, product, trackName, sources, changed, pro
   // A chip that says 原文打不开 already tells it; the finding says it only when none does.
   const sayUnopened = (unconfirmed || unproven) && finding.statusNote === UNOPENED && !pages.some(source => source.openedVia === 'unopened')
   const plainNote = (unconfirmed || unproven) && finding.statusNote !== null && finding.statusNote !== UNOPENED ? told(t, finding.statusNote) : null
-  return <article ref={card} className="op-card" data-read={read ? '' : undefined} data-minor={minor ? '' : undefined} data-importance={finding.importance}>
+  return <article ref={card} className="op-card" data-finding={finding.id} data-focused={focused ? '' : undefined} data-read={read ? '' : undefined} data-minor={minor ? '' : undefined} data-importance={finding.importance}>
     <div className="op-card-head">
       <ProductIcon product={product} size={22} />
       <span className="op-card-product">{product.name}</span>

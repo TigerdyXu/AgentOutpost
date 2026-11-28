@@ -2,7 +2,7 @@
  * 动态 (design §5.4): every finding of the product, newest first, as the brief's cards. The ones that went unproven (still
  * short of a second source after the waiting time) are folded under one row of their own.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Dimension, DimensionKey, Finding, Id, Product, Source } from '../../../core/types.ts'
 import { PROMOTED } from '../../notes.ts'
 import { useShell } from '../../shell/context.ts'
@@ -13,13 +13,23 @@ import { labelOf } from '../../words.ts'
 /** Newest first; one with no readable time goes last. */
 const byNewest = (a: Finding, b: Finding) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)
 
-export function FeedTab({ product, findings, sources, dimensions, changed = {} }: {
+export function FeedTab({ product, findings, sources, dimensions, changed = {}, focus }: {
   product: Product; findings: Finding[]; sources: Source[]; dimensions: Dimension[]
   /** The dimensions each finding changed (from the API); a finding absent changed none. */
   changed?: Record<Id, DimensionKey[]>
+  /** A finding a link asked to show (a search hit, M3.2): scrolled to and marked, its fold opened if it is in one. */
+  focus?: Id
 }): ReactNode {
   const { t, state } = useShell()
-  const [open, setOpen] = useState(false)
+  const focusUnproven = focus !== undefined && findings.some(finding => finding.id === focus && finding.status === 'unproven')
+  const [open, setOpen] = useState(focusUnproven)
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (focus === undefined) return
+    if (focusUnproven) setOpen(true)
+    const target = [...list.current?.querySelectorAll<HTMLElement>('[data-finding]') ?? []].find(element => element.dataset.finding === focus)
+    target?.scrollIntoView?.({ block: 'center' })
+  }, [focus, focusUnproven, open])
   // Every track the product is in, in the track list's order, as the unfiltered brief names them.
   const trackName = state?.tracks.filter(view => view.products.some(item => item.product.id === product.id)).map(view => view.track.name).join(t('today.list')) || undefined
   const labels = new Map(dimensions.map(dimension => [dimension.key, labelOf(t, dimension)] as const))
@@ -33,10 +43,10 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {} }
     // Only what the check verified went into the profile (design §8), and only where a card took a version resting on it.
     // A dimension that no track of the product lists is not on the profile: not named, and not what 看改动 opens.
     changed={finding.status === 'verified' ? (changed[finding.id] ?? []).flatMap(key => labels.has(key) ? [{ key, label: labels.get(key)! }] : []) : []}
-    promoted={finding.status === 'verified' && finding.statusNote === PROMOTED} />
+    promoted={finding.status === 'verified' && finding.statusNote === PROMOTED} focused={finding.id === focus} />
 
   if (shown.length === 0 && unproven.length === 0) return <p className="op-day-empty">{t('feed.empty')}</p>
-  return <div className="op-feed">
+  return <div className="op-feed" ref={list}>
     {shown.length > 0 && <div className="op-cards">{shown.map(card)}</div>}
     {unproven.length > 0 && <>
       <button type="button" className="op-fold" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>

@@ -10,7 +10,8 @@ export type Route =
   | { page: 'editTrack'; trackId: Id }
   | { page: 'track'; trackId: Id }
   | { page: 'topic'; topicId: Id }
-  | { page: 'product'; productId: Id; tab: ProductTab; expand?: DimensionKey }
+  | { page: 'product'; productId: Id; tab: ProductTab; expand?: DimensionKey; finding?: Id }
+  | { page: 'search'; q: string }
   | { page: 'runs' }
   | { page: 'settings' }
 
@@ -22,7 +23,7 @@ const text = (value: unknown): string | undefined => typeof value === 'string' &
 
 /** A stored value as a route, with unknown fields dropped; undefined when it names no page or lacks what the page needs. */
 export function parseRoute(value: unknown): Route | undefined {
-  const { page, date, trackId, productId, tab, expand, topicId } = (value ?? {}) as Record<string, unknown>
+  const { page, date, trackId, productId, tab, expand, topicId, finding, q } = (value ?? {}) as Record<string, unknown>
   switch (page) {
     case 'today': { const day = text(date); return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? { page, date: day } : { page } }
     case 'newTrack': { const id = text(trackId); return id ? { page, trackId: id } : { page } }
@@ -31,8 +32,10 @@ export function parseRoute(value: unknown): Route | undefined {
       const id = text(productId)
       if (!id) return undefined
       const dimension = text(expand)
-      return { page, productId: id, tab: TABS.find(item => item === tab) ?? 'dossier', ...dimension ? { expand: dimension } : {} }
+      const findingId = text(finding)
+      return { page, productId: id, tab: TABS.find(item => item === tab) ?? 'dossier', ...dimension ? { expand: dimension } : {}, ...findingId ? { finding: findingId } : {} }
     }
+    case 'search': return { page, q: typeof q === 'string' ? q : '' }
     case 'topic': { const id = text(topicId); return id ? { page, topicId: id } : undefined }
     case 'runs': case 'settings': return { page }
     default: return undefined
@@ -49,8 +52,8 @@ function initialRoute(): Route {
 }
 
 /**
- * Remembers `route` for the next visit; a day of the brief is not kept (the panel opens on today's), nor the card a link
- * asked to open.
+ * Remembers `route` for the next visit; a day of the brief is not kept (the panel opens on today's), nor the card or
+ * finding a link asked to open.
  */
 function remember(route: Route): void {
   const kept: Route = route.page === 'today' ? { page: 'today' } : route.page === 'product' ? { page: 'product', productId: route.productId, tab: route.tab } : route

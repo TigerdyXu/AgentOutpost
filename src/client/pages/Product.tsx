@@ -36,7 +36,7 @@ export function Product(): ReactNode {
 
 function ProductPage({ route }: { route: ProductRoute }): ReactNode {
   const { t, navigate, state, refresh } = useShell()
-  const { productId, tab, expand } = route
+  const { productId, tab, expand, finding } = route
   const ids = useId()
 
   const [runId, setRunId] = useState<Id | null>(null)
@@ -188,7 +188,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
       <div className="op-tabpanel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-${tab}`}>
         {tab === 'dossier' && <DossierTab view={view} expanded={expanded} onToggle={toggle} focus={expand} now={now} />}
         {tab === 'feed' && (feed.data
-          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} />
+          ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} focus={finding} />
           : feed.error && <p className="op-day-problem" role="alert">{describeError(t, feed.error)}</p>)}
         {tab === 'sources' && <SourcesTab view={view} />}
         {tab === 'topics' && <TopicsTab productId={view.product.id} />}

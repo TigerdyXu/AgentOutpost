@@ -16,6 +16,7 @@ import { EditTrack } from '../pages/EditTrack.tsx'
 import { NewTrack } from '../pages/NewTrack.tsx'
 import { Product } from '../pages/Product.tsx'
 import { Runs } from '../pages/Runs.tsx'
+import { Search } from '../pages/Search.tsx'
 import { Settings } from '../pages/Settings.tsx'
 import { Today } from '../pages/Today.tsx'
 import { Topic } from '../pages/Topic.tsx'
@@ -53,6 +54,7 @@ function Page(): ReactNode {
     case 'track': return <Track />
     case 'topic': return <Topic />
     case 'product': return <Product />
+    case 'search': return <Search />
     case 'runs': return <Runs />
     case 'settings': return <Settings />
   }

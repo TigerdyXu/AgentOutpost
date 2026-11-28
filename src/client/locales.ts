@@ -528,6 +528,24 @@ const OWN = {
   'settings.refused': ['没有保存：设置刚在别处改过，或有一项没通过检查。已载入最新的值，你的改动还在，确认后再保存一次。',
     'Not saved: the settings were changed elsewhere, or one value did not pass its check. The latest values are loaded and your edits are kept; check them and save again.'],
   'settings.failed': ['没有保存：{reason}', 'Not saved: {reason}'],
+
+  // M3.2: searching what Outpost holds.
+  'search.placeholder': ['搜索前哨', 'Search Outpost'],
+  'search.label': ['搜索前哨里的产品、档案、动态和专题', 'Search Outpost’s products, dossiers, findings and topics'],
+  'search.title': ['搜索「{q}」', 'Search: “{q}”'],
+  'search.titleEmpty': ['搜索', 'Search'],
+  'search.empty': ['在左边的搜索框里输入要找的词：产品名、公司，或者档案、动态、专题里的一句话。几个词用空格隔开，都出现了才算找到。',
+    'Type what you are looking for in the search box on the left: a product, a company, or words from a dossier, a finding or a topic. Separate several words with spaces; all of them must be there.'],
+  'search.none': ['前哨里没有找到「{q}」。换个词，或者少写几个词试试。', 'Nothing in Outpost matches “{q}”. Try other words, or fewer of them.'],
+  'search.found': ['找到 {count} 处', '{count} matches'],
+  'search.searching': ['正在找…', 'Searching…'],
+  'search.more': ['还有 {count} 处没列出，换个更具体的词试试', '{count} more not listed; try more specific words'],
+  'search.group.products': ['产品', 'Products'],
+  'search.group.tracks': ['赛道', 'Tracks'],
+  'search.group.cards': ['档案', 'Dossier cards'],
+  'search.group.findings': ['动态', 'Findings'],
+  'search.group.topics': ['专题', 'Topics'],
+  'search.unproven': ['已过期未证实', 'Expired without proof'],
 } as const satisfies Record<string, readonly [string, string]>
 
 /** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */
@@ -548,6 +566,7 @@ const ONE = {
   'dossier.sourceCount': '{count} source',
   'sources.citedBy': 'Cited by {count} conclusion',
   'runs.meta': 'Last 7 days · {count} run · costs are estimates',
+  'search.found': '{count} match',
   'runs.searches': 'Includes {count} web search, estimated at about 8,000 input and 800 output tokens',
   'said.retried': '{reason} (tried again {count} time)',
 } as const satisfies Partial<Record<keyof typeof OWN | keyof typeof SAID_TEXT, string>>

@@ -28,6 +28,7 @@ import { startIdentify } from './jobs/identify.ts'
 import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
 import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
 import { topicSchedule } from './jobs/topic.ts'
+import { QUERY_MAX, search, type SearchResults } from './search.ts'
 import { LAST_COMPLETED } from './scheduler.ts'
 import { UI_LANGUAGE } from './titles.ts'
 import { startRecommendation } from './jobs/recommend.ts'
@@ -331,6 +332,11 @@ export interface Api {
   'POST followup': { body: { findingId: Id }; response: { sessionId: string } }
   /** The runs of the last `days` days (today counts as one), newest first. */
   'GET runs': { query?: { days?: number }; response: { runs: RunRow[] } }
+  /**
+   * The panel's search (M3.2): followed products, tracks, dossier cards, findings and topics holding every word of `q`
+   * (at most `QUERY_MAX` characters; blank finds nothing), each with a snippet. 400 for a longer query.
+   */
+  'GET search': { query: { q: string }; response: SearchResults }
   /**
    * Runs a failed run's work again and answers with the new run: a failed check of a tracked product, or its update that
    * failed only because the check did not finish, as that check alone, for its day. 409 「已经重新跑过了」 when that work was done again since (a later run of the same work, a finished
@@ -1133,6 +1139,12 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     },
 
     'GET models': async () => ({ groups: await listModelGroups(rt.ctx.llm), defaultModel: rt.defaultModel() }),
+
+    'GET search': ({ query }) => {
+      const q = String(query.q ?? '').trim()
+      if (q.length > QUERY_MAX) throw new ApiError(400, `q must be at most ${QUERY_MAX} characters`)
+      return search(repo, q)
+    },
 
     'GET runs': ({ query }) => {
       const days = query.days === undefined ? 7 : Number(query.days)

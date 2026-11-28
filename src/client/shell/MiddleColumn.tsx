@@ -6,11 +6,11 @@
  * track's name opens its settings (M1.5). Tracks, and the products within a track, are put in order by dragging them, or
  * with Alt+↑/↓ on one that has the focus (M2.4); a product moves to another track from its page's 「⋯」, not by dragging.
  */
-import { useEffect, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
 import { call, describeError, useCandidates } from '../api.ts'
-import { BriefIcon, CheckIcon, ChevronIcon, OverviewIcon, RunsIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
+import { BriefIcon, CheckIcon, ChevronIcon, OverviewIcon, RunsIcon, SearchIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { useShell } from './context.ts'
 import { samePage, type Route } from './route.ts'
@@ -225,6 +225,38 @@ function TrackGroup({ view, folded, onFold, onChoose, move }: { view: TrackView;
   </div>
 }
 
+/** How long typing pauses before the results follow (M3.2). */
+export const SEARCH_DEBOUNCE_MS = 250
+
+/**
+ * The search box (M3.2): what is typed shows on the search page once typing pauses (Enter at once, and the narrow layout
+ * closes the column then); Esc empties it. It shows the search page's words while that page is open, and is emptied when
+ * another page opens.
+ */
+function SearchBox({ onChoose }: { onChoose: () => void }): ReactNode {
+  const { t, route, navigate } = useShell()
+  const onSearch = route.page === 'search'
+  const [text, setText] = useState(onSearch ? route.q : '')
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => { if (!onSearch) { clearTimeout(timer.current); setText('') } }, [onSearch])
+  useEffect(() => () => { clearTimeout(timer.current) }, [])
+  const go = (value: string) => { clearTimeout(timer.current); navigate({ page: 'search', q: value.trim() }) }
+  return <div className="op-mid-search" role="search">
+    <SearchIcon size={16} />
+    <input type="search" className="op-mid-search-input" placeholder={t('search.placeholder')} aria-label={t('search.label')} value={text} maxLength={60}
+      onChange={event => {
+        const value = event.target.value
+        setText(value)
+        clearTimeout(timer.current)
+        if (value.trim() || onSearch) timer.current = setTimeout(() => { go(value) }, SEARCH_DEBOUNCE_MS)
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); go(text); onChoose() }
+        else if (event.key === 'Escape' && text) { event.preventDefault(); event.stopPropagation(); setText(''); if (onSearch) go('') }
+      }} />
+  </div>
+}
+
 /** The column; `onChoose` runs after any entry is chosen (the narrow layout closes the column then). */
 export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void }): ReactNode {
   const { t, state, stateError, navigate, refresh } = useShell()
@@ -242,6 +274,7 @@ export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void })
       <h2 className="op-mid-title">{t('panel')}</h2>
       <button type="button" className="op-new-track" onClick={() => { navigate({ page: 'newTrack' }); onChoose() }}>{t('nav.newTrack')}</button>
     </div>
+    <SearchBox onChoose={onChoose} />
     {stateError && <p className="op-mid-note" role="status">{describeError(t, stateError)}</p>}
     <Row to={{ page: 'today' }} icon={<BriefIcon />} label={t('nav.today')} end={todayEnd}
       endTone={state && state.todayUnread > 0 ? 'accent' : undefined} onChoose={onChoose} />

@@ -2095,6 +2095,13 @@ describe('the track page (M2.1)', () => {
     expect((await host.call('POST', 'lookup', { on: 'yes' })).status).toBe(400)
   })
 
+  it('searches what Outpost holds, and refuses a query over 60 characters (M3.2)', async () => {
+    const t = seed()
+    expect(ok(await host.call('GET', `search?q=${encodeURIComponent('  ')}`)).json<ApiResponse<'GET search'>>()).toMatchObject({ query: '', products: [], tracks: [] })
+    expect(ok(await host.call('GET', `search?q=${encodeURIComponent(t.name.slice(0, 4))}`)).json<ApiResponse<'GET search'>>().tracks).toMatchObject([{ id: t.id }])
+    expect((await host.call('GET', `search?q=${'x'.repeat(61)}`)).status).toBe(400)
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())
