@@ -286,7 +286,7 @@ export class Repo {
         return named ? [] : [this.deleteProduct(id)]
       })
       for (const key of settingKeys) this.setSetting(key, undefined)
-      this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind IN ('recommend', 'landscape')").run(track.name, trackId)
+      this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind IN ('recommend', 'landscape', 'recap')").run(track.name, trackId)
       this.db.prepare('DELETE FROM landscapes WHERE track_id = ?').run(trackId)
       this.db.prepare('DELETE FROM recaps WHERE track_id = ?').run(trackId)
       for (const topic of this.topicsOfTrack(trackId)) this.deleteTopic(topic.id)
@@ -620,6 +620,30 @@ export class Repo {
 
   /** Every summary kept, newest first. */
   listRecaps(): Recap[] { return this.select(RECAP, 'ORDER BY created_at DESC, rowid DESC') }
+
+  /** The topic's versions written in [`from`, `to`), oldest first. */
+  topicVersionsBetween(topicId: Id, from: string, to: string): TopicVersion[] {
+    return this.select(TOPIC_VERSION, 'WHERE topic_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, rowid', topicId, from, to)
+  }
+
+  /** The summary of the track's latest week that has one, or null. */
+  latestRecap(trackId: Id): Recap | null { return this.select(RECAP, 'WHERE track_id = ? ORDER BY week DESC LIMIT 1', trackId)[0] ?? null }
+
+  /** The product's findings made in [`from`, `to`) (ISO times), oldest first: a week's, read without the rest (M3.4). */
+  findingsBetween(productId: Id, from: string, to: string): Finding[] {
+    return this.select(FINDING, 'WHERE product_id = ? AND created_at >= ? AND created_at < ? ORDER BY rowid', productId, from, to)
+  }
+
+  /** The product's card versions written in [`from`, `to`), oldest first. */
+  cardVersionsBetween(productId: Id, from: string, to: string): CardVersion[] {
+    return this.select(CARD_VERSION, 'WHERE product_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, rowid', productId, from, to)
+  }
+
+  /** When the product's first card was written, or null: when its dossier was first built. */
+  firstCardAt(productId: Id): string | null {
+    const row = this.db.prepare('SELECT MIN(created_at) AS at FROM card_versions WHERE product_id = ?').get(productId)
+    return row?.at == null ? null : String(row.at)
+  }
 
   // ---- the user's notes (M3.3) ----
 

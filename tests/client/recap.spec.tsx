@@ -20,7 +20,7 @@ const recap = (over: Partial<RecapView> = {}): RecapView => ({
   map: { date: '2026-11-26', gist: '两条路线', moved: ['小豆'] },
   topics: [{ id: 'tp1', question: '谁在收费？', version: 2, changeNote: '加了 Muse', date: '2026-11-27' }],
   quiet: ['Cue'],
-  prev: '2026-11-16', next: '2026-11-30', ...over,
+  prev: '2026-11-16', next: '2026-11-30', gistDue: false, ...over,
 })
 
 describe('the weekly recap page', () => {

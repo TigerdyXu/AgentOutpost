@@ -41,6 +41,16 @@ async function show(runs: RunRow[] | ReturnType<typeof fail>, shell: Partial<She
   return { api, context }
 }
 
+describe('weekly recap runs (M3.4)', () => {
+  it('name their track and week, or the track as it was once deleted', async () => {
+    await show([
+      run('r1', null, 'failed', { kind: 'recap', trackId: 't1', subject: '2026-11-23', date: '2026-11-30' }),
+      run('r2', null, 'done', { kind: 'recap', trackId: 'gone', subject: '旧赛道', date: '2026-11-30' }),
+    ])
+    expect(all('.op-run-object').map(o => o.textContent)).toEqual(['Personal Agent · 11-23 那一周', '旧赛道（已删除）'])
+  })
+})
+
 describe('the list', () => {
   it('groups runs by day, newest first, with the day’s cost on its header', async () => {
     await show([

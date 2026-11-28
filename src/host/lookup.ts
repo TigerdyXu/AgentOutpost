@@ -224,7 +224,7 @@ function trackView(repo: Repo, track: Track, asked: string | null) {
     }
   }
   const map = repo.latestLandscape(track.id)
-  const lastWeek = repo.listRecaps().find(r => r.trackId === track.id)
+  const lastWeek = repo.latestRecap(track.id)
   return {
     ...head,
     ...lastWeek ? { lastWeekRecap: { week: lastWeek.week, gist: lastWeek.gist, aiSummary: true } } : {},

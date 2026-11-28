@@ -31,6 +31,9 @@ export function weekStart(date: string): string {
 /** The local day of a stored time. */
 const dayOf = (iso: string) => localDate(new Date(iso))
 
+/** Local midnight at the start of `date`, as a stored time (ISO): a day's bound in the store's terms. */
+const midnight = (date: string) => { const [y, m, d] = date.split('-').map(Number); return new Date(y!, m! - 1, d!).toISOString() }
+
 export interface RecapView {
   track: { id: Id; name: string }
   /** The week's Monday and Sunday. */
@@ -52,11 +55,19 @@ export interface RecapView {
   map: { date: string; gist: string; moved: string[] } | null
   /** Topics that got a new version in the week. */
   topics: { id: Id; question: string; version: number; changeNote: string; date: string }[]
-  /** Products with no finding at all in the week. */
+  /**
+   * Products with no finding at all in the week: those whose dossier was built by its end, and not first built in it
+   * (one being profiled has no findings yet; one added to the track later was not in it).
+   */
   quiet: string[]
-  /** The weeks before and after with something to show (null at either end: before the track, after this week). */
+  /**
+   * The weeks before and after (null at either end: the week the track was made, this week). Products are the track's
+   * own today; one added to it later is left out of weeks before its dossier was built.
+   */
   prev: string | null
   next: string | null
+  /** A week just over whose paragraph is still to come: due at this week's first daily run. */
+  gistDue: boolean
 }
 
 const RANK: Record<Importance, number> = { major: 0, notable: 1, minor: 2 }
@@ -64,29 +75,33 @@ const RANK: Record<Importance, number> = { major: 0, notable: 1, minor: 2 }
 /** The recap of the track's week `week` (a Monday) as of `today`. */
 export function composeRecap(repo: Repo, track: Track, week: string, today: string): RecapView {
   const end = shiftDate(week, 6)
-  const within = (iso: string) => { const day = dayOf(iso); return day >= week && day <= end }
+  // The week's bounds as stored times: only what was written in it is read (not every product's whole history).
+  const from = midnight(week)
+  const to = midnight(shiftDate(week, 7))
+  const within = (iso: string) => iso >= from && iso < to
   const products = repo.productsOfTrack(track.id).filter(p => FOLLOWED.includes(p.status))
+  const labels = new Map(track.dimensions.map(d => [d.key, d.label]))
   const findings: RecapView['findings'] = []
   let minor = 0
   const cardChanges: RecapView['cardChanges'] = []
   const newProducts: RecapView['newProducts'] = []
   const quiet: string[] = []
   for (const product of products) {
-    const ofWeek = repo.findingsOfProduct(product.id).filter(f => (f.status === 'verified' || f.status === 'unconfirmed') && within(f.createdAt))
-    if (!ofWeek.length) quiet.push(product.name)
+    const profiled = repo.firstCardAt(product.id)
+    if (profiled !== null && profiled >= to) continue // not in the track's work yet that week
+    const ofWeek = repo.findingsBetween(product.id, from, to).filter(f => f.status === 'verified' || f.status === 'unconfirmed')
+    const isNew = profiled !== null && within(profiled)
+    if (isNew) newProducts.push({ id: product.id, name: product.name })
+    else if (!ofWeek.length && profiled !== null) quiet.push(product.name)
     for (const f of ofWeek) {
       if (f.importance === 'minor') { minor++; continue }
       findings.push({ id: f.id, productId: product.id, product: product.name, date: dayOf(f.createdAt), importance: f.importance, status: f.status, headline: f.headline, why: f.why })
     }
-    const firsts: string[] = []
-    for (const dimension of track.dimensions) {
-      for (const version of repo.cardHistory(product.id, dimension.key)) {
-        if (version.version === 1) { firsts.push(version.createdAt); continue }
-        if (within(version.createdAt)) cardChanges.push({ productId: product.id, product: product.name, dimension: dimension.key, label: dimension.label, changeNote: version.changeNote, date: dayOf(version.createdAt) })
-      }
+    for (const version of repo.cardVersionsBetween(product.id, from, to)) {
+      const label = labels.get(version.dimension)
+      if (version.version === 1 || label === undefined) continue // a first card is the profile, not a change; another track's dimension is not this one's
+      cardChanges.push({ productId: product.id, product: product.name, dimension: version.dimension, label, changeNote: version.changeNote, date: dayOf(version.createdAt) })
     }
-    const profiled = firsts.sort()[0]
-    if (profiled && within(profiled)) newProducts.push({ id: product.id, name: product.name })
   }
   findings.sort((a, b) => RANK[a.importance] - RANK[b.importance] || b.date.localeCompare(a.date))
   cardChanges.sort((a, b) => b.date.localeCompare(a.date))
@@ -107,19 +122,23 @@ export function composeRecap(repo: Repo, track: Track, week: string, today: stri
     map = { date: latest.date, gist: latest.gist, moved }
   }
 
-  const topics: RecapView['topics'] = repo.topicsOfTrack(track.id).flatMap(topic => repo.topicVersions(topic.id)
+  const topics: RecapView['topics'] = repo.topicsOfTrack(track.id).flatMap(topic => repo.topicVersionsBetween(topic.id, from, to)
     .filter(v => v.status === 'final' && v.version !== null && within(v.createdAt))
     .map(v => ({ id: topic.id, question: topic.question, version: v.version!, changeNote: v.changeNote, date: dayOf(v.createdAt) })))
 
   const thisWeek = weekStart(today)
   const first = weekStart(dayOf(track.createdAt))
-  return {
-    track: { id: track.id, name: track.name }, week, end, complete: end < today,
-    gist: repo.getRecap(track.id, week)?.gist ?? null,
+  const gist = repo.getRecap(track.id, week)?.gist ?? null
+  const view: RecapView = {
+    track: { id: track.id, name: track.name }, week, end, complete: end < today, gist,
     findings, minor, cardChanges, newProducts, map, topics, quiet,
     prev: week > first ? shiftDate(week, -7) : null,
     next: week < thisWeek ? shiftDate(week, 7) : null,
+    gistDue: false,
   }
+  // Last week, over, with something to say and no paragraph yet: this week's daily run will write it (`recapDue`).
+  view.gistDue = gist === null && shiftDate(week, 7) === thisWeek && track.status === 'active' && dayOf(track.createdAt) <= end && hasNews(view)
+  return view
 }
 
 /** Whether the week held anything to say. */
@@ -170,7 +189,8 @@ export async function writeRecap(deps: RecapDeps, trackId: Id, week: string, dat
   const track = repo.listTracks().find(t => t.id === trackId)
   if (!track) throw new Error(`Unknown track ${trackId}`)
   const recap = composeRecap(repo, track, week, date)
-  const run = repo.createRun({ kind: 'recap', date, trackId, productId: null })
+  // The week goes in `subject`, so that a retry on another day writes the same one.
+  const run = repo.createRun({ kind: 'recap', date, trackId, productId: null, subject: week })
   const end = (patch: Parameters<Repo['updateRun']>[1]) => { repo.updateRun(run.id, { endedAt: clock.now().toISOString(), ...patch }) }
   const writer = modelFor('brief', settings())
   const refused = budgetRefusal(repo, settings(), writer, date, null)
@@ -206,6 +226,6 @@ export function recapDue(repo: Repo, track: Track, date: string): string | null 
   if (track.status !== 'active') return null
   const week = shiftDate(weekStart(date), -7)
   if (dayOf(track.createdAt) > shiftDate(week, 6) || repo.getRecap(track.id, week)) return null
-  if (repo.runsOfDate(date, 'recap').some(r => r.trackId === track.id)) return null
+  if (repo.runsOfDate(date, 'recap').some(r => r.trackId === track.id && r.subject === week)) return null
   return hasNews(composeRecap(repo, track, week, date)) ? week : null
 }

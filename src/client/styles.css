@@ -3792,6 +3792,11 @@ button.op-run-open:focus-visible {
   gap: 8px;
 }
 
+/* Another week loading: the one shown stays, faded. */
+.op-recap[data-loading] > :not(.op-recap-head) {
+  opacity: 0.5;
+}
+
 /* 「上周回顾已出」 under the brief's summary. */
 .op-recaps-out {
   margin: 0 0 14px;

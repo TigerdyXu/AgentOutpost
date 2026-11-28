@@ -37,7 +37,9 @@ export function Recap(): ReactNode {
   const trackId = route.page === 'recap' ? route.trackId : ''
   const week = route.page === 'recap' ? route.week : undefined
   const { data, error } = usePoll(async () => ({ week, view: await call('GET tracks/:id/recap', { id: trackId, query: week ? { week } : {} }) }), [trackId, week], RECAP_POLL_MS)
-  const view: RecapView | undefined = data && data.week === week ? data.view : undefined
+  // While another week loads, the week shown stays (its header and buttons too, so focus is not lost), marked busy.
+  const view: RecapView | undefined = data && data.view.track.id === trackId ? data.view : undefined
+  const loading = !data || data.week !== week
   const go = (to: string | null) => { if (to) navigate({ page: 'recap', trackId, week: to }) }
   if (!view) {
     return <div className="op-page op-recap">
@@ -45,7 +47,7 @@ export function Recap(): ReactNode {
     </div>
   }
   const empty = !view.findings.length && !view.minor && !view.cardChanges.length && !view.newProducts.length && !view.map && !view.topics.length
-  return <div className="op-page op-recap">
+  return <div className="op-page op-recap" aria-busy={loading || undefined} data-loading={loading ? '' : undefined}>
     <header className="op-recap-head">
       <div className="op-recap-titles">
         <h1 className="op-page-title">{t('recap.title', { track: view.track.name })}</h1>
@@ -58,7 +60,7 @@ export function Recap(): ReactNode {
     </header>
 
     {view.gist ? <div className="op-gist"><Tag kind="ai" /><span>{view.gist}</span></div>
-      : <p className="op-search-note">{t(view.complete ? 'recap.gistMissing' : 'recap.gistPending')}</p>}
+      : <p className="op-search-note">{t(!view.complete ? 'recap.gistPending' : view.gistDue ? 'recap.gistSoon' : 'recap.gistMissing')}</p>}
     {empty && <p className="op-search-note">{t('recap.empty')}</p>}
 
     {view.findings.length > 0 && <Section title={t('recap.findings')} count={view.findings.length}>

@@ -231,7 +231,7 @@ export const MIGRATIONS: string[] = [
   `,
   // 8: the user's own notes on a product or a finding (M3.3), one per thing.
   `
-  CREATE TABLE notes (
+  CREATE TABLE IF NOT EXISTS notes (
     kind TEXT NOT NULL CHECK (kind IN ('product', 'finding')),
     subject_id TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -241,7 +241,7 @@ export const MIGRATIONS: string[] = [
   `,
   // 9: the AI's summary of each track's week (M3.4), by the week's Monday; the rest of a recap is read from the data.
   `
-  CREATE TABLE recaps (
+  CREATE TABLE IF NOT EXISTS recaps (
     track_id TEXT NOT NULL,
     week TEXT NOT NULL,
     gist TEXT NOT NULL,

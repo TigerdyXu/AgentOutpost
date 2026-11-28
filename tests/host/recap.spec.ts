@@ -70,8 +70,9 @@ describe('composeRecap', () => {
   it('reads what the week held, by the user’s calendar, from Monday to Sunday', () => {
     card('p1', 'positioning', 1, at(16)) // profiled before the week
     card('p1', 'positioning', 2, at(25), '加了定价')
-    card('p2', 'positioning', 1, at(24)) // first profiled in the week
+    card('p2', 'positioning', 1, at(24)) // first profiled in the week: new, not 「quiet」
     card('p2', 'audience', 1, at(24))
+    card('p3', 'positioning', 1, at(17)) // profiled before, nothing this week: quiet
     finding('p1', '小豆开始收费', at(25), 'major')
     finding('p2', 'Muse 进英国', at(27))
     finding('p2', '据传要涨价', at(28), 'notable', 'unconfirmed')
@@ -87,6 +88,10 @@ describe('composeRecap', () => {
     expect(recap.cardChanges).toEqual([{ productId: 'p1', product: '小豆', dimension: 'positioning', label: '定位', changeNote: '加了定价', date: '2026-11-25' }])
     expect(recap.newProducts).toEqual([{ id: 'p2', name: 'Muse' }])
     expect(composeRecap(repo, track, '2026-11-30', TODAY)).toMatchObject({ complete: false, findings: [{ headline: '下周一的' }] })
+    // A product whose dossier came only after a week was not in that week's work: not quiet, not anything.
+    // 11-16's week: 小豆 and Cue were first profiled then (new, not quiet); Muse only came the week after (left out).
+    expect(composeRecap(repo, track, '2026-11-16', TODAY)).toMatchObject({ quiet: [], newProducts: [{ id: 'p1', name: '小豆' }, { id: 'p3', name: 'Cue' }] })
+    expect(composeRecap(repo, track, '2026-11-09', TODAY)).toMatchObject({ quiet: [], newProducts: [] }) // before any dossier
   })
 
   it('names the products the week’s map moved since the drawing before, on the same axes only', () => {
@@ -116,6 +121,8 @@ describe('describeWeek and parseRecapGist', () => {
     finding('p1', '小豆开始收费', at(25), 'major')
     card('p1', 'positioning', 1, at(16))
     card('p1', 'positioning', 2, at(25), '加了定价')
+    card('p2', 'positioning', 1, at(16))
+    card('p3', 'positioning', 1, at(16))
     const text = describeWeek(track, composeRecap(repo, track, LAST_WEEK, TODAY))
     for (const part of ['赛道：Personal Agent', '上周：2026-11-23 到 2026-11-29', '- 小豆（11-25，重大）小豆开始收费：小豆开始收费的原因', '- 小豆 · 定位：加了定价', '整周没动静：Muse、Cue'])
       expect(text, part).toContain(part)
@@ -169,6 +176,25 @@ describe('recapDue', () => {
     expect(recapDue(repo, track, '2026-12-01')).toBe(LAST_WEEK) // tried again the next day
     await writeRecap(deps, track.id, LAST_WEEK, '2026-12-01')
     expect(recapDue(repo, track, '2026-12-02')).toBeNull() // written
+  })
+
+  it('is not put off by a retry of another week on the same day', async () => {
+    finding('p1', '小豆开始收费', at(25), 'major')
+    const old = repo.createRun({ kind: 'recap', date: TODAY, trackId: track.id, productId: null, subject: '2026-11-16' })
+    repo.updateRun(old.id, { status: 'failed' })
+    expect(recapDue(repo, track, TODAY)).toBe(LAST_WEEK)
+  })
+
+  it('says, on the next week, that last week’s paragraph is still to come', async () => {
+    finding('p1', '小豆开始收费', at(25), 'major')
+    card('p1', 'positioning', 1, at(16))
+    expect(composeRecap(repo, track, LAST_WEEK, TODAY).gistDue).toBe(true)
+    expect(composeRecap(repo, track, LAST_WEEK, '2026-12-07').gistDue).toBe(false) // a week later: no longer
+    expect(composeRecap(repo, track, '2026-11-30', TODAY).gistDue).toBe(false) // under way
+    now = at(30, 8)
+    await writeRecap(deps, track.id, LAST_WEEK, TODAY)
+    expect(composeRecap(repo, track, LAST_WEEK, TODAY)).toMatchObject({ gistDue: false, gist: expect.any(String) })
+    expect(repo.runsOfDate(TODAY, 'recap')[0]?.subject).toBe(LAST_WEEK) // the week, for a retry on another day
   })
 
   it('is never for a track made after the week, or one not active', () => {

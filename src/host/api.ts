@@ -1246,7 +1246,9 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         case 'recap': {
           // The week before the one the run was in: the paragraph it was writing; once one is kept, nothing is left to do.
           const t = track(run.trackId ?? '')
-          const week = shiftDate(weekStart(run.date), -7)
+          if (t.status === 'archived') throw new ApiError(409, say('trackArchived'))
+          // The week the run was writing (kept in `subject`); an older run without it: the week before its day.
+          const week = run.subject && /^\d{4}-\d{2}-\d{2}$/.test(run.subject) ? run.subject : shiftDate(weekStart(run.date), -7)
           if (repo.getRecap(t.id, week)) throw new ApiError(409, say('alreadyRetried'))
           const runId = await startedRun(r => r.kind === 'recap' && r.trackId === t.id, () => { rt.background(writeRecap(rt.briefs, t.id, week, rt.today()), `weekly recap of track ${t.id}`) })
           return { runId: runId ?? run.id }

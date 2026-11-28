@@ -99,6 +99,8 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
   const gone = (name: string | null) => name === null ? null : t('runs.deleted', { name })
   const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' || run.kind === 'landscape' ? trackName ?? gone(run.subject)
     : run.kind === 'topic' || run.kind === 'topicCheck' ? run.subject // the 专题's question (M2.3)
+    // A weekly recap (M3.4): its track and week (the week is in `subject` while the track lives; its name once deleted).
+    : run.kind === 'recap' ? (trackName ? (run.subject && /^\d{4}-\d{2}-\d{2}$/.test(run.subject) ? t('runs.recapOf', { track: trackName, week: run.subject.slice(5) }) : trackName) : gone(run.subject))
     : run.productName ?? (run.productId !== null ? gone(run.subject) : run.subject)
   const started = run.startedAt ? Date.parse(run.startedAt) : NaN
   const ended = run.endedAt ? Date.parse(run.endedAt) : run.status === 'running' ? now : NaN

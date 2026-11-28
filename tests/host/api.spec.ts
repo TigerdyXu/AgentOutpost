@@ -2124,6 +2124,22 @@ describe('the track page (M2.1)', () => {
     expect((await host.call('POST', `runs/${failed.id}/retry`)).status).toBe(409) // done again since
   })
 
+  it('retries a recap run for the week it was writing, on whatever day, and not for an archived track (M3.4)', async () => {
+    const earlier = new Repo((rt as unknown as { db: ConstructorParameters<typeof Repo>[0] }).db, () => new Date('2026-11-01T00:00:00.000Z'))
+    const old = earlier.createTrack({ name: '老赛道', brief: '', dimensions: DEFAULT_DIMENSIONS.slice(0, 2), status: 'active' })
+    const failed = repo.createRun({ kind: 'recap', date: '2026-11-16', trackId: old.id, productId: null, subject: '2026-11-02' })
+    repo.updateRun(failed.id, { status: 'failed', error: '429' })
+    host.complete.mockResolvedValue({ text: '那一周没有值得一提的新变化。', usage: usage() })
+    ok(await host.call('POST', `runs/${failed.id}/retry`))
+    await flush()
+    expect(repo.getRecap(old.id, '2026-11-02')?.gist).toBe('那一周没有值得一提的新变化。') // not the week before 11-25
+    expect(repo.getRecap(old.id, '2026-11-16')).toBeNull()
+    const another = repo.createRun({ kind: 'recap', date: TODAY, trackId: old.id, productId: null, subject: '2026-11-09' })
+    repo.updateRun(another.id, { status: 'failed' })
+    repo.updateTrack(old.id, { status: 'archived' })
+    expect((await host.call('POST', `runs/${another.id}/retry`)).status).toBe(409)
+  })
+
   it('writes, shows and erases the user’s notes on products and findings (M3.3)', async () => {
     const t = seed()
     addProduct('p1', 'Cursor', 'tracking', t.id)
