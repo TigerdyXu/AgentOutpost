@@ -27,6 +27,7 @@ import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
 import { weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
+import { LAST_COMPLETED } from './scheduler.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
@@ -195,6 +196,12 @@ export interface Api {
    * to place.
    */
   'POST tracks/:id/map': { body?: { axes?: Axes }; response: { ok: true } }
+  /**
+   * 「这批都不要」 (M2.2): the candidates of the batch the 候选推荐 page shows count as looked at, so that they no longer
+   * wait (`candidatesToReview`), without starting to follow any. 409 for a track still being picked (that page is where
+   * its products come from).
+   */
+  'POST tracks/:id/dismiss': { response: { ok: true } }
   /** Turns the track's weekly suggestions (M2.2) on or off; they are on unless turned off. */
   'POST tracks/:id/weekly': { body: { on: boolean }; response: WeeklyState }
   /**
@@ -532,8 +539,10 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     return { brief, shown }
   }
 
+  /** The batch the 候选推荐 page shows: the latest recommendation's, even an empty one, else the latest with candidates. */
+  const shownBatch = (t: Track): Id | null => repo.latestRun('recommend', { trackId: t.id })?.id ?? repo.latestBatchId(t.id)
   const candidatesToReview = (t: Track): number => {
-    const batch = repo.latestBatchId(t.id)
+    const batch = shownBatch(t)
     if (batch === null || t.status === 'archived') return 0
     const reviewed = t.status === 'active' ? repo.getSetting<Reviewed>(reviewedKey(t.id)) : undefined
     const seen = new Set(reviewed?.batchId === batch ? reviewed.candidateIds : [])
@@ -739,7 +748,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         // A drawing that ended without a map (budget, failure, an answer that could not be used): the page says why.
         unmapped: last && !isActive(last) && last.id !== landscape?.runId && (last.status !== 'done' || last.error !== null)
           ? { status: last.status, error: last.error, at: last.endedAt ?? last.startedAt } : null,
-        weekly: weeklyState(repo, t, rt.today()),
+        weekly: weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today()),
       }
     },
 
@@ -747,7 +756,18 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const t = track(req.params.id!)
       const { on } = Weekly.parse(await req.body())
       repo.setSetting(weeklyOffKey(t.id), on ? undefined : true)
-      return weeklyState(repo, t, rt.today())
+      return weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today())
+    },
+
+    'POST tracks/:id/dismiss': ({ params }) => {
+      const t = track(params.id!)
+      if (t.status !== 'active') throw new ApiError(409, say('dismissNotStarted'))
+      const batch = shownBatch(t)
+      if (batch !== null) {
+        const reviewed: Reviewed = { batchId: batch, candidateIds: repo.listCandidates(t.id, batch).map(c => c.id) }
+        repo.setSetting(reviewedKey(t.id), reviewed)
+      }
+      return { ok: true as const }
     },
 
     'POST tracks/:id/map': async req => {
@@ -763,7 +783,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'GET tracks/:id/candidates': ({ params }) => {
       const t = track(params.id!)
       const run = repo.latestRun('recommend', { trackId: t.id })
-      const batchId = run?.id ?? repo.latestBatchId(t.id)
+      const batchId = shownBatch(t)
       const started = run?.startedAt ? Date.parse(run.startedAt) : NaN
       const ended = run?.endedAt ? Date.parse(run.endedAt) : rt.clock.now().getTime()
       // The products of every other track that is still on (the scheduler skips an archived one), in the order they are listed.

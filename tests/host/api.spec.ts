@@ -1925,7 +1925,7 @@ describe('the track page (M2.1)', () => {
     done(quiet.id, '2026-11-24')
     const off = addTrack({ name: '关掉了' })
     done(off.id, '2026-11-01')
-    expect((await overview(t.id)).weekly).toEqual({ on: true, last: '2026-11-18', next: TODAY, running: false })
+    expect((await overview(t.id)).weekly).toEqual({ on: true, last: '2026-11-18', next: TODAY, running: false, problem: null })
     expect(ok(await host.call('POST', `tracks/${off.id}/weekly`, { on: false })).json()).toMatchObject({ on: false, next: null })
     expect((await host.call('POST', `tracks/${off.id}/weekly`, { on: 'no' })).status).toBe(400)
 
@@ -1943,6 +1943,64 @@ describe('the track page (M2.1)', () => {
     ok(await host.call('POST', `tracks/${off.id}/weekly`, { on: false }))
     ok(await host.call('POST', `tracks/${off.id}/delete`))
     expect(repo.getSetting(`weeklySuggestionsOff:${off.id}`)).toBeUndefined()
+  })
+
+  it('counts as waiting only what the 候选推荐 page shows, and lets a started track put a batch away (M2.2)', async () => {
+    const t = seed()
+    const batch = (status: Run['status']) => { const run = repo.createRun({ kind: 'recommend', date: TODAY, trackId: t.id, productId: null }); repo.updateRun(run.id, { status }); return run }
+    const first = batch('done')
+    addProduct('c1', 'Zed Pro', 'candidate')
+    addProduct('c2', 'Void', 'candidate')
+    repo.addCandidate({ trackId: t.id, batchId: first.id, productId: 'c1', tier: 'strong', oneLiner: '', reason: '', heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: true })
+    repo.addCandidate({ trackId: t.id, batchId: first.id, productId: 'c2', tier: 'consider', oneLiner: '', reason: '', heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: false })
+    const waiting = async () => ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>().tracks.find(v => v.track.id === t.id)!.candidatesToReview
+    expect(await waiting()).toBe(2)
+    ok(await host.call('POST', `tracks/${t.id}/dismiss`))
+    expect(await waiting()).toBe(0)
+    // A later round that found nothing shows an empty page: nothing waits, not the round before it.
+    const later = batch('done')
+    repo.addCandidate({ trackId: t.id, batchId: later.id, productId: 'c2', tier: 'strong', oneLiner: '', reason: '', heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: true })
+    expect(await waiting()).toBe(1)
+    batch('skipped')
+    expect(await waiting()).toBe(0)
+    expect(ok(await host.call('GET', `tracks/${t.id}/candidates`)).json<ApiResponse<'GET tracks/:id/candidates'>>().candidates).toEqual([])
+    const picking = addTrack({ name: '挑选中', status: 'picking' })
+    expect((await host.call('POST', `tracks/${picking.id}/dismiss`)).status).toBe(409)
+  })
+
+  it('names the products passed over in every earlier batch to the next recommendation (M2.2)', async () => {
+    const t = seed()
+    const batch = () => { const run = repo.createRun({ kind: 'recommend', date: TODAY, trackId: t.id, productId: null }); repo.updateRun(run.id, { status: 'done' }); return run }
+    const heat = { foundCount: 1, datedWeekly: [], trend: 'unknown' as const, showBars: false }
+    const old = batch()
+    addProduct('c1', 'Zed Pro', 'candidate')
+    repo.addCandidate({ trackId: t.id, batchId: old.id, productId: 'c1', tier: 'strong', oneLiner: '', reason: '', heat, selected: false })
+    repo.addCandidate({ trackId: t.id, batchId: old.id, productId: 'p1', tier: 'strong', oneLiner: '', reason: '', heat, selected: true }) // picked: tracked now
+    const recent = batch()
+    addProduct('c2', 'Void', 'candidate')
+    repo.addCandidate({ trackId: t.id, batchId: recent.id, productId: 'c2', tier: 'strong', oneLiner: '', reason: '', heat, selected: false })
+    host.driver.script[RECOMMEND] = recommends([])
+    ok(await host.call('POST', `tracks/${t.id}/recommend`, {}))
+    const prompt = host.driver.runs.at(-1)!.prompt
+    expect(prompt).toContain('以前推荐过、用户没选的：Zed Pro（Zed Pro Inc）（没有新进展就不要再交）')
+    expect(prompt).toContain('- Void（Void Inc）：强烈推荐。') // the latest batch, as before
+  })
+
+  it('runs the weekly suggestions of due tracks one after another, each held to what the ones before it spent (M2.2)', async () => {
+    const a = addTrack({ name: '甲' })
+    const b = addTrack({ name: '乙' })
+    const hold = gate()
+    let running = 0
+    let most = 0
+    host.driver.script[RECOMMEND] = async round => { running++; most = Math.max(most, running); await hold.promise; running--; await round.done(); return completed() }
+    const suggestWeekly = (rt as unknown as { suggestWeekly(date: string): Promise<void> }).suggestWeekly.bind(rt)
+    const pass = suggestWeekly(TODAY)
+    await flush()
+    expect(repo.runsOfDate(TODAY, 'recommend').map(r => r.trackId)).toEqual([a.id])
+    hold.open()
+    await pass
+    expect(repo.runsOfDate(TODAY, 'recommend').map(r => r.trackId)).toEqual([a.id, b.id])
+    expect(most).toBe(1)
   })
 
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {

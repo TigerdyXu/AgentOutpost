@@ -34,7 +34,9 @@ const recommendation = (date: string, status: Run['status'], trackId = track.id)
 describe('weekly suggestions (M2.2)', () => {
   it('are due seven days after the last recommendation that ran to its end', () => {
     recommendation('2026-11-26', 'done')
-    expect(weeklyState(repo, track, TODAY)).toEqual({ on: true, last: '2026-11-26', next: TODAY, running: false })
+    expect(weeklyState(repo, track, TODAY)).toEqual({ on: true, last: '2026-11-26', next: TODAY, running: false, problem: null })
+    // Once today's run is through, what is due now waits for tomorrow's (what the page says).
+    expect(weeklyState(repo, track, TODAY, true).next).toBe('2026-12-04')
     expect(weeklyDue(repo, track, TODAY)).toBe(true)
     expect(weeklyState(repo, track, '2026-12-02')).toMatchObject({ next: TODAY })
     expect(weeklyDue(repo, track, '2026-12-02')).toBe(false)
@@ -51,10 +53,13 @@ describe('weekly suggestions (M2.2)', () => {
   it('are tried once a day while due: one that did not finish today is tried again tomorrow', () => {
     recommendation('2026-11-20', 'done')
     expect(weeklyDue(repo, track, TODAY)).toBe(true)
-    recommendation(TODAY, 'skipped') // the budget was spent
-    expect(weeklyState(repo, track, TODAY)).toMatchObject({ next: '2026-12-04' })
+    const skipped = recommendation(TODAY, 'skipped') // the budget was spent
+    repo.updateRun(skipped.id, { error: '今日总预算已用完' })
+    expect(weeklyState(repo, track, TODAY)).toMatchObject({ next: '2026-12-04', problem: '今日总预算已用完' })
     expect(weeklyDue(repo, track, TODAY)).toBe(false)
     expect(weeklyDue(repo, track, '2026-12-04')).toBe(true)
+    recommendation('2026-12-04', 'done')
+    expect(weeklyState(repo, track, '2026-12-04').problem).toBeNull() // a finished one since: no problem to tell
   })
 
   it('wait for a recommendation that is running, and are due at once for a track with none finished yet', () => {
@@ -68,7 +73,7 @@ describe('weekly suggestions (M2.2)', () => {
   it('are not due for a track turned off, or one still being picked, and only count the track’s own runs', () => {
     recommendation('2026-11-20', 'done')
     repo.setSetting(weeklyOffKey(track.id), true)
-    expect(weeklyState(repo, track, TODAY)).toEqual({ on: false, last: '2026-11-20', next: null, running: false })
+    expect(weeklyState(repo, track, TODAY)).toEqual({ on: false, last: '2026-11-20', next: null, running: false, problem: null })
     expect(weeklyDue(repo, track, TODAY)).toBe(false)
 
     const picking = repo.createTrack({ name: '挑选中', brief: '', dimensions: DEFAULT_DIMENSIONS, status: 'picking' })

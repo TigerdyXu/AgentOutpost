@@ -72,7 +72,7 @@ describe('middle column', () => {
     stubApi({
       'GET state': state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse'))], {}, 2), track('t3', '新赛道', [], { status: 'picking' })] }),
       'GET tracks/:id/overview': { track: track('t1', 'Personal Agent', []).track, products: [], landscape: null, since: null, drawing: false, mappable: 0, unmapped: null,
-        weekly: { on: true, last: null, next: null, running: false } },
+        weekly: { on: true, last: null, next: null, running: false, problem: null } },
       'GET tracks/:id/candidates': { batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5, candidates: [] },
     })
     await mount(<App t={t} />)

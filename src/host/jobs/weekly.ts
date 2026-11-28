@@ -28,23 +28,32 @@ export interface WeeklyState {
   next: string | null
   /** A recommendation of the track is queued or running now. */
   running: boolean
+  /** Why the latest try since the last finished one did not finish (the budget, a failure), or null. */
+  problem: string | null
 }
 
 const active = (r: Run) => r.status === 'queued' || r.status === 'running'
 
-export function weeklyState(repo: Repo, track: Track, today: string): WeeklyState {
-  const runs = repo.listRuns('').filter(r => r.kind === 'recommend' && r.trackId === track.id) // newest first
+/**
+ * How the track's weekly suggestions stand on `today`. `dayOver`: today's daily run is through, so what is due now waits
+ * for tomorrow's (what the page says; the weekly pass itself runs right after the day is through, and asks without it).
+ */
+export function weeklyState(repo: Repo, track: Track, today: string, dayOver = false): WeeklyState {
+  const runs = repo.runsOfTrack(track.id, 'recommend') // newest first
   const on = repo.getSetting<boolean>(weeklyOffKey(track.id)) !== true
-  const last = runs.find(r => r.status === 'done')?.date ?? null
+  const finished = runs.find(r => r.status === 'done')
+  const last = finished?.date ?? null
   const running = runs.some(active)
-  if (!on || track.status !== 'active') return { on, last, next: null, running }
+  const tried = runs.find(r => r !== finished && (r.status === 'skipped' || r.status === 'failed'))
+  const problem = tried && (!finished || runs.indexOf(tried) < runs.indexOf(finished)) ? tried.error : null
+  if (!on || track.status !== 'active') return { on, last, next: null, running, problem }
   const due = last === null ? today : shiftDate(last, WEEKLY_EVERY_DAYS)
-  // Due already: today, unless it was tried today (then tomorrow; one try a day).
-  const next = due > today ? due : runs.some(r => r.date === today) ? shiftDate(today, 1) : today
-  return { on, last, next, running }
+  // Due already: today, unless it was tried today or today's run is over (then tomorrow; one try a day).
+  const next = due > today ? due : dayOver || runs.some(r => r.date === today) ? shiftDate(today, 1) : today
+  return { on, last, next, running, problem }
 }
 
-/** Whether the track should get its weekly suggestions now, on `today`. */
+/** Whether the track should get its weekly suggestions now, on `today`, its daily run just through. */
 export function weeklyDue(repo: Repo, track: Track, today: string): boolean {
   const state = weeklyState(repo, track, today)
   return state.next !== null && state.next <= today && !state.running

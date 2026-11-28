@@ -460,6 +460,9 @@ export class Repo {
   /** Runs dated `sinceDate` or later, newest first (the run log reads top-down). */
   listRuns(sinceDate: string): Run[] { return this.select(RUN, 'WHERE date >= ? ORDER BY rowid DESC', sinceDate) }
 
+  /** The track's runs of that kind, newest first. */
+  runsOfTrack(trackId: Id, kind: RunKind): Run[] { return this.select(RUN, 'WHERE track_id = ? AND kind = ? ORDER BY rowid DESC', trackId, kind) }
+
   /** The run of that kind created last for the track or product given (both, if both are), or null. */
   latestRun(kind: RunKind, about: { trackId?: Id; productId?: Id }): Run | null {
     const where = ['kind = ?']

@@ -452,6 +452,17 @@ describe('a track that is already tracking', () => {
     expect(footer()).toContain('已选 1 个')
     expect(context.setPicks).toHaveBeenLastCalledWith(TRACK, 1)
   })
+
+  it('puts a batch away without following any of it, back on the track’s page (M2.2)', async () => {
+    const active = state({ tracks: [track(TRACK, 'Personal Agent', [], { status: 'active', dimensions })] })
+    const { api, context } = await show(view([muse, dots]), { state: active }, { 'GET state': active, 'POST tracks/:id/dismiss': { ok: true } })
+    await click('这批都不要')
+    expect(api.requests.filter(r => r.method === 'POST').map(r => r.path)).toEqual([`tracks/${TRACK}/dismiss`])
+    expect(context.navigate).toHaveBeenLastCalledWith({ page: 'track', trackId: TRACK })
+    unmount()
+    await show(view([muse, dots])) // a track still being picked has nothing to put away
+    expect(all('button').map(button => button.textContent)).not.toContain('这批都不要')
+  })
 })
 
 // ---- step 1 ----

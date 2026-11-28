@@ -306,7 +306,7 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
   const [overrides, setOverrides] = useState<Choice>(() => remembered.get(trackId) ?? {})
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [refine, setRefine] = useState('')
-  const [busy, setBusy] = useState<'refine' | 'retry' | 'start' | null>(null)
+  const [busy, setBusy] = useState<'refine' | 'retry' | 'start' | 'dismiss' | null>(null)
   const [refineProblem, setRefineProblem] = useState<string | null>(null)
   const [startProblem, setStartProblem] = useState<string | null>(null)
 
@@ -371,6 +371,23 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
       remembered.delete(trackId)
       refresh()
       navigate({ page: 'product', productId: chosen[0]!.productId, tab: 'dossier' })
+    } catch (failure) {
+      setStartProblem(describeError(t, errorOf(failure)))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // 「这批都不要」 (M2.2): a started track's batch (a weekly one, say) is put away without following any of it.
+  const started = view?.track.status === 'active'
+  const dismiss = async () => {
+    setBusy('dismiss')
+    setStartProblem(null)
+    try {
+      await call('POST tracks/:id/dismiss', { id: trackId })
+      remembered.delete(trackId)
+      refresh()
+      navigate({ page: 'track', trackId })
     } catch (failure) {
       setStartProblem(describeError(t, errorOf(failure)))
     } finally {
@@ -459,6 +476,8 @@ function Picking({ trackId }: { trackId: Id }): ReactNode {
       <span className="op-pick-count">{t('pick.selected', { count })}</span>
       {cost && <span className="op-pick-cost">{cost}</span>}
       <span className="op-pick-actions">
+        {started && !running && candidates.length > 0 && <button type="button" className="op-button" title={t('pick.dismissHint')} disabled={busy !== null}
+          onClick={() => { void dismiss() }}>{t('pick.dismiss')}</button>}
         <button type="button" className="op-button" onClick={() => { navigate({ page: 'today' }) }}>{t('pick.later')}</button>
         <button type="button" className="op-button" data-variant="primary" disabled={count === 0 || busy !== null} onClick={() => { void start() }}>
           {busy === 'start' ? t('pick.starting') : t('pick.start', { count })}

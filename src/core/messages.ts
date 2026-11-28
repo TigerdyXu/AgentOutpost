@@ -81,6 +81,8 @@ export const SAID = {
   unusableMap: ['模型给的地图用不了（格式不对、少了产品，或格局超过 {max} 字），这次没有更新', 'The model’s map could not be used (malformed, a product missing, or the summary over {max} characters), so it was not updated'],
   mapNeedsProducts: ['至少要有两个建好档的产品，才画得出地图', 'A map needs at least two products with a profile'],
   mapDrawing: ['地图正在画，等它画完', 'The map is being drawn; wait for it to finish'],
+  // M2.2
+  dismissNotStarted: ['这个赛道还在挑产品，挑好开始跟踪就行', 'This track is still being picked; start following from it instead'],
 } as const satisfies Record<string, readonly [string, string]>
 
 export type SaidKey = keyof typeof SAID

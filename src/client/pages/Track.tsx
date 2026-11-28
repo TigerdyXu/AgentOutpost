@@ -145,6 +145,7 @@ function WeeklyLine({ view, reload }: { view: TrackOverview; reload: () => Promi
   if (weekly.on && weekly.running) parts.push(t('track.weekly.running'))
   else if (weekly.on) {
     if (weekly.last) parts.push(t('track.weekly.last', { date: dayLabel(weekly.last) }))
+    if (weekly.problem) parts.push(t('track.weekly.problem', { reason: told(t, weekly.problem) }))
     if (weekly.next) parts.push(t('track.weekly.next', { date: dayLabel(weekly.next) }))
   }
   return <div className="op-thead-weekly">

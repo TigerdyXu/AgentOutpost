@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { packageRoot, renderPrompt } from '../../src/host/prompts.ts'
 
-const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程 Agent', dimensions: '定位、体验', today: '2026-11-25', tracked: '（还没有）', elsewhere: '千问Go!（阿里巴巴）', previous: '（没有）', refine: '{{trackName}} 原样保留' }
+const RECOMMEND_VARS = { trackName: 'AI 编程助手', trackBrief: '盯住编程 Agent', dimensions: '定位、体验', today: '2026-11-25', tracked: '（还没有）', elsewhere: '千问Go!（阿里巴巴）', previous: '（没有）', refine: '{{trackName}} 原样保留', passedOver: '（没有）' }
 const BASELINE_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', dimensions: '- positioning：定位' }
 const VERIFY_VARS = { productName: 'Cursor', company: 'Anysphere', officialDomains: 'cursor.com', today: '2026-11-25' }
 const DAILY_VARS = { productName: 'Cursor', company: 'Anysphere', form: 'IDE', officialDomains: 'cursor.com', today: '2026-11-25', lastRun: '2026-11-24' }
