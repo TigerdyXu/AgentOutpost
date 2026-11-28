@@ -104,6 +104,7 @@ function TrackPage({ view, reload }: { view: TrackOverview; reload: () => Promis
         <h1 className="op-page-title">{track.name}</h1>
         <p className="op-thead-meta">{meta}</p>
         {track.brief && <p className="op-thead-brief">{track.brief}</p>}
+        <WeeklyLine view={view} reload={reload} />
       </div>
       <div className="op-phead-actions">
         <button type="button" className="op-button" onClick={() => { navigate({ page: 'editTrack', trackId: track.id }) }}>{t('track.page.settings')}</button>
@@ -112,6 +113,47 @@ function TrackPage({ view, reload }: { view: TrackOverview; reload: () => Promis
     {landscape && <div className="op-gist"><Tag kind="ai" /><span>{landscape.gist}</span></div>}
     <MapSection view={view} reload={reload} titleId={`${ids}-map`} />
     <MatrixSection view={view} titleId={`${ids}-matrix`} />
+  </div>
+}
+
+// ---- weekly suggestions (M2.2) ----
+
+/**
+ * 「每周推荐新产品：开 · 上次 11-26 · 下次 12-03」 with the switch, and the way to the candidates that wait (the same
+ * 候选推荐 page the middle column opens).
+ */
+function WeeklyLine({ view, reload }: { view: TrackOverview; reload: () => Promise<void> }): ReactNode {
+  const { t, state, navigate } = useShell()
+  const { track, weekly } = view
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  if (track.status !== 'active') return null
+  const waiting = state?.tracks.find(entry => entry.track.id === track.id)?.candidatesToReview ?? 0
+  const toggle = async () => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await call('POST tracks/:id/weekly', { id: track.id, body: { on: !weekly.on } })
+      await reload()
+    } catch (failure) {
+      setProblem(describeError(t, errorOf(failure)))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const parts = [t(weekly.on ? 'track.weekly.on' : 'track.weekly.off')]
+  if (weekly.on && weekly.running) parts.push(t('track.weekly.running'))
+  else if (weekly.on) {
+    if (weekly.last) parts.push(t('track.weekly.last', { date: dayLabel(weekly.last) }))
+    if (weekly.next) parts.push(t('track.weekly.next', { date: dayLabel(weekly.next) }))
+  }
+  return <div className="op-thead-weekly">
+    <span>{parts.join(' · ')}</span>
+    <button type="button" className="op-link" disabled={busy} aria-pressed={weekly.on} onClick={() => { void toggle() }}>
+      {t(weekly.on ? 'track.weekly.turnOff' : 'track.weekly.turnOn')}</button>
+    {waiting > 0 && <button type="button" className="op-link" onClick={() => { navigate({ page: 'newTrack', trackId: track.id }) }}>
+      {t('track.weekly.waiting', { count: waiting })}</button>}
+    {problem && <span className="op-form-problem" role="alert">{problem}</span>}
   </div>
 }
 

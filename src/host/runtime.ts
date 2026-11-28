@@ -27,6 +27,8 @@ import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
 import { runDailyProduct } from './jobs/daily.ts'
 import { drawLandscape, needsDrawing } from './jobs/landscape.ts'
+import { startRecommendation } from './jobs/recommend.ts'
+import { WEEKLY_REFINE, weeklyDue } from './jobs/weekly.ts'
 import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from './jobs/runner.ts'
 import { appendLate, synthesizeBrief, type BriefDeps } from './jobs/synthesize.ts'
 import { verifyProduct } from './jobs/verify.ts'
@@ -134,6 +136,7 @@ export class Runtime {
       rebaseline: productIds => baselineProducts(this.jobs, productIds),
       verifyProduct: (productId, date) => verifyProduct(jobs, productId, 'daily', date),
       drawMaps: date => this.drawMaps(date),
+      suggestWeekly: date => this.suggestWeekly(date),
       log,
     })
   }
@@ -248,6 +251,19 @@ export class Runtime {
       const work = drawLandscape(this.briefs, track.id, date).finally(() => { this.drawing.delete(track.id) })
       this.drawing.set(track.id, work)
       await work
+    }
+  }
+
+  /**
+   * After a day's brief and maps: starts the weekly recommendation (M2.2) of each track that is due on `date`
+   * (`weeklyDue`). The sessions run in the background, as a 「再推荐一批」 does; their candidates wait under 「候选推荐」.
+   */
+  private async suggestWeekly(date: string): Promise<void> {
+    for (const track of this.repo.listTracks()) {
+      if (this.runner.stopSignal.aborted) return
+      if (track.status !== 'active' || !weeklyDue(this.repo, track, date)) continue
+      try { await startRecommendation(this.jobs, track.id, WEEKLY_REFINE) }
+      catch (error) { this.log(`the weekly suggestions of track ${track.id} did not start: ${messageOf(error)}`) }
     }
   }
 

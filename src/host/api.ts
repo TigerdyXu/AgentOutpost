@@ -9,7 +9,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
-import { localDate } from '../core/calendar.ts'
+import { localDate, shiftDate } from '../core/calendar.ts'
 import { say } from '../core/messages.ts'
 import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
@@ -26,6 +26,7 @@ import { isBaselining } from './jobs/baseline.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
+import { weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
@@ -137,6 +138,8 @@ export interface TrackOverview {
   mappable: number
   /** The latest drawing ended without a map (skipped, failed, or its answer unusable), and why; null when it drew one. */
   unmapped: { status: RunStatus; error: string | null; at: string | null } | null
+  /** Its weekly suggestions (M2.2): on or off, the last and the next. */
+  weekly: WeeklyState
 }
 /** The models DSH offers now, for the four model choices of 设置. */
 export interface ModelsView {
@@ -192,6 +195,8 @@ export interface Api {
    * to place.
    */
   'POST tracks/:id/map': { body?: { axes?: Axes }; response: { ok: true } }
+  /** Turns the track's weekly suggestions (M2.2) on or off; they are on unless turned off. */
+  'POST tracks/:id/weekly': { body: { on: boolean }; response: WeeklyState }
   /**
    * The track becomes `active`, the chosen products join it, and those new to Outpost are baselined (建档中); a tracked one
    * that the track gives dimensions it lacks gets their cards at once.
@@ -320,6 +325,7 @@ const ProductPatch = z.object({
 const TrackRef = z.object({ trackId: z.string().min(1) })
 const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const axisEnd = text(AXIS_LABEL_MAX).min(1, '轴的两端都要写')
+const Weekly = z.object({ on: z.boolean() })
 const MapRequest = z.object({ axes: z.object({ x: z.object({ low: axisEnd, high: axisEnd }), y: z.object({ low: axisEnd, high: axisEnd }) }).optional() })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
@@ -330,12 +336,6 @@ function day(value: string | undefined, field: string): string {
   const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null
   if (!m || !d || d.toISOString().slice(0, 10) !== value) throw new ApiError(400, `${field} must be a date written YYYY-MM-DD`)
   return value!
-}
-
-/** The local date `days` days after `date` (both `YYYY-MM-DD`). */
-function shiftDate(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number)
-  return localDate(new Date(y!, m! - 1, d! + days))
 }
 
 /**
@@ -708,7 +708,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       // Those only this track has go with it: none of them may be in the middle of something.
       const busy = repo.productsOfTrack(t.id).find(p => tracksOf(p.id).length === 1 && hasWork(p.id, active))
       if (busy) throw new ApiError(409, say('productBusy', { name: busy.name }))
-      const erased = repo.deleteTrack(t.id, [reviewedKey(t.id)])
+      const erased = repo.deleteTrack(t.id, [reviewedKey(t.id), weeklyOffKey(t.id)])
       removeIcons(erased.map(p => p.id))
       return { ok: true as const, deletedProducts: erased.filter(p => FOLLOWED.includes(p.status)).length }
     },
@@ -739,7 +739,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         // A drawing that ended without a map (budget, failure, an answer that could not be used): the page says why.
         unmapped: last && !isActive(last) && last.id !== landscape?.runId && (last.status !== 'done' || last.error !== null)
           ? { status: last.status, error: last.error, at: last.endedAt ?? last.startedAt } : null,
+        weekly: weeklyState(repo, t, rt.today()),
       }
+    },
+
+    'POST tracks/:id/weekly': async req => {
+      const t = track(req.params.id!)
+      const { on } = Weekly.parse(await req.body())
+      repo.setSetting(weeklyOffKey(t.id), on ? undefined : true)
+      return weeklyState(repo, t, rt.today())
     },
 
     'POST tracks/:id/map': async req => {

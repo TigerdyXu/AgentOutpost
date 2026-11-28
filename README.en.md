@@ -36,7 +36,7 @@ You need:
 
 **3. Read the brief each morning.** Outpost runs once a day, at 08:00 by default. The most important items come first, and every one has been fact-checked. Click **Ask more** on any item to chat about it.
 
-**4. Add products and move them between tracks.** Under a track, click **+ Add a product**. Type a product's name, or ask Outpost for another round of recommendations. The **⋯** menu on a product page moves the product to another track, or adds it there too.
+**4. Add products and move them between tracks.** Under a track, click **+ Add a product**. Type a product's name, or ask Outpost for another round of recommendations. Outpost also suggests newly appeared products for each track once a week, under **Suggestions** (you can turn this off on the track's page). The **⋯** menu on a product page moves the product to another track, or adds it there too.
 
 **5. Rename or delete.** The same **⋯** menu changes a product's name, company and official site, or deletes the product. The **⋯** beside a track's name opens its settings: its name, what it follows, its dimensions, and deleting the track. Deleting asks once more and can't be undone; spending records stay.
 
@@ -51,6 +51,7 @@ Rough figures with DeepSeek (deepseek-flash), web searches included:
 - One product's daily update and fact check: about ¥0.5–1.
 - Finding candidates for a new track: about ¥0.5–1.
 - Drawing a track's positioning map: a few fen (once a day, when a dossier changed).
+- Weekly suggestions: about ¥0.5–1 per track per week.
 
 DeepSeek charges half outside weekday peak hours (9–12 and 14–18 Beijing time), and the 08:00 run is off-peak. Set a daily budget in **Settings**; once spending reaches it, the rest waits for the next day. Local models (Ollama) and a Claude subscription count as ¥0 and don't use the budget.
 

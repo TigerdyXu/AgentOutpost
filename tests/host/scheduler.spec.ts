@@ -87,6 +87,7 @@ beforeEach(() => {
     appendLate: (date, productId) => appendLate(briefDeps, date, productId),
     archiveOld: async now => { calls.archiveOld.push(now); events.push('archive') },
     drawMaps: async date => { events.push(`maps ${date}`); if (mapsFail) throw new Error('model down') },
+    suggestWeekly: async date => { events.push(`weekly ${date}`) },
     rebaseline: async ids => { calls.rebaseline.push(ids); events.push(`rebaseline ${ids.join(',')}`) },
     verifyProduct: async (productId, date) => {
       calls.verifyProduct.push({ productId, date })
@@ -439,7 +440,8 @@ describe('Scheduler: the day', () => {
     expect(calls.archiveOld).toEqual([local('2026-11-25T07:00')])
     expect(clock.pending()).toEqual([]) // the cutoff timer was cancelled
     // The maps are drawn from the dossiers as the day left them: after the brief, before old sessions are archived (M2.1).
-    expect(events.slice(events.indexOf(`brief ${DAY}`))).toEqual([`brief ${DAY}`, `maps ${DAY}`, 'archive'])
+    // Then the weekly suggestions of the tracks due for them (M2.2).
+    expect(events.slice(events.indexOf(`brief ${DAY}`))).toEqual([`brief ${DAY}`, `maps ${DAY}`, `weekly ${DAY}`, 'archive'])
   })
 
   it('leaves the day complete when the maps cannot be drawn, and says so in the log (M2.1)', async () => {

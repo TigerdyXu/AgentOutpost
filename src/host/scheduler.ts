@@ -80,6 +80,8 @@ export interface SchedulerDeps {
   verifyProduct(productId: Id, date: string): Promise<void>
   /** After the day's brief, draws again the maps of the tracks whose dossiers changed (M2.1); none when absent. */
   drawMaps?(date: string): Promise<void>
+  /** After the maps, starts the weekly suggestions of the tracks due for them (M2.2); none when absent. */
+  suggestWeekly?(date: string): Promise<void>
   /** Where failures of background work are reported; default `console.warn`. */
   log?: (message: string) => void
 }
@@ -320,6 +322,7 @@ export class Scheduler {
       this.complete(date)
       // The maps read the dossiers as the day left them; a map that cannot be drawn leaves the day complete.
       try { await this.deps.drawMaps?.(date) } catch (error) { this.log(`drawing the maps failed: ${messageOf(error)}`) }
+      try { await this.deps.suggestWeekly?.(date) } catch (error) { this.log(`the weekly suggestions failed: ${messageOf(error)}`) }
     }
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }

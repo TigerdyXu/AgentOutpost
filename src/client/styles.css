@@ -3349,3 +3349,15 @@ button.op-run-open:focus-visible {
   padding: 3px 4px 3px 9px;
   transform: translate(calc(-100% + 12px), -50%);
 }
+
+/* 每周推荐新产品 (M2.2): one quiet line under the track's header. */
+.op-thead-weekly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}

@@ -15,6 +15,12 @@ function atRunTime(day: Date, runTime: string, dayOffset = 0): Date {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() + dayOffset, Number(m[1]), Number(m[2]), 0, 0)
 }
 
+/** The local date `days` days after `date` (both `YYYY-MM-DD`; `days` may be negative). */
+export function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return localDate(new Date(y!, m! - 1, d! + days))
+}
+
 /**
  * The next moment the daily run is due: today at `runTime`, or tomorrow's if that moment is not strictly in the future.
  * At exactly `runTime` the answer is tomorrow, so a scheduler that re-arms right after a run fired never gets the

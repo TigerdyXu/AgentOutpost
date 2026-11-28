@@ -1917,6 +1917,34 @@ describe('the track page (M2.1)', () => {
     expect(host.complete).toHaveBeenCalledTimes(3) // the second track was not asked for
   })
 
+  it('turns a track’s weekly suggestions off and on, and starts them after the day for the tracks due (M2.2)', async () => {
+    const t = seed()
+    const done = (trackId: Id, date: string) => { const run = repo.createRun({ kind: 'recommend', date, trackId, productId: null }); repo.updateRun(run.id, { status: 'done' }) }
+    done(t.id, '2026-11-18')
+    const quiet = addTrack({ name: '刚推荐过' })
+    done(quiet.id, '2026-11-24')
+    const off = addTrack({ name: '关掉了' })
+    done(off.id, '2026-11-01')
+    expect((await overview(t.id)).weekly).toEqual({ on: true, last: '2026-11-18', next: TODAY, running: false })
+    expect(ok(await host.call('POST', `tracks/${off.id}/weekly`, { on: false })).json()).toMatchObject({ on: false, next: null })
+    expect((await host.call('POST', `tracks/${off.id}/weekly`, { on: 'no' })).status).toBe(400)
+
+    host.driver.script[RECOMMEND] = recommends([])
+    const suggestWeekly = (date: string) => (rt as unknown as { suggestWeekly(date: string): Promise<void> }).suggestWeekly(date)
+    await suggestWeekly(TODAY)
+    const started = repo.runsOfDate(TODAY, 'recommend')
+    expect(started.map(r => r.trackId)).toEqual([t.id]) // not the one recommended a day ago, nor the one turned off
+    expect(host.driver.runs.at(-1)?.prompt).toContain('每周例行刷新')
+    await suggestWeekly(TODAY)
+    expect(repo.runsOfDate(TODAY, 'recommend')).toHaveLength(1) // once a day
+
+    ok(await host.call('POST', `tracks/${off.id}/weekly`, { on: true }))
+    expect((await overview(off.id)).weekly).toMatchObject({ on: true, next: TODAY })
+    ok(await host.call('POST', `tracks/${off.id}/weekly`, { on: false }))
+    ok(await host.call('POST', `tracks/${off.id}/delete`))
+    expect(repo.getSetting(`weeklySuggestionsOff:${off.id}`)).toBeUndefined()
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())

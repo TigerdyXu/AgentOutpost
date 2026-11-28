@@ -26,7 +26,8 @@ const overview = (over: Partial<TrackOverview> = {}): TrackOverview => ({
     { product: muse, cards: [card('p2', 'positioning', { summary: '住在社交 App 里的助手' })] },
     { product: zed, cards: [] },
   ],
-  landscape: landscape(), since: null, drawing: false, mappable: 2, unmapped: null, ...over,
+  landscape: landscape(), since: null, drawing: false, mappable: 2, unmapped: null,
+  weekly: { on: true, last: '2026-11-26', next: '2026-12-03', running: false }, ...over,
 })
 
 async function show(view: TrackOverview | (() => TrackOverview) = overview(), shell: Partial<Shell> = {}, extra: Record<string, unknown> = {}) {
@@ -206,6 +207,32 @@ describe('赛道页 (M2.1)', () => {
 
   it('keeps a spreadsheet from reading a cell as a formula', () => {
     expect(toCsv([['=1+1', '+30%', '-', '@x', '正常']])).toBe("\uFEFF'=1+1,'+30%,'-,'@x,正常\r\n")
+  })
+
+  it('says how the weekly suggestions stand, turns them off and on, and leads to the candidates waiting (M2.2)', async () => {
+    let on = true
+    const weekly = () => ({ on, last: '2026-11-26', next: on ? '2026-12-03' : null, running: false })
+    const { api } = await show(() => overview({ weekly: weekly() }), {
+      state: state({ runTime: '08:00', tracks: [track('t1', 'Personal Agent', [], {}, 3)] }),
+    }, { 'POST tracks/:id/weekly': (req: { body: unknown }) => { on = (req.body as { on: boolean }).on; return weekly() } })
+    const line = () => document.querySelector('.op-thead-weekly')?.textContent
+    expect(line()).toBe(`每周推荐新产品：开 · 上次 ${new Date().getFullYear() === 2026 ? '11-26' : '2026-11-26'} · 下次 ${new Date().getFullYear() === 2026 ? '12-03' : '2026-12-03'}关掉去看 3 个新候选`)
+    await click('关掉')
+    expect(sent(api)).toEqual([['tracks/t1/weekly', { on: false }]])
+    expect(line()).toBe('每周推荐新产品：关打开去看 3 个新候选')
+    await click('打开')
+    expect(sent(api).at(-1)).toEqual(['tracks/t1/weekly', { on: true }])
+    const { context } = await show(overview(), { state: state({ runTime: '08:00', tracks: [track('t1', 'Personal Agent', [], {}, 3)] }) })
+    await click('去看 3 个新候选')
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'newTrack', trackId: 't1' })
+  })
+
+  it('says a weekly round is under way, and shows no line for a track still being picked', async () => {
+    await show(overview({ weekly: { on: true, last: '2026-11-26', next: '2026-12-03', running: true } }))
+    expect(document.querySelector('.op-thead-weekly')?.textContent).toBe('每周推荐新产品：开 · 正在找…关掉')
+    unmount()
+    await show(overview({ track: { ...overview().track, status: 'picking' } }))
+    expect(document.querySelector('.op-thead-weekly')).toBeNull()
   })
 
   it('is a page of its own, remembered with its track', () => {
