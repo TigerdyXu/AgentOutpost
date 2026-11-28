@@ -17,6 +17,8 @@
 > **M1.5 changes (2026-11-28)**: the interface follows the Desktop's language setting (Chinese or English), including the fixed sentences the background writes and the default dimension names; what the AI writes is unchanged. Tracks and products can be deleted (for good; spending records stay) and edited: a track's name, focus and dimensions, a product's name, company and official site (the ⋯ beside a track's name, and the product page's ⋯). For details see [`docs/en/m1.5-design.md`](m1.5-design.md).
 >
 > **M1.6 changes (2026-11-28)**: 「官方」 (Official) is the checker's call: a source counts as official, and so as enough on its own, only once the checker, having opened the page, finds that the product's maker published it (the mark the source came in with is only a hint); sources checked before no longer count as official. The brief no longer says "continues tomorrow" for a paused product; the Sources tab lists each page once. For details see [`docs/en/m1.6-design.md`](m1.6-design.md).
+>
+> **M2.1 changes (2026-11-28)**: the track page (§5.5): the first row under each track, 「赛道概览」 (Overview); a comparison table (exportable as CSV), a positioning map and a one-sentence summary of the field. The map and the summary use the brief-writing model and are redrawn after each day's brief only when a dossier changed; the axes stay put unless the user changes them; the dashed circles count from the first drawing on the current axes. Topics move to M2.3. For details see [`docs/en/m2.1-design.md`](m2.1-design.md).
 
 ## 1. Why build this
 
