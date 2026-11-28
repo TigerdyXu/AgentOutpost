@@ -39,7 +39,7 @@ describe('middle column', () => {
     const groups = all('.op-group')
     expect(groups.map(g => [g.querySelector('.op-group-name')?.textContent, g.querySelector('.op-group-end')?.textContent]))
       .toEqual([['Personal Agent', '2'], ['AI 眼镜', '1']])
-    expect([...groups[0]!.querySelectorAll('.op-row-label')].map(label => label.textContent)).toEqual(['Meta Muse', '豆包·小豆', '＋ 添加产品'])
+    expect([...groups[0]!.querySelectorAll('.op-row-label')].map(label => label.textContent)).toEqual(['赛道概览', 'Meta Muse', '豆包·小豆', '＋ 添加产品'])
     // The blue dot marks the product with new findings, and only it.
     expect(row('Meta Muse')!.querySelector('.op-dot')).not.toBeNull()
     expect(row('豆包·小豆')!.querySelector('.op-dot')).toBeNull()
@@ -68,12 +68,20 @@ describe('middle column', () => {
     expect(row('Meta Muse')).toBeDefined()
   })
 
-  it('does not show 赛道概览 · 对比矩阵 in M1', async () => {
-    stubApi({ 'GET state': state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse'))], {}, 2)] }) })
+  it('leads every started track with 「赛道概览」, which opens the track’s page (M2.1); a track being picked has none', async () => {
+    stubApi({
+      'GET state': state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse'))], {}, 2), track('t3', '新赛道', [], { status: 'picking' })] }),
+      'GET tracks/:id/overview': { track: track('t1', 'Personal Agent', []).track, products: [], landscape: null, since: null, drawing: false, mappable: 0 },
+      'GET tracks/:id/candidates': { batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5, candidates: [] },
+    })
     await mount(<App t={t} />)
-    expect(row('Meta Muse')).toBeDefined()
-    expect(text()).not.toContain('对比矩阵')
-    expect(text()).not.toContain('赛道概览')
+    const [started, picking] = all('.op-group')
+    expect(started!.querySelector('.op-row-label')?.textContent).toBe('赛道概览')
+    expect([...picking!.querySelectorAll('.op-row-label')].map(label => label.textContent)).not.toContain('赛道概览')
+    await click(started!.querySelector<HTMLElement>('.op-row')!)
+    expect(started!.querySelector('.op-row')!.getAttribute('aria-current')).toBe('page')
+    expect(pageTitle()).toBe('Personal Agent')
+    expect(JSON.parse(localStorage.getItem('outpost.route')!)).toEqual({ page: 'track', trackId: 't1' })
   })
 
   it('offers 「＋ 添加产品」 in every started track, after its products and before 「候选推荐」, and opens the page of that track', async () => {
@@ -90,8 +98,8 @@ describe('middle column', () => {
     const [first, second, picking] = all('.op-group')
     const labels = (group: Element) => [...group.querySelectorAll('.op-row-label')].map(label => label.textContent)
     // After the products, before the waiting candidates; a track still being picked has the 挑产品 page instead.
-    expect(labels(first!)).toEqual(['Meta Muse', '＋ 添加产品', '候选推荐'])
-    expect(labels(second!)).toEqual(['Rokid', '＋ 添加产品'])
+    expect(labels(first!)).toEqual(['赛道概览', 'Meta Muse', '＋ 添加产品', '候选推荐'])
+    expect(labels(second!)).toEqual(['赛道概览', 'Rokid', '＋ 添加产品'])
     expect(labels(picking!)).not.toContain('＋ 添加产品')
     // Folding the group takes the row away with the products.
     await click(first!.querySelector<HTMLElement>('.op-group-head')!)
@@ -99,13 +107,13 @@ describe('middle column', () => {
     await click(first!.querySelector<HTMLElement>('.op-group-head')!)
 
     // It opens that track's page, selected in the column; its title names the track.
-    await click(first!.querySelectorAll<HTMLElement>('.op-row')[1]!)
+    await click(first!.querySelectorAll<HTMLElement>('.op-row')[2]!)
     expect(pageTitle()).toBe('给「Personal Agent」添加产品')
-    expect(first!.querySelectorAll('.op-row')[1]!.getAttribute('aria-current')).toBe('page')
-    expect(second!.querySelectorAll('.op-row')[1]!.getAttribute('aria-current')).toBeNull()
+    expect(first!.querySelectorAll('.op-row')[2]!.getAttribute('aria-current')).toBe('page')
+    expect(second!.querySelectorAll('.op-row')[2]!.getAttribute('aria-current')).toBeNull()
     // The quiet look is for a row that is not shown: the state attribute the stylesheet's blue rests on stays on the selected one.
-    expect(first!.querySelectorAll('.op-row')[1]!.hasAttribute('data-quiet')).toBe(true)
-    await click(second!.querySelectorAll<HTMLElement>('.op-row')[1]!)
+    expect(first!.querySelectorAll('.op-row')[2]!.hasAttribute('data-quiet')).toBe(true)
+    await click(second!.querySelectorAll<HTMLElement>('.op-row')[2]!)
     expect(pageTitle()).toBe('给「AI 眼镜」添加产品')
     // The page is remembered for the next visit, with its track.
     expect(JSON.parse(localStorage.getItem('outpost.route')!)).toEqual({ page: 'addProduct', trackId: 't2' })

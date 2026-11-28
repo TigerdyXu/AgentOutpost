@@ -1171,7 +1171,7 @@ describe('the ⋯ menu, tracks', () => {
     localStorage.setItem('outpost.route', JSON.stringify({ page: 'product', productId: 'p1', tab: 'dossier' }))
     await mount(<App t={t} />)
     const rowsOf = (name: string) => [...all('.op-mid .op-group').find(group => group.getAttribute('aria-label') === name)!.querySelectorAll('.op-row-label')]
-      .map(label => label.textContent).filter(label => label !== '＋ 添加产品')
+      .map(label => label.textContent).filter(label => label !== '＋ 添加产品' && label !== '赛道概览')
     expect(rowsOf('Personal Agent')).toEqual(['豆包·小豆', 'Meta Muse'])
     await click(find('更多操作'))
     await click(control('移到其他赛道…'))

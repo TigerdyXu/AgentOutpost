@@ -33,6 +33,7 @@ let scheduler: Scheduler
 let plays: Record<Id, Outcome[]>
 let holds: Record<Id, ReturnType<typeof gate>>
 let events: string[]
+let mapsFail = false
 let calls: { runDailyProduct: { productId: Id; date: string }[]; archiveOld: Date[]; rebaseline: Id[][]; verifyProduct: { productId: Id; date: string }[] }
 let trackId: Id
 
@@ -54,6 +55,7 @@ beforeEach(() => {
   holds = {}
   events = []
   calls = { runDailyProduct: [], archiveOld: [], rebaseline: [], verifyProduct: [] }
+  mapsFail = false
   trackId = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }], status: 'active' }).id
   addProduct('p1', 'Cursor')
   addProduct('p2', 'Windsurf')
@@ -83,7 +85,8 @@ beforeEach(() => {
     },
     synthesize: date => { events.push(`brief ${date}`); return synthesizeBrief(briefDeps, date) },
     appendLate: (date, productId) => appendLate(briefDeps, date, productId),
-    archiveOld: async now => { calls.archiveOld.push(now) },
+    archiveOld: async now => { calls.archiveOld.push(now); events.push('archive') },
+    drawMaps: async date => { events.push(`maps ${date}`); if (mapsFail) throw new Error('model down') },
     rebaseline: async ids => { calls.rebaseline.push(ids); events.push(`rebaseline ${ids.join(',')}`) },
     verifyProduct: async (productId, date) => {
       calls.verifyProduct.push({ productId, date })
@@ -435,6 +438,16 @@ describe('Scheduler: the day', () => {
     expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
     expect(calls.archiveOld).toEqual([local('2026-11-25T07:00')])
     expect(clock.pending()).toEqual([]) // the cutoff timer was cancelled
+    // The maps are drawn from the dossiers as the day left them: after the brief, before old sessions are archived (M2.1).
+    expect(events.slice(events.indexOf(`brief ${DAY}`))).toEqual([`brief ${DAY}`, `maps ${DAY}`, 'archive'])
+  })
+
+  it('leaves the day complete when the maps cannot be drawn, and says so in the log (M2.1)', async () => {
+    mapsFail = true
+    await scheduler.runDay(DAY)
+    expect(repo.getSetting(LAST_COMPLETED)).toBe(DAY)
+    expect(calls.archiveOld).toHaveLength(1)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('drawing the maps failed: model down'))
   })
 
   it('synthesizes at the 2-hour cutoff and appends late products marked 迟到', async () => {

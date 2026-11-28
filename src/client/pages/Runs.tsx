@@ -97,7 +97,7 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
   // A confirmation names the product it confirmed once there is one, before that what the user typed.
   // A deleted product or track is named as it was when it was deleted (the host keeps that name in `subject`).
   const gone = (name: string | null) => name === null ? null : t('runs.deleted', { name })
-  const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' ? trackName ?? gone(run.subject)
+  const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' || run.kind === 'landscape' ? trackName ?? gone(run.subject)
     : run.productName ?? (run.productId !== null ? gone(run.subject) : run.subject)
   const started = run.startedAt ? Date.parse(run.startedAt) : NaN
   const ended = run.endedAt ? Date.parse(run.endedAt) : run.status === 'running' ? now : NaN

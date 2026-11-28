@@ -78,6 +78,8 @@ export interface SchedulerDeps {
    * end (`VerifyNotRun`).
    */
   verifyProduct(productId: Id, date: string): Promise<void>
+  /** After the day's brief, draws again the maps of the tracks whose dossiers changed (M2.1); none when absent. */
+  drawMaps?(date: string): Promise<void>
   /** Where failures of background work are reported; default `console.warn`. */
   log?: (message: string) => void
 }
@@ -314,7 +316,11 @@ export class Scheduler {
     // Stopped while the brief was written: its gist may be the stand-in of a cut-off summary, so the day stays open and
     // the next start writes the brief again.
     if (this.stopped) return
-    if (written) this.complete(date)
+    if (written) {
+      this.complete(date)
+      // The maps read the dossiers as the day left them; a map that cannot be drawn leaves the day complete.
+      try { await this.deps.drawMaps?.(date) } catch (error) { this.log(`drawing the maps failed: ${messageOf(error)}`) }
+    }
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }
 

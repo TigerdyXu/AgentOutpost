@@ -187,6 +187,20 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE sources ADD COLUMN official_confirmed INTEGER;
   `,
+  // 5: each drawing of a track's map and its one-sentence 格局 (M2.1), oldest first; a deleted track's go with it.
+  `
+  CREATE TABLE landscapes (
+    id TEXT PRIMARY KEY,
+    track_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    gist TEXT NOT NULL,
+    axes TEXT NOT NULL,
+    positions TEXT NOT NULL,
+    run_id TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX landscapes_track ON landscapes (track_id, created_at);
+  `,
 ]
 
 /**

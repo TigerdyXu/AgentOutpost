@@ -1,0 +1,162 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Axes, Dimension, Landscape } from '../../src/core/types.ts'
+import type { TrackOverview } from '../../src/host/api.ts'
+import { toCsv } from '../../src/client/csv.ts'
+import { matrixRows, Track } from '../../src/client/pages/Track.tsx'
+import { parseRoute } from '../../src/client/shell/route.ts'
+import type { Shell } from '../../src/client/shell/context.ts'
+import { all, card, click, find, mount, product, state, stubApi, t, tEn, text, track, type, unmount } from '../fixtures/client.tsx'
+
+const DIMENSIONS: Dimension[] = [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }, { key: 'custom-1', label: '记忆' }]
+const AXES: Axes = { x: { low: '寄生在 App 里', high: '独立 App' }, y: { low: '陪聊问答', high: '替你办事' } }
+const doubao = product('p1', '豆包·小豆'), muse = product('p2', 'Meta Muse', { status: 'paused' }), zed = product('p3', 'Zed', { status: 'baselining' })
+const NOW = new Date()
+const todayIso = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate(), 9).toISOString()
+
+const landscape = (over: Partial<Landscape> = {}): Landscape => ({
+  id: 'l2', trackId: 't1', date: '2026-11-28', gist: '两条路线：小豆独立办事，Muse 寄生社交', axes: AXES,
+  positions: [{ productId: 'p1', x: 60, y: 70, why: '独立 App，主打代办' }, { productId: 'p2', x: -50, y: -20, why: '住在 WhatsApp 里' }, { productId: 'gone', x: 0, y: 0, why: '' }],
+  runId: 'r1', createdAt: '2026-11-28T01:00:00.000Z', ...over,
+})
+const overview = (over: Partial<TrackOverview> = {}): TrackOverview => ({
+  track: track('t1', 'Personal Agent', [], { dimensions: DIMENSIONS, brief: '能替人办事的个人代理', createdAt: '2026-11-18T08:00:00.000Z' }).track,
+  products: [
+    { product: doubao, cards: [card('p1', 'positioning', { summary: '独立的个人代理' }), card('p1', 'business', { summary: '免费，三档订阅', version: 2, createdAt: todayIso })] },
+    { product: muse, cards: [card('p2', 'positioning', { summary: '住在社交 App 里的助手' })] },
+    { product: zed, cards: [] },
+  ],
+  landscape: landscape(), since: null, drawing: false, mappable: 2, ...over,
+})
+
+async function show(view: TrackOverview | (() => TrackOverview) = overview(), shell: Partial<Shell> = {}, extra: Record<string, unknown> = {}) {
+  const api = stubApi({ 'GET tracks/:id/overview': typeof view === 'function' ? view : () => view, 'POST tracks/:id/map': { ok: true }, ...extra })
+  const context = await mount(<Track />, { state: state({ runTime: '08:00' }), route: { page: 'track', trackId: 't1' }, ...shell })
+  return { api, context }
+}
+const cells = () => all('.op-matrix tbody tr').map(row => [...row.querySelectorAll('th, td')].map(cell => cell.textContent))
+const sent = (api: ReturnType<typeof stubApi>) => api.requests.filter(request => request.method === 'POST').map(request => [request.path, request.body])
+
+afterEach(() => { unmount(); vi.restoreAllMocks() })
+
+describe('赛道页 (M2.1)', () => {
+  it('names the track, what it follows and how it runs, with the 格局 as an AI summary', async () => {
+    const { context } = await show()
+    expect(document.querySelector('h1')?.textContent).toBe('Personal Agent')
+    expect(document.querySelector('.op-thead-meta')?.textContent).toBe('跟踪 3 个 · 11-18 起 · 每天 08:00 · 关注：定位、商业化、记忆')
+    expect(document.querySelector('.op-thead-brief')?.textContent).toBe('能替人办事的个人代理')
+    expect(document.querySelector('.op-gist')?.textContent).toBe('AI 归纳两条路线：小豆独立办事，Muse 寄生社交')
+    await click('赛道设置')
+    expect(context.navigate).toHaveBeenCalledWith({ page: 'editTrack', trackId: 't1' })
+  })
+
+  it('lays the dossiers out as a table: a row per dimension, a column per product, today’s changes marked', async () => {
+    const { context } = await show()
+    expect(all('.op-matrix thead th').map(cell => cell.textContent)).toEqual(['维度', '豆豆包·小豆', 'MMeta Muse已暂停', 'ZZed建档中']) // icon, name, state
+    expect(cells()).toEqual([
+      ['定位', '独立的个人代理', '住在社交 App 里的助手', '建档中'],
+      ['商业化', '免费，三档订阅今天', '—', '建档中'],
+      ['记忆', '—', '—', '建档中'],
+    ])
+    expect(all('.op-matrix td[data-today]').map(cell => cell.textContent)).toEqual(['免费，三档订阅今天'])
+    // A cell opens its card on the product page; a column head, the product.
+    await click(find('免费，三档订阅今天'))
+    expect(context.navigate).toHaveBeenLastCalledWith({ page: 'product', productId: 'p1', tab: 'dossier', expand: 'business' })
+    await click(all('.op-matrix-product')[1]!)
+    expect(context.navigate).toHaveBeenLastCalledWith({ page: 'product', productId: 'p2', tab: 'dossier' })
+  })
+
+  it('saves the table as a CSV file a spreadsheet opens', async () => {
+    expect(matrixRows(t, overview())).toEqual([
+      ['维度', '豆包·小豆', 'Meta Muse', 'Zed'], ['定位', '独立的个人代理', '住在社交 App 里的助手', ''], ['商业化', '免费，三档订阅', '', ''], ['记忆', '', '', ''],
+    ])
+    expect(toCsv([['维度', 'a,b'], ['说 "好"', '一\n二']])).toBe('﻿维度,"a,b"\r\n"说 ""好""","一\n二"\r\n')
+    const made: Blob[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { made.push(blob as Blob); return 'blob:matrix' })
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clicked: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.download) })
+    await show()
+    await click('导出表格')
+    expect(clicked).toEqual([expect.stringMatching(/^Personal Agent-对比矩阵-\d{4}-\d{2}-\d{2}\.csv$/)])
+    const bytes = new Uint8Array(await made[0]!.arrayBuffer())
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]) // the byte-order mark, which reading the text drops
+    expect(await made[0]!.text()).toBe(toCsv(matrixRows(t, overview())).slice(1))
+  })
+
+  it('puts each product on the map where the drawing says, leaving out one no longer in the track', async () => {
+    const { context } = await show()
+    const points = all<HTMLButtonElement>('.op-map-point')
+    expect(points.map(point => point.textContent)).toEqual(['豆豆包·小豆', 'MMeta Muse']) // each with its icon
+    expect(points[0]!.style.left).toBe(`${9 + 160 / 200 * 82}%`)
+    expect(points[0]!.style.top).toBe(`${9 + 30 / 200 * 82}%`)
+    expect(points[0]!.getAttribute('aria-label')).toBe('豆包·小豆：偏「独立 App」，偏「替你办事」。独立 App，主打代办')
+    expect(all('.op-map-axis').map(axis => axis.textContent)).toEqual(['← 寄生在 App 里', '独立 App →', '↑ 替你办事', '↓ 陪聊问答'])
+    expect(document.querySelector('.op-tsection-head')?.textContent).toContain('推论')
+    expect(all('.op-map-was')).toHaveLength(0) // nothing to compare with yet
+    await click(points[1]!)
+    expect(context.navigate).toHaveBeenLastCalledWith({ page: 'product', productId: 'p2', tab: 'dossier' })
+  })
+
+  it('draws a dashed circle where a product stood at the first drawing on these axes, for one that moved', async () => {
+    await show(overview({ since: { date: '2026-11-20', positions: [{ productId: 'p1', x: 0, y: 70, why: '' }, { productId: 'p2', x: -48, y: -20, why: '' }] } }))
+    expect(all('.op-map-was')).toHaveLength(1) // Muse moved 2 units: not drawn
+    expect(all('.op-map-lines .op-map-trail')).toHaveLength(1)
+    expect(text()).toContain('虚线圈是 11-20 时的位置')
+  })
+
+  it('offers to draw the map when there is none, and says why it cannot with fewer than two products', async () => {
+    let drawn = false
+    const { api } = await show(() => overview({ landscape: drawn ? landscape() : null, drawing: false }), {}, { 'POST tracks/:id/map': () => { drawn = true; return { ok: true } } })
+    expect(document.querySelector('.op-gist')).toBeNull()
+    expect(text()).toContain('还没画过地图')
+    expect(text()).toContain('每次几分钱')
+    await click('画地图')
+    expect(sent(api)).toEqual([['tracks/t1/map', {}]])
+    expect(all('.op-map-point')).toHaveLength(2)
+
+    unmount()
+    await show(overview({ landscape: null, mappable: 1 }))
+    expect(text()).toContain('至少要有两个建好档的产品')
+    expect(all('button').map(button => button.textContent)).not.toContain('画地图')
+  })
+
+  it('changes the axes: the four ends as they are, sent to draw the map on them', async () => {
+    const { api } = await show()
+    await click('换轴')
+    const ends = all<HTMLInputElement>('.op-axes-form input')
+    expect(ends.map(end => end.value)).toEqual(['寄生在 App 里', '独立 App', '陪聊问答', '替你办事'])
+    await type(ends[0]!, '')
+    expect(find('按这两条轴重画').hasAttribute('disabled')).toBe(true)
+    await type(ends[0]!, '免费')
+    await click('按这两条轴重画')
+    expect(sent(api)).toEqual([['tracks/t1/map', { axes: { x: { low: '免费', high: '独立 App' }, y: AXES.y } }]])
+    expect(document.querySelector('.op-axes-form')).toBeNull()
+  })
+
+  it('shows the drawing under way and the host’s refusal', async () => {
+    await show(overview({ drawing: true }), {}, { 'POST tracks/:id/map': () => ({}) })
+    expect(text()).toContain('正在画地图')
+    expect(find('重画').hasAttribute('disabled')).toBe(true)
+    unmount()
+    const { fail } = await import('../fixtures/client.tsx')
+    await show(overview(), {}, { 'POST tracks/:id/map': fail(409, '地图正在画，等它画完') })
+    await click('重画')
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('地图正在画，等它画完')
+  })
+
+  it('speaks English when DSH does', async () => {
+    await show(overview(), { t: tEn })
+    expect(document.querySelector('.op-thead-meta')?.textContent).toBe('3 followed · since 11-18 · daily at 08:00 · Looks at: Positioning, Business model, 记忆')
+    expect(all('.op-matrix tbody th').map(cell => cell.textContent)).toEqual(['Positioning', 'Business model', '记忆'])
+    expect(all('.op-matrix thead th')[2]!.textContent).toBe('MMeta MusePaused')
+    expect(find('Export table')).toBeTruthy()
+    expect(all('.op-map-point')[0]!.getAttribute('aria-label')).toBe('豆包·小豆: toward “独立 App”; toward “替你办事”. 独立 App，主打代办')
+    expect(matrixRows(tEn, overview())[0]![0]).toBe('Dimension')
+  })
+
+  it('is a page of its own, remembered with its track', () => {
+    expect(parseRoute({ page: 'track', trackId: 't1' })).toEqual({ page: 'track', trackId: 't1' })
+    expect(parseRoute({ page: 'track' })).toBeUndefined()
+  })
+})

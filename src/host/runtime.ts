@@ -13,7 +13,7 @@ import type { OutpostConfig } from '../config.ts'
 import { localDate } from '../core/calendar.ts'
 import { costOf, pricesAt, pricesFor } from '../core/cost.ts'
 import { billingOf, modelFor, onDeepSeek, type Billing, type ModelRef } from '../core/models.ts'
-import type { Usage } from '../core/types.ts'
+import type { Axes, Id, Landscape, Usage } from '../core/types.ts'
 import { openDb, lockDataDir, type Db } from '../store/db.ts'
 import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
@@ -26,6 +26,7 @@ import { registerRoutes } from './http.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
 import { runDailyProduct } from './jobs/daily.ts'
+import { drawLandscape, needsDrawing } from './jobs/landscape.ts'
 import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from './jobs/runner.ts'
 import { appendLate, synthesizeBrief, type BriefDeps } from './jobs/synthesize.ts'
 import { verifyProduct } from './jobs/verify.ts'
@@ -77,6 +78,8 @@ export class Runtime {
   readonly jobs: BaselineDeps
   /** What the brief is written with. */
   readonly briefs: BriefDeps
+  /** Maps being drawn, by track (`drawMap`). */
+  private readonly drawing = new Map<Id, Promise<Landscape | null>>()
   private readonly db: Db
   private readonly unlock: () => void
   private unregister: (() => void) | null = null
@@ -130,6 +133,7 @@ export class Runtime {
       archiveOld: now => this.runner.archiveOld(now),
       rebaseline: productIds => baselineProducts(this.jobs, productIds),
       verifyProduct: (productId, date) => verifyProduct(jobs, productId, 'daily', date),
+      drawMaps: date => this.drawMaps(date),
       log,
     })
   }
@@ -216,6 +220,34 @@ export class Runtime {
    */
   researchPreset(): Promise<ResearchPresetChoice> {
     return chooseResearchPreset(this.ctx)
+  }
+
+  /**
+   * Draws the track's map now, for today (`drawLandscape`; `axes`: the user's, from 换轴), or joins the drawing of it
+   * under way. Resolves with the drawing, or null when none was made.
+   */
+  drawMap(trackId: Id, axes: Axes | null = null): Promise<Landscape | null> {
+    const running = this.drawing.get(trackId)
+    if (running) return running
+    const work = drawLandscape(this.briefs, trackId, this.today(), axes).finally(() => { this.drawing.delete(trackId) })
+    this.drawing.set(trackId, work)
+    return work
+  }
+
+  /** Whether the track's map is being drawn. */
+  isDrawing(trackId: Id): boolean { return this.drawing.has(trackId) }
+
+  /**
+   * After a day's brief: draws again, one after another, the maps of the tracks that are on whose dossiers changed since
+   * their last drawing (`needsDrawing`), for `date`. A track whose map is being drawn already is left to that drawing.
+   */
+  private async drawMaps(date: string): Promise<void> {
+    for (const track of this.repo.listTracks()) {
+      if (track.status !== 'active' || this.drawing.has(track.id) || !needsDrawing(this.repo, track)) continue
+      const work = drawLandscape(this.briefs, track.id, date).finally(() => { this.drawing.delete(track.id) })
+      this.drawing.set(track.id, work)
+      await work
+    }
   }
 
   /** Writes to DSH's log. */

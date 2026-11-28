@@ -3,7 +3,7 @@ import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
 import { FOLLOWED, identityKey, nameKey } from '../core/identity.ts'
 import type {
-  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunKind, Source, Track,
+  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Product, ProductStatus, Run, RunKind, Source, Track,
 } from '../core/types.ts'
 import type { Db } from './db.ts'
 
@@ -49,6 +49,7 @@ const CARD_VERSION = new Codec<CardVersion>('card_versions', { productId: 'plain
 const CARD_EDIT = new Codec<CardEdit>('card_edits', { id: 'plain', productId: 'plain', dimension: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', changeNote: 'plain', findingIds: 'json', status: 'plain' })
 const FACTS = new Codec<Facts>('facts', { productId: 'plain', version: 'plain', form: 'plain', platforms: 'plain', price: 'plain', firstReleased: 'plain', rivals: 'json', createdAt: 'plain' })
 const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', findingIds: 'json', minorIds: 'json', quietProductIds: 'json', skipped: 'json', costYuan: 'plain', createdAt: 'plain', updatedAt: 'plain' })
+const LANDSCAPE = new Codec<Landscape>('landscapes', { id: 'plain', trackId: 'plain', date: 'plain', gist: 'plain', axes: 'json', positions: 'json', runId: 'plain', createdAt: 'plain' })
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup' | 'officialConfirmed'>>
@@ -230,10 +231,10 @@ export class Repo {
   }
 
   /**
-   * Erases the track: its place for every product, its candidates, and what was remembered of it (`settings` keys the
-   * caller names). The products only this track has (no other track lists them) are erased with it (`deleteProduct`), and
+   * Erases the track: its place for every product, its candidates, its maps (M2.1), and what was remembered of it
+   * (`settings` keys the caller names). The products only this track has (no other track lists them) are erased with it (`deleteProduct`), and
    * so are the rows of products it recommended that nobody follows and nothing else names (no other track's candidate,
-   * no track). Its recommendations' runs stay, keeping the track's name in `subject`. Returns the products erased, the
+   * no track). Its recommendations' and maps' runs stay, keeping the track's name in `subject`. Returns the products erased, the
    * followed ones and those recommended rows alike.
    * @throws When the track does not exist.
    */
@@ -253,7 +254,8 @@ export class Repo {
         return named ? [] : [this.deleteProduct(id)]
       })
       for (const key of settingKeys) this.setSetting(key, undefined)
-      this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind = 'recommend'").run(track.name, trackId)
+      this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind IN ('recommend', 'landscape')").run(track.name, trackId)
+      this.db.prepare('DELETE FROM landscapes WHERE track_id = ?').run(trackId)
       this.db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
       return [...own, ...orphans]
     })
@@ -418,6 +420,21 @@ export class Repo {
 
   /** Saves the brief as given, replacing any earlier one for its date. */
   putBrief(b: Brief): void { this.insert(BRIEF, b, {}, 'INSERT OR REPLACE') }
+
+  // ---- maps (M2.1) ----
+
+  /** Keeps a drawing of the track's map; earlier ones stay. */
+  addLandscape(l: Omit<Landscape, 'id' | 'createdAt'>): Landscape {
+    const landscape: Landscape = { ...l, id: randomUUID(), createdAt: this.stamp() }
+    this.insert(LANDSCAPE, landscape)
+    return landscape
+  }
+
+  /** The track's drawings, oldest first. */
+  landscapesOfTrack(trackId: Id): Landscape[] { return this.select(LANDSCAPE, 'WHERE track_id = ? ORDER BY created_at, rowid', trackId) }
+
+  /** The track's newest drawing, or null. */
+  latestLandscape(trackId: Id): Landscape | null { return this.select(LANDSCAPE, 'WHERE track_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1', trackId)[0] ?? null }
 
   createRun(r: Pick<Run, 'kind' | 'date' | 'trackId' | 'productId'> & Partial<Pick<Run, 'subject'>>): Run {
     const run: Run = {

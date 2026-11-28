@@ -15,7 +15,7 @@ import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
-  Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Product, ProductStatus, Run, RunStatus, Source, Track,
+  Axes, Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Placement, Product, ProductStatus, Run, RunStatus, Source, Track,
 } from '../core/types.ts'
 import { listModelGroups } from './dsh-model.ts'
 import { BASIC_AGENT_PRESET } from './dsh-sessions.ts'
@@ -25,6 +25,7 @@ import { ICON_TYPES } from './icons.ts'
 import { isBaselining } from './jobs/baseline.ts'
 import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
+import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable } from './jobs/landscape.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
 import type { Runtime } from './runtime.ts'
@@ -118,6 +119,23 @@ export interface ProductView {
   progress: Run['progress']
 }
 export type RunRow = Run & { productName: string | null }
+/** A track's page (M2.1, design §5.5): its comparison table and its map. */
+export interface TrackOverview {
+  track: Track
+  /** The track's products in its order (tracked, paused, in 建档中), each with its newest card of each of the track's dimensions. */
+  products: { product: Product; cards: CardVersion[] }[]
+  /** The newest drawing of the map, or null. Its positions may name a product no longer in the track: the page leaves those out. */
+  landscape: Landscape | null
+  /**
+   * Where the products stood in the first drawing of the latest run of drawings on the same axes, and that drawing's date:
+   * the map's dashed circles. Null when the newest drawing is that first one.
+   */
+  since: { date: string; positions: Placement[] } | null
+  /** The map is being drawn now. */
+  drawing: boolean
+  /** How many products the map can place (it needs `MAP_MIN_PRODUCTS`): followed ones with at least one card. */
+  mappable: number
+}
 /** The models DSH offers now, for the four model choices of 设置. */
 export interface ModelsView {
   /** One group per provider, in DSH's order. */
@@ -164,6 +182,14 @@ export interface Api {
   /** A new batch, with the user's one-sentence adjustment; 409 while the previous one still runs. */
   'POST tracks/:id/recommend': { body?: { refine?: string }; response: { batchId: Id } }
   'GET tracks/:id/candidates': { response: CandidatesView }
+  'GET tracks/:id/overview': { response: TrackOverview }
+  /**
+   * Draws the track's map now (M2.1), in the background: the page reads `drawing` until it is over. With `axes` (换轴),
+   * the map is drawn on those, and its dashed circles start again from this drawing. It costs one call to the brief's
+   * model, held to the day's budget. 409 while it is being drawn, for an archived track, and with fewer than two products
+   * to place.
+   */
+  'POST tracks/:id/map': { body?: { axes?: Axes }; response: { ok: true } }
   /**
    * The track becomes `active`, the chosen products join it, and those new to Outpost are baselined (建档中); a tracked one
    * that the track gives dimensions it lacks gets their cards at once.
@@ -291,6 +317,8 @@ const ProductPatch = z.object({
 })
 const TrackRef = z.object({ trackId: z.string().min(1) })
 const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
+const axisEnd = text(AXIS_LABEL_MAX).min(1, '轴的两端都要写')
+const MapRequest = z.object({ axes: z.object({ x: z.object({ low: axisEnd, high: axisEnd }), y: z.object({ low: axisEnd, high: axisEnd }) }).optional() })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
 
@@ -673,7 +701,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'POST tracks/:id/delete': ({ params }) => {
       const t = track(params.id!)
       const active = repo.activeRuns()
-      if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify'))) throw new ApiError(409, say('trackBusy'))
+      if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify')) || rt.isDrawing(t.id)) throw new ApiError(409, say('trackBusy'))
       // Those only this track has go with it: none of them may be in the middle of something.
       const busy = repo.productsOfTrack(t.id).find(p => tracksOf(p.id).length === 1 && hasWork(p.id, active))
       if (busy) throw new ApiError(409, say('productBusy', { name: busy.name }))
@@ -687,6 +715,34 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const { refine } = Recommend.parse(await req.body() ?? {})
       if (recommending(t.id)) throw new ApiError(409, say('recommending'))
       return { batchId: await startRecommendation(rt.jobs, t.id, refine) }
+    },
+
+    'GET tracks/:id/overview': ({ params }) => {
+      const t = track(params.id!)
+      const keys = new Set(t.dimensions.map(d => d.key))
+      const drawings = repo.landscapesOfTrack(t.id)
+      const landscape = drawings.at(-1) ?? null
+      // The dashed circles: the first of the drawings since the axes last changed.
+      let first = landscape
+      for (let i = drawings.length - 2; landscape && i >= 0 && JSON.stringify(drawings[i]!.axes) === JSON.stringify(landscape.axes); i--) first = drawings[i]!
+      return {
+        track: t,
+        products: repo.productsOfTrack(t.id).map(product => ({ product, cards: repo.latestCards(product.id).filter(c => keys.has(c.dimension)) })),
+        landscape,
+        since: landscape && first && first.id !== landscape.id ? { date: first.date, positions: first.positions } : null,
+        drawing: rt.isDrawing(t.id),
+        mappable: mappable(repo, t).length,
+      }
+    },
+
+    'POST tracks/:id/map': async req => {
+      const t = track(req.params.id!)
+      const { axes } = MapRequest.parse(await req.body() ?? {})
+      if (t.status === 'archived') throw new ApiError(409, say('trackArchived'))
+      if (rt.isDrawing(t.id)) throw new ApiError(409, say('mapDrawing'))
+      if (mappable(repo, t).length < MAP_MIN_PRODUCTS) throw new ApiError(409, say('mapNeedsProducts'))
+      rt.background(rt.drawMap(t.id, axes ?? null), `map of track ${t.id}`)
+      return { ok: true as const }
     },
 
     'GET tracks/:id/candidates': ({ params }) => {

@@ -36,6 +36,18 @@ export interface CardEdit { id: Id; productId: Id; dimension: DimensionKey; summ
 
 export interface Facts { productId: Id; version: number; form: string; platforms: string; price: string; firstReleased: string; rivals: string[]; createdAt: string }
 
+/** One axis of a track's map: what its low end (left, bottom) and its high end (right, top) stand for. */
+export interface Axis { low: string; high: string }
+export interface Axes { x: Axis; y: Axis }
+/** Where the map puts a product: `x` and `y` from -100 (the low end) to 100 (the high end), and why, in a few words. */
+export interface Placement { productId: Id; x: number; y: number; why: string }
+/**
+ * One drawing of a track's map (M2.1, design §5.5), with its one-sentence 格局 (`gist`). Every drawing is kept, so the
+ * page can draw where a product stood at the first drawing on the same axes. All of it is the model's reading of the
+ * dossiers: an inference, shown as one.
+ */
+export interface Landscape { id: Id; trackId: Id; date: string; gist: string; axes: Axes; positions: Placement[]; runId: Id | null; createdAt: string }
+
 export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
   /**
    * Tracked products not updated that day, with why. Without `failed` the budget stopped it (shown 「因预算未跑：…」);
@@ -44,8 +56,11 @@ export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds:
   skipped: { productId: Id; reason: string; failed?: true }[]
   costYuan: number; createdAt: string; updatedAt: string }
 
-/** `identify`: a product the user named by hand, confirmed before it joins their track (M1.2 按名字加). */
-export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify'
+/**
+ * `identify`: a product the user named by hand, confirmed before it joins their track (M1.2 按名字加). `landscape`: a
+ * track's map and its one-sentence 格局, drawn by a model call (M2.1).
+ */
+export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify' | 'landscape'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'
 /**
  * Tokens a model call used. `searches` counts the web searches made on a DeepSeek route: each is a hidden model call of its

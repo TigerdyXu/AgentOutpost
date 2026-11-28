@@ -2,13 +2,14 @@
  * The middle column (design §5.1, mockup 1 option B): 前哨 with 「＋ 新赛道」; 今日哨报 with its count of new findings;
  * one foldable group per track with its products (blue dot for new findings, 建档中 while baselined) and 「＋ 添加产品」,
  * 挑产品 while the track is being picked and 候选推荐 while candidates wait; 运行记录 (today's spend) and 设置 pinned at the bottom.
- * M1 has no 「赛道概览 · 对比矩阵」 row (that is M2's track page); the 「⋯」 beside a track's name opens its settings (M1.5).
+ * Each track that is on starts with 「赛道概览」, its page with the 定位地图 and the 对比矩阵 (M2.1); the 「⋯」 beside a
+ * track's name opens its settings (M1.5).
  */
 import { useState, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
 import { describeError, useCandidates } from '../api.ts'
-import { BriefIcon, CheckIcon, ChevronIcon, RunsIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
+import { BriefIcon, CheckIcon, ChevronIcon, OverviewIcon, RunsIcon, SettingsIcon, SparkleIcon, TelescopeIcon } from '../ui/icons.tsx'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
 import { useShell } from './context.ts'
 import { samePage, type Route } from './route.ts'
@@ -94,6 +95,7 @@ function TrackGroup({ view, folded, onFold, onChoose }: { view: TrackView; folde
         aria-current={editing ? 'page' : undefined} onClick={() => { if (!editing) navigate({ page: 'editTrack', trackId: track.id }); onChoose() }}>⋯</button>
     </div>
     {!folded && <div className="op-group-rows">
+      {!picking && <Row to={{ page: 'track', trackId: track.id }} icon={<OverviewIcon />} label={t('nav.overview')} onChoose={onChoose} />}
       {picking && (picks[track.id] === undefined ? <DefaultPickRow trackId={track.id} tracked={new Set(products.map(item => item.product.id))} onChoose={onChoose} />
         : <PickRow trackId={track.id} count={picks[track.id]} onChoose={onChoose} />)}
       {products.map(({ product, hasNew, progress }) => {

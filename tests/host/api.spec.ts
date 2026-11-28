@@ -11,7 +11,7 @@ import { joinTrack } from '../../src/host/join.ts'
 import type { Runtime } from '../../src/host/runtime.ts'
 import type { Repo } from '../../src/store/repo.ts'
 import { apiHost, type ApiHost, type Reply } from '../fixtures/api-host.ts'
-import { completed, flush, gate, type Play } from '../fixtures/fake-driver.ts'
+import { completed, flush, gate, usage, type Play } from '../fixtures/fake-driver.ts'
 
 const TODAY = '2026-11-25'
 const RECOMMEND = 'outpost-recommend-'
@@ -1788,5 +1788,93 @@ describe('deleting and editing tracks and products (M1.5)', () => {
     ok(await host.call('PATCH', `tracks/${track.id}`, { dimensions: [{ key: 'positioning', label: '产品定位' }, { key: 'business', label: '商业化' }] }))
     const reply = ok(await host.call('PATCH', `tracks/${track.id}`, { extraDimensions: ['定价'] })).json<ApiResponse<'PATCH tracks/:id'>>()
     expect(reply.dimensions.map(d => d.label)).toEqual(['产品定位', '商业化', '定价'])
+  })
+})
+
+describe('the track page (M2.1)', () => {
+  const AXES = { x: { low: '寄生在 App 里', high: '独立 App' }, y: { low: '陪聊问答', high: '替你办事' } }
+  const drawn = (over: Record<string, unknown> = {}) => ({
+    text: JSON.stringify({ gist: '两类：独立办事和寄生社交', axes: AXES, positions: [{ id: 'P1', x: 50, y: 50, why: '独立' }, { id: 'P2', x: -50, y: -50, why: '寄生' }], ...over }),
+    usage: usage({ inputTokens: 3000, outputTokens: 200 }),
+  })
+  const overview = async (trackId: Id) => ok(await host.call('GET', `tracks/${trackId}/overview`)).json<ApiResponse<'GET tracks/:id/overview'>>()
+  /** Waits for the drawing the request started to be over. */
+  const settled = async (trackId: Id) => { for (let i = 0; i < 50 && rt.isDrawing(trackId); i++) await flush() }
+  /** A track of two dimensions: Cursor and Windsurf with a 定位 card, Zed still in 建档中. */
+  const seed = () => {
+    const t = addTrack({ dimensions: DEFAULT_DIMENSIONS.slice(0, 2) })
+    addProduct('p1', 'Cursor', 'tracking', t.id)
+    addProduct('p2', 'Windsurf', 'paused', t.id)
+    addProduct('p3', 'Zed', 'baselining', t.id)
+    card('p1', 'positioning', 1, [])
+    card('p1', 'business', 1, []) // not a dimension of this track
+    card('p2', 'positioning', 1, [])
+    return t
+  }
+
+  it('gives the products in the track’s order, each with its cards of the track’s dimensions, and no map yet', async () => {
+    const t = seed()
+    const view = await overview(t.id)
+    expect(view.track.id).toBe(t.id)
+    expect(view.products.map(item => [item.product.id, item.cards.map(c => c.dimension)])).toEqual([['p1', ['positioning']], ['p2', ['positioning']], ['p3', []]])
+    expect(view).toMatchObject({ landscape: null, since: null, drawing: false, mappable: 2 })
+    expect((await host.call('GET', 'tracks/nope/overview')).status).toBe(404)
+  })
+
+  it('draws the map when asked, in the background, and keeps the first drawing on the same axes for the dashed circles', async () => {
+    const t = seed()
+    host.complete.mockResolvedValue(drawn())
+    expect(ok(await host.call('POST', `tracks/${t.id}/map`)).json()).toEqual({ ok: true })
+    await settled(t.id)
+    let view = await overview(t.id)
+    expect(view).toMatchObject({ drawing: false, since: null, landscape: { gist: '两类：独立办事和寄生社交', axes: AXES, date: TODAY } })
+    expect(repo.runsOfDate(TODAY, 'landscape')).toMatchObject([{ status: 'done', trackId: t.id }])
+
+    // Drawn again: the first drawing on these axes is where the circles stand.
+    host.complete.mockResolvedValue(drawn({ positions: [{ id: 'P1', x: 90, y: 50 }, { id: 'P2', x: -50, y: -50 }] }))
+    ok(await host.call('POST', `tracks/${t.id}/map`))
+    await settled(t.id)
+    view = await overview(t.id)
+    expect(view.landscape!.positions[0]).toMatchObject({ productId: 'p1', x: 90 })
+    expect(view.since).toEqual({ date: TODAY, positions: [{ productId: 'p1', x: 50, y: 50, why: '独立' }, { productId: 'p2', x: -50, y: -50, why: '寄生' }] })
+
+    // The user's own axes start the circles again.
+    const mine = { x: { low: '免费', high: '收费' }, y: { low: '国内', high: '海外' } }
+    ok(await host.call('POST', `tracks/${t.id}/map`, { axes: mine }))
+    await settled(t.id)
+    view = await overview(t.id)
+    expect(view.landscape!.axes).toEqual(mine)
+    expect(view.since).toBeNull()
+  })
+
+  it('refuses to draw with fewer than two products to place, twice at once, for an archived track, or with an axis end left empty', async () => {
+    const t = seed()
+    const lone = addTrack({ name: '一个' })
+    repo.linkProduct(lone.id, 'p1')
+    expect(await host.call('POST', `tracks/${lone.id}/map`)).toMatchObject({ status: 409 })
+    expect((await host.call('POST', `tracks/${lone.id}/map`)).json().error).toBe('至少要有两个建好档的产品，才画得出地图')
+
+    const hold = gate()
+    host.complete.mockImplementation(async () => { await hold.promise; return drawn() })
+    ok(await host.call('POST', `tracks/${t.id}/map`))
+    expect((await overview(t.id)).drawing).toBe(true)
+    expect((await host.call('POST', `tracks/${t.id}/map`)).json()).toMatchObject({ error: '地图正在画，等它画完' })
+    expect((await host.call('POST', `tracks/${t.id}/delete`)).status).toBe(409) // the drawing would outlive its track
+    hold.open()
+    await settled(t.id)
+
+    const blank = { x: { low: '', high: '独立' }, y: AXES.y }
+    expect((await host.call('POST', `tracks/${t.id}/map`, { axes: blank })).status).toBe(400)
+    repo.updateTrack(t.id, { status: 'archived' })
+    expect((await host.call('POST', `tracks/${t.id}/map`)).status).toBe(409)
+  })
+
+  it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
+    const t = seed()
+    host.complete.mockResolvedValue(drawn())
+    await rt.drawMap(t.id)
+    ok(await host.call('POST', `tracks/${t.id}/delete`))
+    expect(repo.landscapesOfTrack(t.id)).toEqual([])
+    expect(repo.runsOfDate(TODAY, 'landscape')).toMatchObject([{ trackId: t.id, subject: 'AI 编程助手' }])
   })
 })

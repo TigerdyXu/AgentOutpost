@@ -77,6 +77,10 @@ export const SAID = {
   dimensionTwice: ['维度「{label}」重复了', 'The dimension “{label}” is listed twice'],
   dimensionUnknown: ['维度 {key} 不是这个赛道的', 'The dimension {key} is not one of this track’s'],
   siteInvalid: ['「{site}」不是网址或域名', '“{site}” is not a web address or domain'],
+  // M2.1: the track's map.
+  unusableMap: ['模型给的地图用不了（格式不对、少了产品，或格局超过 {max} 字），这次没有更新', 'The model’s map could not be used (malformed, a product missing, or the summary over {max} characters), so it was not updated'],
+  mapNeedsProducts: ['至少要有两个建好档的产品，才画得出地图', 'A map needs at least two products with a profile'],
+  mapDrawing: ['地图正在画，等它画完', 'The map is being drawn; wait for it to finish'],
 } as const satisfies Record<string, readonly [string, string]>
 
 export type SaidKey = keyof typeof SAID

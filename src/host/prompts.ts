@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export type PromptName = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup'
+export type PromptName = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'landscape'
 
 const PACKAGE_NAME = 'dsh-outpost'
 const SLOT = /\{\{\s*([A-Za-z_]\w*)\s*\}\}/g

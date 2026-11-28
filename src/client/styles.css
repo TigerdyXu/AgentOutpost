@@ -3076,3 +3076,270 @@ button.op-run-open:focus-visible {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---- 赛道页 (M2.1): header, 格局, 定位地图, 对比矩阵 ---- */
+
+.op-thead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+
+.op-thead-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-thead-meta {
+  margin: 5px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-thead-brief {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.op-tsection {
+  margin-top: 28px;
+}
+
+.op-tsection-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.op-tsection-hint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-tsection-actions {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.op-tsection-note {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.op-map-empty {
+  margin-top: 12px;
+}
+
+/* The map: a landscape box; lines in SVG beneath, the axes' ends and the products in HTML on top. */
+.op-map {
+  position: relative;
+  margin-top: 12px;
+  aspect-ratio: 16 / 9;
+  min-height: 300px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.op-map-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  stroke: var(--dsw-alias-border-l3);
+  stroke-width: 1;
+}
+
+.op-map-trail {
+  stroke: var(--dsw-alias-link);
+  stroke-dasharray: 4 4;
+}
+
+.op-map-axis {
+  position: absolute;
+  max-width: 40%;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.op-map-axis[data-end="x-low"] { left: 10px; top: 50%; transform: translateY(-120%); }
+.op-map-axis[data-end="x-high"] { right: 10px; top: 50%; transform: translateY(-120%); text-align: right; }
+.op-map-axis[data-end="y-high"] { left: 50%; top: 8px; transform: translateX(8px); }
+.op-map-axis[data-end="y-low"] { left: 50%; bottom: 8px; transform: translateX(8px); }
+
+/* Where a product stood at the first drawing on these axes. */
+.op-map-was {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 1.5px dashed var(--dsw-alias-link);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.op-map-point {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 34%;
+  padding: 3px 9px 3px 4px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  transform: translate(-12px, -50%);
+  cursor: pointer;
+}
+
+.op-map-point:hover {
+  border-color: var(--dsw-alias-link);
+  z-index: 1;
+}
+
+.op-map-point:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.op-map-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-axes-form {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-axes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+/* The table: wide tables scroll sideways inside it, the dimension column staying put. */
+.op-matrix-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.op-matrix th,
+.op-matrix td {
+  padding: 10px 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  vertical-align: top;
+  text-align: left;
+}
+
+.op-matrix thead th {
+  border-top: none;
+  min-width: 140px;
+}
+
+.op-matrix tbody th,
+.op-matrix-corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 88px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.op-matrix-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-matrix-product:hover span { color: var(--dsw-alias-link); }
+
+.op-matrix-status {
+  display: block;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.op-matrix td[data-today] {
+  background: var(--dsw-alias-state-business-tertiary);
+}
+
+.op-matrix-cell {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-matrix-cell .op-tag {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.op-matrix-cell:hover > span:first-child { color: var(--dsw-alias-link); }
+
+.op-matrix-cell:focus-visible,
+.op-matrix-product:focus-visible {
+  outline: 2px solid var(--dsw-alias-link);
+  outline-offset: 2px;
+  border-radius: var(--dsw-radius-xs);
+}
+
+.op-matrix-none {
+  color: var(--dsw-alias-label-secondary);
+}
+
+@container (max-width: 719px) {
+  .op-map { aspect-ratio: 4 / 3; }
+  .op-axes-grid { grid-template-columns: minmax(0, 1fr); }
+}

@@ -23,6 +23,11 @@ export const BriefIcon = ({ size }: Props) => <Glyph size={size}>
   <path d="M4 5h13v14H6a2 2 0 0 1-2-2z" /><path d="M17 9h3v8a2 2 0 0 1-2 2" /><path d="M7 9h7M7 13h7M7 16h4" />
 </Glyph>
 
+/** 赛道概览: a table of rows and columns (M2.1). */
+export const OverviewIcon = ({ size }: Props) => <Glyph size={size}>
+  <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M9 4v16" />
+</Glyph>
+
 /** 运行记录: a pulse line. */
 export const RunsIcon = ({ size }: Props) => <Glyph size={size}><path d="M3 12h4l3-7 4 14 3-7h4" /></Glyph>
 
