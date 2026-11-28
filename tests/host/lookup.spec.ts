@@ -228,7 +228,7 @@ describe('outpost_lookup: the tool', () => {
     expect(tool.schema.safeParse({ query: 'Muse', dimension: null }).success).toBe(true)
     await expect(tool.execute({ query: 'Muse' })).resolves.toMatchObject({ product: { name: 'Muse' } })
     // Arguments come as the model sent them: wrong ones are answered in words, a blank dimension is no dimension.
-    await expect(tool.execute({})).resolves.toEqual({ error: expect.stringContaining('query') })
+    await expect(tool.execute({} as never)).resolves.toEqual({ error: expect.stringContaining('query') })
     await expect(tool.execute({ query: 123 } as never)).resolves.toEqual({ error: expect.stringContaining('query') })
     await expect(tool.execute(undefined as never)).resolves.toEqual({ error: expect.stringContaining('query') })
     await expect(tool.execute({ query: 'Muse', dimension: '  ' })).resolves.toMatchObject({ product: { name: 'Muse' }, recentFindings: [] })
