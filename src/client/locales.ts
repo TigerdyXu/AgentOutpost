@@ -232,6 +232,8 @@ const OWN = {
   'track.matrix.title': ['对比矩阵', 'Comparison'],
   'track.matrix.hint': ['点格子跳到对应产品的那张卡', 'Click a cell to open that card'],
   'track.matrix.export': ['导出表格', 'Export table'],
+  'track.matrix.saved': ['已存到「下载」文件夹：{name}', 'Saved to your Downloads folder: {name}'],
+  'track.matrix.saveFailed': ['没存成：{reason}', 'Could not save: {reason}'],
   'track.matrix.file': ['对比矩阵', 'comparison'],
   'track.matrix.dimension': ['维度', 'Dimension'],
   'track.matrix.empty': ['这个赛道还没有产品。', 'This track has no products yet.'],

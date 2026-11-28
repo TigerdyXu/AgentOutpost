@@ -223,18 +223,27 @@ function MatrixSection({ view, titleId }: { view: TrackOverview; titleId: string
   const today = localDay(new Date())
   const columns = products.map(item => ({ product: item.product, cards: cardsByDimension(item.cards) }))
   const open = (product: Product, dimension: Dimension) => { navigate({ page: 'product', productId: product.id, tab: 'dossier', expand: dimension.key }) }
-  const save = () => {
+  // Where the file went (the desktop app says), or why it could not be saved.
+  const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null)
+  const save = async () => {
     const name = fileName(`${track.name}-${t('track.matrix.file')}-${today ?? ''}.csv`)
-    saveFile(name, toCsv(matrixRows(t, view)))
+    setSaved(null)
+    try {
+      const path = await saveFile(name, toCsv(matrixRows(t, view)))
+      if (path) setSaved({ ok: true, text: t('track.matrix.saved', { name: path.split(/[/\\]/).at(-1) ?? name }) })
+    } catch (failure) {
+      setSaved({ ok: false, text: t('track.matrix.saveFailed', { reason: errorOf(failure).message }) })
+    }
   }
   return <section className="op-tsection" aria-labelledby={titleId}>
     <div className="op-tsection-head">
       <h2 className="op-zone-title" id={titleId}>{t('track.matrix.title')}</h2>
       <span className="op-tsection-hint">{t('track.matrix.hint')}</span>
       {products.length > 0 && <div className="op-tsection-actions">
-        <button type="button" className="op-link" onClick={save}>{t('track.matrix.export')}</button>
+        <button type="button" className="op-link" onClick={() => { void save() }}>{t('track.matrix.export')}</button>
       </div>}
     </div>
+    {saved && <p className={saved.ok ? 'op-tsection-note' : 'op-form-problem'} role={saved.ok ? 'status' : 'alert'}>{saved.text}</p>}
     {products.length === 0
       ? <p className="op-zone-text">{t('track.matrix.empty')}</p>
       : <div className="op-matrix-wrap">

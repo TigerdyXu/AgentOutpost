@@ -9,18 +9,42 @@ export function toCsv(rows: readonly (readonly string[])[]): string {
   return `﻿${rows.map(row => row.map(field).join(',')).join('\r\n')}\r\n`
 }
 
-/** Offers `text` to the reader as a file named `name` (a download, as the browser or the desktop app handles one). */
-export function saveFile(name: string, text: string, type = 'text/csv;charset=utf-8'): void {
+/** What the desktop app answers a save with (`@deepseek-ai/dsh-client-ui-file-actions` `FileSaveResult`). */
+type SaveResult = { status: 'cancelled' } | { status: 'requested' } | { status: 'saved'; path: string }
+/**
+ * The desktop app's own file saving, which it gives its main window as `window.dshDesktop.fileActions` (its preload): a
+ * `download` lands in the Downloads folder under the name asked for (made unique), as its own 「下载」 menu does. A page
+ * outside the desktop app (DSH's web version) has none.
+ */
+interface DesktopFiles { save(request: { url: string; name?: string; mediaType?: string; mode: 'download' | 'saveAs' }): Promise<SaveResult> }
+const desktopFiles = (): DesktopFiles | undefined =>
+  (globalThis as { dshDesktop?: { fileActions?: Partial<DesktopFiles> } }).dshDesktop?.fileActions?.save ? (globalThis as unknown as { dshDesktop: { fileActions: DesktopFiles } }).dshDesktop.fileActions : undefined
+
+/**
+ * Saves `text` as a file named `name`: in the desktop app, into the Downloads folder (resolving with where it went); in a
+ * browser, as a download the browser handles (resolving with null, since the page cannot know where it went).
+ * @throws When the desktop app could not save it.
+ */
+export async function saveFile(name: string, text: string, type = 'text/csv;charset=utf-8'): Promise<string | null> {
   const url = URL.createObjectURL(new Blob([text], { type }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  link.style.display = 'none'
-  document.body.append(link)
-  link.click()
-  link.remove()
-  // The download has its own copy by now; the address is let go a little later for browsers that read it lazily.
-  setTimeout(() => { URL.revokeObjectURL(url) }, 10_000)
+  try {
+    const desktop = desktopFiles()
+    if (desktop) {
+      const result = await desktop.save({ url, name, mediaType: type, mode: 'download' })
+      return result.status === 'saved' ? result.path : null
+    }
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.style.display = 'none'
+    document.body.append(link)
+    link.click()
+    link.remove()
+    return null
+  } finally {
+    // The download has its own copy by now; the address is let go a little later for browsers that read it lazily.
+    setTimeout(() => { URL.revokeObjectURL(url) }, 10_000)
+  }
 }
 
 /** A file name without the characters file systems refuse (`/\:*?"<>|`), each made a hyphen. */

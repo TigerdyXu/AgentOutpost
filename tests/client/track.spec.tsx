@@ -84,6 +84,26 @@ describe('赛道页 (M2.1)', () => {
     expect(await made[0]!.text()).toBe(toCsv(matrixRows(t, overview())).slice(1))
   })
 
+  it('saves the table through the desktop app into Downloads, and says where it went or why it did not', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:matrix')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const save = vi.fn(async (_request: { url: string; name?: string; mediaType?: string; mode: string }) =>
+      ({ status: 'saved', path: '/Users/me/Downloads/Personal Agent-对比矩阵-2026-11-28 (1).csv' }) as { status: 'saved'; path: string } | { status: 'cancelled' })
+    const host = globalThis as { dshDesktop?: unknown }
+    host.dshDesktop = { protocolVersion: 1, fileActions: { save } }
+    try {
+      await show()
+      await click('导出表格')
+      expect(save).toHaveBeenCalledWith({ url: 'blob:matrix', name: expect.stringMatching(/^Personal Agent-对比矩阵-\d{4}-\d{2}-\d{2}\.csv$/), mediaType: 'text/csv;charset=utf-8', mode: 'download' })
+      expect(document.querySelector('[role="status"]')?.textContent).toBe('已存到「下载」文件夹：Personal Agent-对比矩阵-2026-11-28 (1).csv')
+      save.mockRejectedValueOnce(new Error('File download unavailable'))
+      await click('导出表格')
+      expect(document.querySelector('[role="alert"]')?.textContent).toBe('没存成：File download unavailable')
+    } finally {
+      delete host.dshDesktop
+    }
+  })
+
   it('puts each product on the map where the drawing says, leaving out one no longer in the track', async () => {
     const { context } = await show()
     const points = all<HTMLButtonElement>('.op-map-point')
