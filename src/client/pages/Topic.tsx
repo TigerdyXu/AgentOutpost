@@ -70,13 +70,14 @@ function TopicPage({ view, reload }: { view: TopicView; reload: () => Promise<vo
     t(topic.cadence === 'weekly' ? 'topic.weekly' : 'topic.once'),
     ...version ? [t('topic.versionOf', { n: version.version ?? 0, date: shortDay(version.createdAt) ?? '' })] : [],
     ...row.next ? [t('topic.next', { date: dayLabel(row.next) })] : [],
-  ].join(' · ')
+  ]
 
   return <div className="op-page op-topic-page">
     <header className="op-thead">
       <div className="op-thead-titles">
         <h1 className="op-page-title">{topic.question}</h1>
-        <p className="op-thead-meta">{meta}</p>
+        {/* Each part kept whole on a line (a date does not break at its hyphen). */}
+        <p className="op-thead-meta">{meta.map((part, i) => <span key={i} className="op-keep">{i > 0 ? ` · ${part}` : part}</span>)}</p>
         <p className="op-topic-with">
           <span>{t('topic.with')}</span>
           {products.map(p => <button key={p.id} type="button" className="op-link" onClick={() => { navigate({ page: 'product', productId: p.id, tab: 'topics' }) }}>{p.name}</button>)}
