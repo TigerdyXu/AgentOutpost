@@ -9,7 +9,7 @@ import type { Brief, Dimension, Finding, Id, ProductStatus, Run, Source, Track }
 import type { ApiResponse } from '../../src/host/api.ts'
 import { joinTrack } from '../../src/host/join.ts'
 import type { Runtime } from '../../src/host/runtime.ts'
-import type { Repo } from '../../src/store/repo.ts'
+import { Repo } from '../../src/store/repo.ts'
 import { apiHost, type ApiHost, type Reply } from '../fixtures/api-host.ts'
 import { completed, flush, gate, usage, type Play } from '../fixtures/fake-driver.ts'
 
@@ -337,7 +337,7 @@ describe('GET brief', () => {
   it('returns another day\'s brief, and an empty one for a day without', async () => {
     expect(ok(await host.call('GET', 'brief?date=2026-11-23')).json<ApiResponse<'GET brief'>>()).toMatchObject({ brief: { date: '2026-11-23' }, prevDate: '2026-11-20' })
     expect(ok(await host.call('GET', 'brief?date=2026-11-20')).json<ApiResponse<'GET brief'>>().prevDate).toBeNull()
-    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-23', notes: {} })
+    expect(ok(await host.call('GET', 'brief?date=2026-11-24')).json()).toEqual({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-23', notes: {}, recaps: [] })
   })
 
   it('says which dimensions each finding actually changed: those whose card a version of it cites, not the ones it names', async () => {
@@ -2093,6 +2093,35 @@ describe('the track page (M2.1)', () => {
     ok(await host.call('POST', 'lookup', { on: true }))
     expect(host.driver.shared.has('outpost_lookup')).toBe(true)
     expect((await host.call('POST', 'lookup', { on: 'yes' })).status).toBe(400)
+  })
+
+  it('gives a track’s weekly recap: by default last week, or this one for a newer track; any day names its week (M3.4)', async () => {
+    const t = seed() // made today, 2026-11-25, a Wednesday
+    const recap = ok(await host.call('GET', `tracks/${t.id}/recap`)).json<ApiResponse<'GET tracks/:id/recap'>>()
+    expect(recap).toMatchObject({ track: { id: t.id }, week: '2026-11-23', end: '2026-11-29', complete: false, prev: null, next: null })
+    expect(ok(await host.call('GET', `tracks/${t.id}/recap?week=2026-11-18`)).json<ApiResponse<'GET tracks/:id/recap'>>().week).toBe('2026-11-16')
+    expect(ok(await host.call('GET', `tracks/${t.id}/recap?week=2027-01-06`)).json<ApiResponse<'GET tracks/:id/recap'>>().week).toBe('2026-11-23') // not after this week
+    expect((await host.call('GET', `tracks/${t.id}/recap?week=11-23`)).status).toBe(400)
+    expect((await host.call('GET', 'tracks/nope/recap')).status).toBe(404)
+    // A track older than last week opens on last week, with its paragraph once written; the brief of that day says so.
+    const earlier = new Repo((rt as unknown as { db: ConstructorParameters<typeof Repo>[0] }).db, () => new Date('2026-11-01T00:00:00.000Z'))
+    const old = earlier.createTrack({ name: '老赛道', brief: '', dimensions: DEFAULT_DIMENSIONS.slice(0, 2), status: 'active' })
+    repo.putRecap({ trackId: old.id, week: '2026-11-16', gist: '上周小豆开始收费。', runId: null })
+    expect(ok(await host.call('GET', `tracks/${old.id}/recap`)).json<ApiResponse<'GET tracks/:id/recap'>>()).toMatchObject({ week: '2026-11-16', complete: true, gist: '上周小豆开始收费。', next: '2026-11-23' })
+    expect(ok(await host.call('GET', 'brief')).json<ApiResponse<'GET brief'>>().recaps).toEqual([{ trackId: old.id, track: old.name, week: '2026-11-16' }])
+  })
+
+  it('retries a failed weekly recap for the week before the run’s, once (M3.4)', async () => {
+    const earlier = new Repo((rt as unknown as { db: ConstructorParameters<typeof Repo>[0] }).db, () => new Date('2026-11-01T00:00:00.000Z'))
+    const old = earlier.createTrack({ name: '老赛道', brief: '', dimensions: DEFAULT_DIMENSIONS.slice(0, 2), status: 'active' })
+    const failed = repo.createRun({ kind: 'recap', date: TODAY, trackId: old.id, productId: null })
+    repo.updateRun(failed.id, { status: 'failed', error: '429' })
+    host.complete.mockResolvedValue({ text: '上周这个赛道没有值得一提的新变化。', usage: usage({ inputTokens: 100, outputTokens: 20 }) })
+    const { runId } = ok(await host.call('POST', `runs/${failed.id}/retry`)).json<{ runId: Id }>()
+    expect(runId).not.toBe(failed.id)
+    await flush()
+    expect(repo.getRecap(old.id, '2026-11-16')?.gist).toBe('上周这个赛道没有值得一提的新变化。')
+    expect((await host.call('POST', `runs/${failed.id}/retry`)).status).toBe(409) // done again since
   })
 
   it('writes, shows and erases the user’s notes on products and findings (M3.3)', async () => {

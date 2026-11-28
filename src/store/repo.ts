@@ -3,7 +3,7 @@ import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
 import { FOLLOWED, identityKey, nameKey } from '../core/identity.ts'
 import type {
-  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Note, NoteKind, Product, ProductStatus, Run, RunKind, Source, Topic, TopicVersion, Track,
+  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Note, NoteKind, Product, ProductStatus, Recap, Run, RunKind, Source, Topic, TopicVersion, Track,
 } from '../core/types.ts'
 import type { Db } from './db.ts'
 
@@ -52,6 +52,7 @@ const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', finding
 const LANDSCAPE = new Codec<Landscape>('landscapes', { id: 'plain', trackId: 'plain', date: 'plain', gist: 'plain', axes: 'json', positions: 'json', runId: 'plain', createdAt: 'plain' })
 const TOPIC = new Codec<Topic>('topics', { id: 'plain', trackId: 'plain', question: 'plain', productIds: 'json', cadence: 'plain', createdAt: 'plain' })
 const TOPIC_VERSION = new Codec<TopicVersion>('topic_versions', { id: 'plain', topicId: 'plain', version: 'plain', status: 'plain', cards: 'json', changeNote: 'plain', runId: 'plain', createdAt: 'plain' })
+const RECAP = new Codec<Recap>('recaps', { trackId: 'plain', week: 'plain', gist: 'plain', runId: 'plain', createdAt: 'plain' })
 const NOTE = new Codec<Note>('notes', { kind: 'plain', subjectId: 'plain', text: 'plain', updatedAt: 'plain' })
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
@@ -287,6 +288,7 @@ export class Repo {
       for (const key of settingKeys) this.setSetting(key, undefined)
       this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind IN ('recommend', 'landscape')").run(track.name, trackId)
       this.db.prepare('DELETE FROM landscapes WHERE track_id = ?').run(trackId)
+      this.db.prepare('DELETE FROM recaps WHERE track_id = ?').run(trackId)
       for (const topic of this.topicsOfTrack(trackId)) this.deleteTopic(topic.id)
       this.db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
       return [...own, ...orphans]
@@ -600,6 +602,24 @@ export class Repo {
   }
 
   // ---- settings ----
+
+  // ---- weekly recaps (M3.4) ----
+
+  /** The AI's summary of the track's week (`week`: its Monday), or null. */
+  getRecap(trackId: Id, week: string): Recap | null {
+    return this.select(RECAP, 'WHERE track_id = ? AND week = ?', trackId, week)[0] ?? null
+  }
+
+  /** Keeps the summary of the track's week, stamped now (a later one for the same week replaces it). */
+  putRecap(r: Omit<Recap, 'createdAt'>): Recap {
+    const recap: Recap = { ...r, createdAt: this.stamp() }
+    this.db.prepare('INSERT INTO recaps (track_id, week, gist, run_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(track_id, week) DO UPDATE SET gist = excluded.gist, run_id = excluded.run_id, created_at = excluded.created_at')
+      .run(recap.trackId, recap.week, recap.gist, recap.runId, recap.createdAt)
+    return recap
+  }
+
+  /** Every summary kept, newest first. */
+  listRecaps(): Recap[] { return this.select(RECAP, 'ORDER BY created_at DESC, rowid DESC') }
 
   // ---- the user's notes (M3.3) ----
 

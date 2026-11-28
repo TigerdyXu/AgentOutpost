@@ -80,6 +80,7 @@ export const SAID = {
   dimensionUnknown: ['维度 {key} 不是这个赛道的', 'The dimension {key} is not one of this track’s'],
   siteInvalid: ['「{site}」不是网址或域名', '“{site}” is not a web address or domain'],
   // M2.1: the track's map.
+  unusableRecap: ['模型给的周回顾总结用不了（空的，或超过 {max} 字），这次没有写', 'The model’s weekly summary could not be used (empty, or over {max} characters), so none was written'],
   unusableMap: ['模型给的地图用不了（格式不对、少了产品，或格局超过 {max} 字），这次没有更新', 'The model’s map could not be used (malformed, a product missing, or the summary over {max} characters), so it was not updated'],
   mapNeedsProducts: ['至少要有两个建好档的产品，才画得出地图', 'A map needs at least two products with a profile'],
   mapDrawing: ['地图正在画，等它画完', 'The map is being drawn; wait for it to finish'],

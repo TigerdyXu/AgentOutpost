@@ -12,6 +12,7 @@ export type Route =
   | { page: 'topic'; topicId: Id }
   | { page: 'product'; productId: Id; tab: ProductTab; expand?: DimensionKey; finding?: Id }
   | { page: 'search'; q: string }
+  | { page: 'recap'; trackId: Id; week?: string }
   | { page: 'runs' }
   | { page: 'settings' }
 
@@ -23,7 +24,7 @@ const text = (value: unknown): string | undefined => typeof value === 'string' &
 
 /** A stored value as a route, with unknown fields dropped; undefined when it names no page or lacks what the page needs. */
 export function parseRoute(value: unknown): Route | undefined {
-  const { page, date, trackId, productId, tab, expand, topicId, finding, q } = (value ?? {}) as Record<string, unknown>
+  const { page, date, trackId, productId, tab, expand, topicId, finding, q, week } = (value ?? {}) as Record<string, unknown>
   switch (page) {
     case 'today': { const day = text(date); return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? { page, date: day } : { page } }
     case 'newTrack': { const id = text(trackId); return id ? { page, trackId: id } : { page } }
@@ -36,6 +37,11 @@ export function parseRoute(value: unknown): Route | undefined {
       return { page, productId: id, tab: TABS.find(item => item === tab) ?? 'dossier', ...dimension ? { expand: dimension } : {}, ...findingId ? { finding: findingId } : {} }
     }
     case 'search': return { page, q: typeof q === 'string' ? q : '' }
+    case 'recap': {
+      const id = text(trackId)
+      const monday = text(week)
+      return id ? { page, trackId: id, ...monday && /^\d{4}-\d{2}-\d{2}$/.test(monday) ? { week: monday } : {} } : undefined
+    }
     case 'topic': { const id = text(topicId); return id ? { page, topicId: id } : undefined }
     case 'runs': case 'settings': return { page }
     default: return undefined
@@ -76,5 +82,6 @@ export function samePage(a: Route, b: Route): boolean {
   if (a.page === 'editTrack' && b.page === 'editTrack') return a.trackId === b.trackId
   if (a.page === 'track' && b.page === 'track') return a.trackId === b.trackId
   if (a.page === 'topic' && b.page === 'topic') return a.topicId === b.topicId
+  if (a.page === 'recap' && b.page === 'recap') return a.trackId === b.trackId
   return true
 }

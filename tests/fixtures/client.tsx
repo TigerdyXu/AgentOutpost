@@ -160,7 +160,7 @@ export const brief = (extra: Partial<Brief> = {}): Brief => ({
   createdAt: new Date(2026, 10, 25, 8, 12).toISOString(), updatedAt: new Date(2026, 10, 25, 8, 12).toISOString(), ...extra,
 })
 /** `GET brief`'s answer: the brief, its findings, the products it names and the sources of the findings. */
-export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {}, ...extra })
+export const briefView = (extra: Partial<BriefView> = {}): BriefView => ({ brief: brief(), findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {}, recaps: [], ...extra })
 
 /** A card of `dimension`, written at the baseline (version 1, nothing highlighted); `body` is the text, `[n]` citing `sourceIds[n - 1]`. */
 export const card = (productId: string, dimension: string, extra: Partial<CardVersion> = {}): CardVersion => ({

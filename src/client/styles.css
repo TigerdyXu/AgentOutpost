@@ -3752,3 +3752,53 @@ button.op-run-open:focus-visible {
   font-size: 13px;
   font-weight: 600;
 }
+
+/* ---- M3.4: weekly recap ---- */
+
+.op-recap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.op-recap-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.op-recap-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: max(15px, var(--dsh-content-font-size));
+}
+
+.op-recap-open {
+  padding: 0 6px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-link);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.op-recap-nav {
+  display: flex;
+  gap: 8px;
+}
+
+/* 「上周回顾已出」 under the brief's summary. */
+.op-recaps-out {
+  margin: 0 0 14px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: max(15px, var(--dsh-content-font-size));
+}
+
+.op-recaps-out .op-link {
+  font-size: inherit;
+}

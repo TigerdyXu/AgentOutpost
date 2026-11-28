@@ -550,7 +550,7 @@ describe('the rest of the day', () => {
   })
 
   it('says when the first brief will arrive when there is none yet', async () => {
-    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {} })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {}, recaps: [] })
     expect(text()).toContain('还没有哨报：前哨每天 08:00 跑完后会出现在这里')
     expect(all('.op-card')).toHaveLength(0)
     expect(title()).toBe('11月25日 · 周三')
@@ -558,13 +558,13 @@ describe('the rest of the day', () => {
     expect(document.querySelector<HTMLButtonElement>('.op-day-nav button')!.textContent).toBe('‹ 昨天')
     unmount()
     // Without the time, it leaves the time out.
-    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-24', notes: {} }, { state: undefined })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: '2026-11-24', notes: {}, recaps: [] }, { state: undefined })
     expect(text()).toContain('还没有哨报：前哨每天跑完后会出现在这里')
     expect(document.querySelector<HTMLButtonElement>('.op-day-nav button')!.disabled).toBe(false)
   })
 
   it('says an earlier day has no brief', async () => {
-    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {} }, { route: { page: 'today', date: '2026-11-20' } })
+    await show({ brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null, notes: {}, recaps: [] }, { route: { page: 'today', date: '2026-11-20' } })
     expect(title()).toBe('11月20日 · 周五')
     expect(text()).toContain('这一天没有哨报')
     expect(text()).not.toContain('还没有哨报')

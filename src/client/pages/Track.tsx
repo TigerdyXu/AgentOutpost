@@ -108,6 +108,7 @@ function TrackPage({ view, reload }: { view: TrackOverview; reload: () => Promis
         <WeeklyLine view={view} reload={reload} />
       </div>
       <div className="op-phead-actions">
+        <button type="button" className="op-button" onClick={() => { navigate({ page: 'recap', trackId: track.id }) }}>{t('recap.button')}</button>
         <button type="button" className="op-button" onClick={() => { navigate({ page: 'editTrack', trackId: track.id }) }}>{t('track.page.settings')}</button>
       </div>
     </header>

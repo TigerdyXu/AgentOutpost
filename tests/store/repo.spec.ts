@@ -9,7 +9,7 @@ import { lockDataDir, openDb, type Db } from '../../src/store/db.ts'
 import { MIGRATIONS, migrate } from '../../src/store/migrations.ts'
 import { Repo } from '../../src/store/repo.ts'
 
-const TABLES = ['tracks', 'products', 'track_products', 'candidates', 'sources', 'findings', 'card_versions', 'card_edits', 'facts', 'briefs', 'runs', 'settings_kv', 'landscapes', 'topics', 'topic_versions', 'notes']
+const TABLES = ['tracks', 'products', 'track_products', 'candidates', 'sources', 'findings', 'card_versions', 'card_edits', 'facts', 'briefs', 'runs', 'settings_kv', 'landscapes', 'topics', 'topic_versions', 'notes', 'recaps']
 const mode = (path: string) => statSync(path).mode & 0o777
 
 let dir: string

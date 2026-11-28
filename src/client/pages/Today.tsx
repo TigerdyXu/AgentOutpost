@@ -171,6 +171,9 @@ export function Today(): ReactNode {
       </div>
     </header>
     {problem && <p className="op-day-problem" role="alert">{problem}</p>}
+    {/* 「上周回顾已出」 (M3.4): on the day a recap's paragraph was written, quiet day or not. */}
+    {view && view.recaps.length > 0 && <p className="op-recaps-out">{t('today.recaps')}{view.recaps.map((r, i) => <span key={r.trackId}>{i > 0 && t('today.list')}
+      <button type="button" className="op-link" onClick={() => { navigate({ page: 'recap', trackId: r.trackId, week: r.week }) }}>{r.track}</button></span>)}</p>}
 
     {!brief && <p className="op-day-empty">{past ? t('today.noBriefThatDay') : state ? t('today.noBrief', { time: state.runTime }) : t('today.noBriefAnyTime')}</p>}
     {brief && noNews && <p className="op-day-empty">{t('today.noNews')}</p>}

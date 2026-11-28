@@ -438,6 +438,7 @@ const OWN = {
   'runs.kind.landscape': ['画地图', 'Map'],
   'runs.kind.topic': ['专题', 'Topic'],
   'runs.kind.topicCheck': ['专题核查', 'Topic check'],
+  'runs.kind.recap': ['周回顾', 'Weekly recap'],
   'runs.object.brief': ['哨报', 'The brief'],
   'runs.status.queued': ['排队中', 'Waiting'],
   'runs.status.running': ['运行中', 'Running'],
@@ -560,6 +561,28 @@ const OWN = {
   'note.placeholder.product': ['只有你自己看得到；调研不会读它。搜索、追问和其他对话查前哨时会用上。', 'Only you see it; research never reads it. Search, Ask more and other chats looking Outpost up use it.'],
   'note.placeholder.finding': ['对这条的看法，或者要跟进的事', 'What you make of this, or what to follow up'],
   'search.inNote': ['我的笔记', 'My note'],
+
+  // M3.4: a track's weekly recap.
+  'recap.button': ['周回顾', 'Weekly recap'],
+  'recap.title': ['{track} · 周回顾', '{track} · weekly recap'],
+  'recap.range': ['{start} – {end}', '{start} – {end}'],
+  'recap.open': ['本周到目前，还没过完', 'This week so far'],
+  'recap.loading': ['正在读…', 'Loading…'],
+  'recap.prev': ['‹ 上一周', '‹ Previous week'],
+  'recap.next': ['下一周 ›', 'Next week ›'],
+  'recap.gistPending': ['这周过完后，下周第一次日更时会写一段 AI 总结（约 ¥0.01）。', 'Once the week is over, an AI summary is written at the first daily update of the next week (about ¥0.01).'],
+  'recap.gistMissing': ['这周没有 AI 总结：那几天没写成，或者这周没有新东西。', 'No AI summary for this week: it was not written, or the week had nothing new.'],
+  'recap.empty': ['这一周这个赛道没有新东西。', 'Nothing new in this track this week.'],
+  'recap.findings': ['值得看的发现', 'Findings worth a look'],
+  'recap.minor': ['另有 {count} 条小更新，在各产品的「动态」里', '{count} more minor updates, in each product’s Feed'],
+  'recap.cards': ['档案的变化', 'Dossier changes'],
+  'recap.newProducts': ['新建档', 'Newly profiled'],
+  'recap.map': ['定位地图', 'Positioning map'],
+  'recap.moved': ['挪了位置：{names}', 'Moved: {names}'],
+  'recap.topics': ['专题的新版本', 'Topic updates'],
+  'recap.topicVersion': ['第 {version} 版', 'version {version}'],
+  'recap.quiet': ['整周没动静：', 'Quiet all week: '],
+  'today.recaps': ['上周回顾已出：', 'Last week’s recap is out: '],
 } as const satisfies Record<string, readonly [string, string]>
 
 /** The host's fixed sentences (`src/core/messages.ts`) as keys `said.<key>`: how the panel shows a text it recognises (`told`). */
@@ -581,6 +604,7 @@ const ONE = {
   'sources.citedBy': 'Cited by {count} conclusion',
   'runs.meta': 'Last 7 days · {count} run · costs are estimates',
   'search.found': '{count} match',
+  'recap.minor': '{count} more minor update, in each product’s Feed',
   'runs.searches': 'Includes {count} web search, estimated at about 8,000 input and 800 output tokens',
   'said.retried': '{reason} (tried again {count} time)',
 } as const satisfies Partial<Record<keyof typeof OWN | keyof typeof SAID_TEXT, string>>

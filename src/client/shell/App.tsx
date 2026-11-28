@@ -16,6 +16,7 @@ import { EditTrack } from '../pages/EditTrack.tsx'
 import { NewTrack } from '../pages/NewTrack.tsx'
 import { Product } from '../pages/Product.tsx'
 import { Runs } from '../pages/Runs.tsx'
+import { Recap } from '../pages/Recap.tsx'
 import { Search } from '../pages/Search.tsx'
 import { Settings } from '../pages/Settings.tsx'
 import { Today } from '../pages/Today.tsx'
@@ -55,6 +56,7 @@ function Page(): ReactNode {
     case 'topic': return <Topic />
     case 'product': return <Product />
     case 'search': return <Search />
+    case 'recap': return <Recap />
     case 'runs': return <Runs />
     case 'settings': return <Settings />
   }
@@ -62,7 +64,7 @@ function Page(): ReactNode {
 
 /** Identifies the page of a route, tabs and cards aside (a day of the brief is a page): moving to another one starts the right column at its top. */
 const pageOf = (route: Route) => route.page === 'product' ? `product:${route.productId}` : route.page === 'newTrack' ? `newTrack:${route.trackId ?? ''}`
-  : route.page === 'addProduct' ? `addProduct:${route.trackId}` : route.page === 'editTrack' ? `editTrack:${route.trackId}` : route.page === 'track' ? `track:${route.trackId}` : route.page === 'topic' ? `topic:${route.topicId}` : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
+  : route.page === 'addProduct' ? `addProduct:${route.trackId}` : route.page === 'editTrack' ? `editTrack:${route.trackId}` : route.page === 'track' ? `track:${route.trackId}` : route.page === 'topic' ? `topic:${route.topicId}` : route.page === 'recap' ? `recap:${route.trackId}:${route.week ?? ''}` : route.page === 'today' ? `today:${route.date ?? ''}` : route.page
 
 /**
  * `sessions` is DSH's session catalog and workspace, for the pages that open a session (追问, 运行记录); `configForm` is DSH's

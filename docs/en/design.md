@@ -32,6 +32,8 @@
 
 > **M3.3 changes (2026-11-28)**: a product and every finding can have a note of the user's own (≤2000 characters on a product, ≤500 on a finding), which research and checks never read; search, Ask more and other chats looking Outpost up use it, marked as the user's view. Database version 8. For details see [`docs/en/m3.3-design.md`](m3.3-design.md).
 
+> **M3.4 changes (2026-11-28)**: every track has a weekly recap (Monday to Sunday): findings worth a look, dossier changes, newly profiled products, the map and topics, read from the data for free; a week that is over gets an AI summary after the new week's first daily run (about ¥0.01), and that day's brief says so. Database version 9. For details see [`docs/en/m3.4-design.md`](m3.4-design.md).
+
 ## 1. Why build this
 
 The user keeps following product news in directions such as Personal Agent (Meta Muse, 豆包·小豆, OpenAI Dots, Grok Bots, 蚂蚁灵光 and others). Until now they asked an Agent to search each time (for example, on 11-16 in 飞书 (Feishu) they asked dsh-superagent to "check what is new lately among personal agents"). The problems with an ad hoc search: every time it starts from zero, results do not connect, you cannot see "what changed", and it is hard to tell true from false.

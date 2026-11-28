@@ -30,6 +30,7 @@ import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/lan
 import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
 import { topicSchedule } from './jobs/topic.ts'
 import { QUERY_MAX, search, type SearchResults } from './search.ts'
+import { composeRecap, weekStart, writeRecap, type RecapView } from './jobs/recap.ts'
 import { LAST_COMPLETED } from './scheduler.ts'
 import { UI_LANGUAGE } from './titles.ts'
 import { startRecommendation } from './jobs/recommend.ts'
@@ -96,6 +97,8 @@ export interface BriefView {
   prevDate: string | null
   /** The user's notes on `findings` (M3.3), by finding. */
   notes: Record<Id, Note>
+  /** The weekly recaps whose paragraph was written that day (M3.4): 「上周回顾已出」. */
+  recaps: { trackId: Id; track: string; week: string }[]
 }
 export interface CandidatesView {
   /** The latest recommendation of the track (its run id), or null when it never had one. */
@@ -240,6 +243,11 @@ export interface Api {
   'POST tracks/:id/recommend': { body?: { refine?: string }; response: { batchId: Id } }
   'GET tracks/:id/candidates': { response: CandidatesView }
   'GET tracks/:id/overview': { response: TrackOverview }
+  /**
+   * The track's weekly recap (M3.4) of the week `week` is in (its Monday is used); without `week`, last week's, or this
+   * week's when the track is newer than last week. A week after this one is this one.
+   */
+  'GET tracks/:id/recap': { query?: { week?: string }; response: RecapView }
   /**
    * Draws the track's map now (M2.1), in the background: the page reads `drawing` until it is over. With `axes` (换轴),
    * the map is drawn on those, and its dashed circles start again from this drawing. It costs one call to the brief's
@@ -711,7 +719,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
    * too); for a recommendation, the track has a newer batch.
    */
   const redone = (run: Run): boolean => {
-    if (run.kind === 'recommend' || run.kind === 'landscape') return run.trackId !== null && repo.latestRun(run.kind, { trackId: run.trackId })?.id !== run.id
+    if (run.kind === 'recommend' || run.kind === 'landscape' || run.kind === 'recap') return run.trackId !== null && repo.latestRun(run.kind, { trackId: run.trackId })?.id !== run.id
     if (run.kind !== 'daily' && run.kind !== 'verify') return false
     const day = repo.runsOfDate(run.date).filter(r => r.productId === run.productId)
     const later = day.slice(day.findIndex(r => r.id === run.id) + 1)
@@ -775,7 +783,11 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const date = query.date === undefined ? rt.today() : day(query.date, 'date')
       const brief = repo.getBrief(date)
       const prevDate = repo.previousBriefDate(date)
-      if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate, notes: {} }
+      const recaps = repo.listRecaps().filter(r => localDate(new Date(r.createdAt)) === date).flatMap(r => {
+        const t = repo.listTracks().find(each => each.id === r.trackId)
+        return t && t.status !== 'archived' ? [{ trackId: t.id, track: t.name, week: r.week }] : []
+      })
+      if (!brief) return { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate, notes: {}, recaps }
       const findings = [...brief.findingIds, ...brief.minorIds].flatMap(id => repo.getFinding(id) ?? []).filter(isShown)
       return {
         // What the day cost as it stands now: a map drawn, or a topic looked into, after the brief was written counts too.
@@ -786,6 +798,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         changed: changedBy(findings),
         prevDate,
         notes: Object.fromEntries(repo.notesOf('finding', findings.map(f => f.id))),
+        recaps,
       }
     },
 
@@ -855,6 +868,15 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const { refine } = Recommend.parse(await req.body() ?? {})
       if (recommending(t.id)) throw new ApiError(409, say('recommending'))
       return { batchId: await startRecommendation(rt.jobs, t.id, refine) }
+    },
+
+    'GET tracks/:id/recap': ({ params, query }) => {
+      const t = track(params.id!)
+      const today = rt.today()
+      const thisWeek = weekStart(today)
+      const lastWeek = shiftDate(thisWeek, -7)
+      const asked = query.week === undefined ? (localDate(new Date(t.createdAt)) <= shiftDate(lastWeek, 6) ? lastWeek : thisWeek) : weekStart(day(query.week, 'week'))
+      return composeRecap(repo, t, asked > thisWeek ? thisWeek : asked, today)
     },
 
     'GET tracks/:id/overview': ({ params }) => {
@@ -1219,6 +1241,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
           if (rt.isDrawing(t.id)) throw new ApiError(409, say('mapDrawing'))
           if (mappable(repo, t).length < MAP_MIN_PRODUCTS) throw new ApiError(409, say('mapNeedsProducts'))
           const runId = await startedRun(r => r.kind === 'landscape' && r.trackId === t.id, () => { rt.background(rt.drawMap(t.id), `map of track ${t.id}`) })
+          return { runId: runId ?? run.id }
+        }
+        case 'recap': {
+          // The week before the one the run was in: the paragraph it was writing; once one is kept, nothing is left to do.
+          const t = track(run.trackId ?? '')
+          const week = shiftDate(weekStart(run.date), -7)
+          if (repo.getRecap(t.id, week)) throw new ApiError(409, say('alreadyRetried'))
+          const runId = await startedRun(r => r.kind === 'recap' && r.trackId === t.id, () => { rt.background(writeRecap(rt.briefs, t.id, week, rt.today()), `weekly recap of track ${t.id}`) })
           return { runId: runId ?? run.id }
         }
         case 'followup':

@@ -218,6 +218,12 @@ describe('outpost_lookup: a track', () => {
     })
   })
 
+  it('gives the paragraph of the track’s latest weekly recap, marked the AI’s (M3.4)', () => {
+    repo.putRecap({ trackId: agent.id, week: '2026-11-16', gist: '小豆开始收费。', runId: null })
+    expect(ask('Personal Agent')).toMatchObject({ lastWeekRecap: { week: '2026-11-16', gist: '小豆开始收费。', aiSummary: true } })
+    expect(ask('手机 AI 助理')).not.toHaveProperty('lastWeekRecap')
+  })
+
   it('gives one dimension across its products, in full', () => {
     card('p1', 'business', '会员制')
     expect(ask('Personal Agent', 'Business model')).toMatchObject({

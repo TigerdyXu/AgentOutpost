@@ -67,6 +67,9 @@ export interface TopicVersion { id: Id; topicId: Id; version: number | null; sta
 export type NoteKind = 'product' | 'finding'
 export interface Note { kind: NoteKind; subjectId: Id; text: string; updatedAt: string }
 
+/** The AI's summary of a track's week (M3.4), written once the week is over; the rest of the recap is read from the data. */
+export interface Recap { trackId: Id; week: string; gist: string; runId: Id | null; createdAt: string }
+
 export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
   /**
    * Tracked products not updated that day, with why. Without `failed` the budget stopped it (shown 「因预算未跑：…」);
@@ -80,7 +83,7 @@ export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds:
  * track's map and its one-sentence 格局, drawn by a model call (M2.1). `topic` and `topicCheck`: a 专题's research and its
  * check (M2.3).
  */
-export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify' | 'landscape' | 'topic' | 'topicCheck'
+export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify' | 'landscape' | 'topic' | 'topicCheck' | 'recap'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'
 /**
  * Tokens a model call used. `searches` counts the web searches made on a DeepSeek route: each is a hidden model call of its

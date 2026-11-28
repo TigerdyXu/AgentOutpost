@@ -30,6 +30,7 @@ import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
 import { runDailyProduct } from './jobs/daily.ts'
 import { drawLandscape, needsDrawing } from './jobs/landscape.ts'
 import { recommendAndWait } from './jobs/recommend.ts'
+import { recapDue, writeRecap } from './jobs/recap.ts'
 import { runTopic, topicDue } from './jobs/topic.ts'
 import { WEEKLY_REFINE, WEEKLY_SUBJECT, weeklyDue } from './jobs/weekly.ts'
 import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from './jobs/runner.ts'
@@ -152,6 +153,7 @@ export class Runtime {
       drawMaps: date => this.drawMaps(date),
       suggestWeekly: date => this.suggestWeekly(date),
       updateTopics: date => this.updateTopics(date),
+      writeRecaps: date => this.writeRecaps(date),
       log,
     })
   }
@@ -344,6 +346,20 @@ export class Runtime {
       try { await unregister?.() } catch (error) { this.log(`the browser preset could not be unregistered: ${messageOf(error)}`) }
     })
     return this.browserPreset
+  }
+
+  /**
+   * After the day's other work: writes, one after another, the paragraph of last week's recap of each track due for one on
+   * `date` (`recapDue`, M3.4), on that day's budget.
+   */
+  private async writeRecaps(date: string): Promise<void> {
+    for (const track of this.repo.listTracks()) {
+      if (this.runner.stopSignal.aborted) return
+      const week = recapDue(this.repo, track, date)
+      if (!week) continue
+      try { await writeRecap(this.briefs, track.id, week, date) }
+      catch (error) { this.log(`the weekly recap of track ${track.id} could not be written: ${messageOf(error)}`) }
+    }
   }
 
   /** Whether the user turned the browser fallback off. */

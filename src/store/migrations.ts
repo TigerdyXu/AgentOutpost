@@ -239,6 +239,17 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (kind, subject_id)
   );
   `,
+  // 9: the AI's summary of each track's week (M3.4), by the week's Monday; the rest of a recap is read from the data.
+  `
+  CREATE TABLE recaps (
+    track_id TEXT NOT NULL,
+    week TEXT NOT NULL,
+    gist TEXT NOT NULL,
+    run_id TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (track_id, week)
+  );
+  `,
 ]
 
 /**

@@ -46,7 +46,9 @@ You need:
 
 **8. Your own notes.** Under a product page's title, and beside "Ask more" on every finding, write a note of your own: what you think, what to watch. Only you see it and research never reads it; search, Ask more and other chats looking Outpost up use it, marked as your view.
 
-**9. Ask from any chat.** In any chat of DeepSeek Harness, ask "what does Outpost have on 小豆's business model?" or "who charges in the Personal Agent track?": the AI looks it up with `outpost_lookup` and answers from the checked dossiers and their sources, saying as of which day. It only reads and costs Outpost nothing; to keep other chats from seeing Outpost, turn it off in Outpost's Settings.
+**9. Weekly recap.** The track page's "Weekly recap": a week's (Monday to Sunday) findings worth a look, dossier changes, newly profiled products, the map's changes and topic updates, each opening the thing itself; a week that is over also gets an AI summary, written after the new week's first daily update (about ¥0.01), and that day's brief says so.
+
+**10. Ask from any chat.** In any chat of DeepSeek Harness, ask "what does Outpost have on 小豆's business model?" or "who charges in the Personal Agent track?": the AI looks it up with `outpost_lookup` and answers from the checked dossiers and their sources, saying as of which day. It only reads and costs Outpost nothing; to keep other chats from seeing Outpost, turn it off in Outpost's Settings.
 
 <img src="docs/images/add-product.png" width="760" alt="Add product">
 

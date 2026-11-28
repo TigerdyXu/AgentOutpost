@@ -224,8 +224,10 @@ function trackView(repo: Repo, track: Track, asked: string | null) {
     }
   }
   const map = repo.latestLandscape(track.id)
+  const lastWeek = repo.listRecaps().find(r => r.trackId === track.id)
   return {
     ...head,
+    ...lastWeek ? { lastWeekRecap: { week: lastWeek.week, gist: lastWeek.gist, aiSummary: true } } : {},
     products: products.map(p => {
       const positioning = repo.latestCards(p.id).find(c => c.dimension === 'positioning') ?? null
       return { name: p.name, company: p.company, status: p.status, positioning: positioning?.summary ?? null }
