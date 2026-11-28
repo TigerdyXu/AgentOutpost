@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Config } from '../../src/config.ts'
@@ -437,7 +437,9 @@ describe('PATCH tracks/:id', () => {
     expect(changed).toMatchObject({ name: '编程 Agent', brief: '只看 IDE 类' })
     expect(custom(changed)).toEqual([{ key: `${growth}-2`, label: '用户增长与留存策略研究' }, { key: slugDimension('定价'), label: '定价' }])
     expect(changed.dimensions.slice(0, DEFAULT_DIMENSIONS.length)).toEqual(DEFAULT_DIMENSIONS)
-    expect(repo.listTracks().find(t => t.id === id)).toEqual(changed)
+    const { toppedUp, ...stored } = changed as Track & { toppedUp: number }
+    expect(toppedUp).toBe(0) // nothing tracked in it yet
+    expect(repo.listTracks().find(t => t.id === id)).toEqual(stored)
   })
 
   it('never hands a removed dimension\'s key, whose cards remain, to a new label', async () => {
@@ -1609,5 +1611,124 @@ describe('runs', () => {
     expect((await host.call('POST', 'runs/nope/retry')).status).toBe(404)
     await flush()
     expect(host.driver.runs).toEqual([])
+  })
+})
+
+describe('deleting and editing tracks and products (M1.5)', () => {
+  const iconFile = (id: Id) => {
+    mkdirSync(join(host.dataDir, 'icons'), { recursive: true })
+    const path = join(host.dataDir, 'icons', `${id}.png`)
+    writeFileSync(path, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    repo.setProductIcon(id, path)
+    return path
+  }
+
+  it('POST products/:id/delete erases the product, its icon and its brief entries, and keeps its runs', async () => {
+    const track = addTrack()
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    addProduct('p2', 'Windsurf', 'tracking', track.id)
+    const icon = iconFile('p1')
+    const [f1, f2] = [addFinding('p1'), addFinding('p2')]
+    putBrief(TODAY, [f1.id, f2.id], { quietProductIds: ['p1'] })
+    ok(await host.call('POST', 'products/p1/delete', {}))
+    expect(repo.getProduct('p1')).toBeNull()
+    expect(repo.getBrief(TODAY)).toMatchObject({ findingIds: [f2.id], quietProductIds: [] })
+    await vi.waitFor(() => { expect(existsSync(icon)).toBe(false) })
+    const runs = ok(await host.call('GET', 'runs')).json<ApiResponse<'GET runs'>>().runs
+    expect(runs.find(r => r.productId === 'p1')).toMatchObject({ productName: null, subject: 'Cursor' })
+    const state = ok(await host.call('GET', 'state')).json<ApiResponse<'GET state'>>()
+    expect(state.tracks[0]!.products.map(p => p.product.name)).toEqual(['Windsurf'])
+    expect((await host.call('POST', 'products/p1/delete', {})).status).toBe(404)
+  })
+
+  it('refuses to delete a product while work on it is queued or running, and says so', async () => {
+    addProduct('p1', 'Cursor', 'tracking', addTrack().id)
+    addRun('daily', { status: 'running' }, TODAY, { productId: 'p1' })
+    const reply = await host.call('POST', 'products/p1/delete', {})
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '「Cursor」正在建档、更新或核查，等它跑完再删' })
+    expect(repo.getProduct('p1')).not.toBeNull()
+  })
+
+  it('does not wait for a follow-up chat to delete its product', async () => {
+    addProduct('p1', 'Cursor', 'tracking', addTrack().id)
+    addRun('followup', { status: 'running' }, TODAY, { productId: 'p1' })
+    ok(await host.call('POST', 'products/p1/delete', {}))
+  })
+
+  it('POST tracks/:id/delete erases the products only it has, leaves the shared ones, and counts what it erased', async () => {
+    const t1 = addTrack({ name: '赛道一' }), t2 = addTrack({ name: '赛道二' })
+    addProduct('p1', 'Cursor', 'tracking', t1.id)
+    addProduct('p2', 'Windsurf', 'paused', t1.id)
+    addProduct('p3', 'Cline', 'tracking', t1.id); repo.linkProduct(t2.id, 'p3')
+    addProduct('c1', 'Zed', 'candidate'); addCandidate(t1.id, 'c1')
+    const reply = ok(await host.call('POST', `tracks/${t1.id}/delete`, {})).json<ApiResponse<'POST tracks/:id/delete'>>()
+    expect(reply).toEqual({ ok: true, deletedProducts: 2 })
+    expect(repo.listTracks().map(t => t.name)).toEqual(['赛道二'])
+    expect(['p1', 'p2', 'c1'].map(id => repo.getProduct(id))).toEqual([null, null, null])
+    expect(repo.productsOfTrack(t2.id).map(p => p.id)).toEqual(['p3'])
+  })
+
+  it('refuses to delete a track while its recommendation runs, or while a product it would erase is busy', async () => {
+    const t1 = addTrack()
+    addProduct('p1', 'Cursor', 'tracking', t1.id)
+    const suggest = addRun('recommend', { status: 'running' }, TODAY, { trackId: t1.id })
+    let reply = await host.call('POST', `tracks/${t1.id}/delete`, {})
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '这个赛道的推荐或产品确认还在进行，等它跑完再删' })
+    repo.updateRun(suggest.id, { status: 'done' })
+    addRun('baseline', { status: 'queued' }, TODAY, { productId: 'p1' })
+    reply = await host.call('POST', `tracks/${t1.id}/delete`, {})
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '「Cursor」正在建档、更新或核查，等它跑完再删' })
+    expect(repo.listTracks()).toHaveLength(1)
+  })
+
+  it('PATCH products/:id renames, refuses a name another followed product has, and keeps the official sites as host names', async () => {
+    const track = addTrack()
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    addProduct('p2', 'Windsurf', 'tracking', track.id)
+    // Spelled a little differently (spaces, case), it is still Windsurf.
+    let reply = await host.call('PATCH', 'products/p1', { name: 'wind surf', company: 'Windsurf Inc' })
+    expect(reply.status).toBe(409)
+    expect(reply.json()).toEqual({ error: '已经有一个「Windsurf」在跟踪了。想合并的话，删掉其中一个' })
+    expect(repo.getProduct('p1')!.name).toBe('Cursor')
+    const renamed = ok(await host.call('PATCH', 'products/p1', { name: '通义千问 Go', company: '阿里巴巴', officialDomains: ['https://www.Qianwen.com/go', 'tongyi.aliyun.com', ' '] })).json<ApiResponse<'PATCH products/:id'>>()
+    expect(renamed).toMatchObject({ id: 'p1', name: '通义千问 Go', company: '阿里巴巴', officialDomains: ['qianwen.com', 'tongyi.aliyun.com'], status: 'tracking' })
+    reply = await host.call('PATCH', 'products/p1', { officialDomains: ['not a site'] })
+    expect(reply.status).toBe(400)
+    expect(reply.json()).toEqual({ error: '「not a site」不是网址或域名' })
+    expect((await host.call('PATCH', 'products/p1', { name: '!!!' })).status).toBe(400)
+  })
+
+  it('PATCH tracks/:id with dimensions renames keeping the key, removes, adds, and fills in only the added ones', async () => {
+    const track = addTrack({ dimensions: [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }] })
+    addProduct('p1', 'Cursor', 'tracking', track.id)
+    card('p1', 'positioning', 1, [])
+    card('p1', 'business', 1, [])
+    const reply = ok(await host.call('PATCH', `tracks/${track.id}`, { dimensions: [
+      { key: 'positioning', label: '产品定位' }, { label: '定价' }, { label: '目标人群' },
+    ] })).json<ApiResponse<'PATCH tracks/:id'>>()
+    expect(reply.dimensions).toEqual([{ key: 'positioning', label: '产品定位' }, { key: slugDimension('定价'), label: '定价' }, { key: 'audience', label: '目标人群' }])
+    expect(reply.toppedUp).toBe(1)
+    const view = ok(await host.call('GET', 'products/p1')).json<ApiResponse<'GET products/:id'>>()
+    expect(view.cards.map(c => c.dimension)).toEqual(['positioning', 'business']) // the removed one's card is kept
+    expect(view.dimensions.map(d => d.label)).toEqual(['产品定位', '定价', '目标人群'])
+  })
+
+  it('PATCH tracks/:id refuses no dimension, a label twice, and a key the track does not have', async () => {
+    const track = addTrack()
+    const refusal = async (dimensions: unknown) => { const reply = await host.call('PATCH', `tracks/${track.id}`, { dimensions }); expect(reply.status).toBe(400); return reply.json() }
+    expect(await refusal([])).toEqual({ error: '至少留一个维度' })
+    expect(await refusal([{ key: 'positioning', label: '定位' }, { label: ' 定位 ' }])).toEqual({ error: '维度「定位」重复了' })
+    expect(await refusal([{ key: 'nope', label: '别的' }])).toEqual({ error: '维度 nope 不是这个赛道的' })
+    expect(repo.listTracks()[0]!.dimensions).toEqual(DEFAULT_DIMENSIONS)
+  })
+
+  it('PATCH tracks/:id with extraDimensions keeps the defaults as the track has them', async () => {
+    const track = addTrack({ status: 'picking' })
+    ok(await host.call('PATCH', `tracks/${track.id}`, { dimensions: [{ key: 'positioning', label: '产品定位' }, { key: 'business', label: '商业化' }] }))
+    const reply = ok(await host.call('PATCH', `tracks/${track.id}`, { extraDimensions: ['定价'] })).json<ApiResponse<'PATCH tracks/:id'>>()
+    expect(reply.dimensions.map(d => d.label)).toEqual(['产品定位', '商业化', '定价'])
   })
 })

@@ -412,7 +412,7 @@ describe('api client', () => {
     const api = stubApi({
       'POST findings/:id/read': { ok: true },
       'POST products/:id/update-now': { runId: 'r1' },
-      'PATCH tracks/:id': track('t1', '眼镜', []).track,
+      'PATCH tracks/:id': { ...track('t1', '眼镜', []).track, toppedUp: 0 },
       'GET state': state(),
       'GET brief': { brief: null, findings: [], products: [], sources: [], changed: {}, prevDate: null },
     })

@@ -568,7 +568,7 @@ describe('step 1: saying what to follow', () => {
   it('shows the form as a summary block once it is sent, and 改 changes it', async () => {
     const api = stubApi({
       'GET state': created, 'GET tracks/:id/candidates': view([]), 'GET runs': { runs: [] },
-      'PATCH tracks/:id': { ...created.tracks[0]!.track, name: 'Agent 们' },
+      'PATCH tracks/:id': { ...created.tracks[0]!.track, name: 'Agent 们', toppedUp: 0 },
     })
     const context = await mount(<NewTrack />, { state: created, route: { page: 'newTrack', trackId: 't9' } })
     // The form has collapsed: step 1 is done, the name is the title, what was asked is in the block.

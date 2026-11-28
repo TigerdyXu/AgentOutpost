@@ -5,7 +5,7 @@
  * Rules every route keeps: request bodies are checked with zod (a bad or over-long field is a 400 naming it); an id that
  * names nothing is a 404; a request that cannot be done in the current state is a 409 with a sentence the panel shows.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { unreadCount } from '../core/brief.ts'
@@ -145,10 +145,21 @@ export interface Api {
   /** Creates the track (status `picking`; dimensions: the six defaults, then the custom ones) and starts its recommendation. */
   'POST tracks': { body: { name: string; brief: string; extraDimensions: string[] }; response: { trackId: Id; batchId: Id } }
   /**
-   * `extraDimensions` replaces the custom dimensions; a label the track keeps keeps its key. A dimension added is filled in
-   * at once for the track's tracked products that lack its card.
+   * `extraDimensions` replaces the custom dimensions (the six defaults stay as the track has them); a label the track keeps
+   * keeps its key. `dimensions` (M1.5, not with `extraDimensions`) is the whole list instead, in its order: an entry with a
+   * `key` is one of the track's dimensions, renamed if its label changed (its cards stay); one without is a new one; a
+   * dimension left out is removed (its cards stay stored, out of sight). At least one; a label twice, or a key the track
+   * does not have, is a 400. A dimension added is filled in at once for the track's tracked products that lack its card:
+   * `toppedUp` is how many products that is.
    */
-  'PATCH tracks/:id': { body: { name?: string; brief?: string; extraDimensions?: string[] }; response: Track }
+  'PATCH tracks/:id': { body: { name?: string; brief?: string; extraDimensions?: string[]; dimensions?: { key?: DimensionKey; label: string }[] }; response: Track & { toppedUp: number } }
+  /**
+   * Deletes the track (M1.5): its products that no other track has are erased with it (`Repo.deleteProduct`), the others
+   * only leave it; its candidates go, its runs stay. `deletedProducts` is how many products Outpost followed that were
+   * erased. 409 while the track's recommendation or a confirmation of a product for it runs, and while one of the
+   * products to erase has work in flight.
+   */
+  'POST tracks/:id/delete': { response: { ok: true; deletedProducts: number } }
   /** A new batch, with the user's one-sentence adjustment; 409 while the previous one still runs. */
   'POST tracks/:id/recommend': { body?: { refine?: string }; response: { batchId: Id } }
   'GET tracks/:id/candidates': { response: CandidatesView }
@@ -196,7 +207,18 @@ export interface Api {
   'GET products/:id': { response: ProductView }
   /** The product's findings, newest first: verified, 「待确认」 and unproven ones (not those unchecked or withdrawn). */
   'GET products/:id/findings': { response: { findings: Finding[]; sources: Source[]; changed: Record<Id, DimensionKey[]> } }
-  'PATCH products/:id': { body: { status?: 'tracking' | 'paused'; dailyBudgetYuan?: number | null }; response: Product }
+  /**
+   * Pauses or resumes, sets the product's own budget, and (M1.5) renames it or sets its official sites. A name and company
+   * that read as those of another product Outpost follows (`findSameProduct`) are a 409 (「已经有一个X在跟踪了」); a row
+   * that is only a recommendation of that very name merges into this product. `officialDomains` takes web addresses or
+   * domains and keeps their host names (lower case, without `www.`); one that is neither is a 400.
+   */
+  'PATCH products/:id': { body: { status?: 'tracking' | 'paused'; dailyBudgetYuan?: number | null; name?: string; company?: string; officialDomains?: string[] }; response: Product }
+  /**
+   * Erases the product and everything about it (`Repo.deleteProduct`, M1.5); its runs stay. 409 while it has work in flight
+   * (a baseline, daily run or check, queued or running).
+   */
+  'POST products/:id/delete': { response: { ok: true } }
   /** 「立即更新」: answers at once with the run it started (a baseline first, if a card is missing), or the one in flight. */
   'POST products/:id/update-now': { response: { runId: Id } }
   /** The icon's bytes, for `<img src="/outpost/api/icons/<id>">` (not for `call`); 404 when there is none. */
@@ -238,22 +260,33 @@ const MAX_REFINE = 60
 const MAX_DIMENSION_LABEL = 20
 /** Custom dimensions per track: with the six defaults, a track has at most 20 (as many as a finding may name). */
 const MAX_EXTRA_DIMENSIONS = 14
+/** Dimensions of a track in all: the six defaults and the custom ones. */
+const MAX_DIMENSIONS = DEFAULT_DIMENSIONS.length + MAX_EXTRA_DIMENSIONS
+/** Official sites of a product. */
+const MAX_SITES = 5
 const MAX_START = 100
 const MAX_RUN_DAYS = 90
 
 const text = (max: number) => z.string().trim().max(max)
 const label = z.string().trim().min(1, '维度名不能为空').max(MAX_DIMENSION_LABEL)
+const productName = text(MAX_PRODUCT_NAME).min(1).refine(hasNameKey, '请填产品名')
 const NewTrack = z.object({ name: text(MAX_NAME).min(1), brief: text(MAX_BRIEF).default(''), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).default([]) })
-const TrackPatch = z.object({ name: text(MAX_NAME).min(1).optional(), brief: text(MAX_BRIEF).optional(), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).optional() })
+const TrackPatch = z.object({
+  name: text(MAX_NAME).min(1).optional(), brief: text(MAX_BRIEF).optional(), extraDimensions: z.array(label).max(MAX_EXTRA_DIMENSIONS).optional(),
+  dimensions: z.array(z.object({ key: z.string().min(1).max(100).optional(), label })).max(MAX_DIMENSIONS).optional(),
+})
 const Recommend = z.object({ refine: text(MAX_REFINE).optional() })
 const Start = z.object({ candidateIds: z.array(z.string().min(1)).min(1).max(MAX_START) })
 const AddProduct = z.object({
   // A name of nothing but spaces and punctuation (「!!!」) is no name: the same complaint as an empty one, before a paid confirmation starts.
-  name: text(MAX_PRODUCT_NAME).min(1).refine(hasNameKey, '请填产品名'),
+  name: productName,
   officialUrl: z.preprocess(value => value === null || (typeof value === 'string' && !value.trim()) ? undefined : value,
     z.string().trim().max(MAX_URL).url({ protocol: /^https?$/, error: 'officialUrl must be an http:// or https:// address' }).optional()),
 })
-const ProductPatch = z.object({ status: z.enum(['tracking', 'paused']).optional(), dailyBudgetYuan: z.number().min(0).max(100_000).nullable().optional() })
+const ProductPatch = z.object({
+  status: z.enum(['tracking', 'paused']).optional(), dailyBudgetYuan: z.number().min(0).max(100_000).nullable().optional(),
+  name: productName.optional(), company: text(MAX_PRODUCT_NAME).optional(), officialDomains: z.array(z.string().max(MAX_URL)).max(MAX_SITES).optional(),
+})
 const TrackRef = z.object({ trackId: z.string().min(1) })
 const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const Followup = z.object({ findingId: z.string().min(1) })
@@ -271,6 +304,19 @@ function day(value: string | undefined, field: string): string {
 function shiftDate(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number)
   return localDate(new Date(y!, m! - 1, d! + days))
+}
+
+/**
+ * The host name of an official site as the user wrote it, a web address or a bare domain: lower case, without `www.`, as
+ * a recommendation keeps it (`outpost_submit_candidate`). @throws 400 for one that is neither.
+ */
+function siteHost(raw: string): string {
+  const text = raw.trim()
+  let url: URL | null = null
+  try { url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(text) ? text : `https://${text}`) } catch { /* said below */ }
+  const host = url && (url.protocol === 'http:' || url.protocol === 'https:') ? url.hostname.toLowerCase().replace(/^www\./, '') : ''
+  if (!/^[a-z\d-]+(\.[a-z\d-]+)+$/.test(host)) throw new ApiError(400, say('siteInvalid', { site: text }))
+  return host
 }
 
 /** Why a product cannot be taken out of its only track. */
@@ -291,6 +337,7 @@ interface Reviewed { batchId: Id; candidateIds: Id[] }
 // ---- dimensions ----
 
 const sameLabel = (label: string) => label.normalize('NFKC').trim().toLowerCase()
+const DEFAULT_KEYS = new Set(DEFAULT_DIMENSIONS.map(d => d.key))
 
 /**
  * The dimensions of a track: the six defaults, then each custom label once, in the order given. A label that equals one
@@ -299,8 +346,8 @@ const sameLabel = (label: string) => label.normalize('NFKC').trim().toLowerCase(
  * `slugDimension` of its label, with `-2`, `-3`… appended while that key is a default's, another dimension's of any
  * track, or one some card was written under (a removed dimension's cards must not turn up under a new label).
  */
-function trackDimensions(rt: Runtime, labels: string[]): Dimension[] {
-  const dimensions: Dimension[] = [...DEFAULT_DIMENSIONS]
+function trackDimensions(rt: Runtime, labels: string[], base: readonly Dimension[] = DEFAULT_DIMENSIONS): Dimension[] {
+  const dimensions: Dimension[] = [...base]
   const labelsHere = new Set(dimensions.map(d => sameLabel(d.label)))
   const keyOfLabel = new Map<string, DimensionKey>()
   const taken = new Set<DimensionKey>([...DEFAULT_DIMENSIONS.map(d => d.key), ...rt.repo.cardDimensions()])
@@ -326,6 +373,48 @@ function trackDimensions(rt: Runtime, labels: string[]): Dimension[] {
     dimensions.push({ key, label })
   }
   return dimensions
+}
+
+/**
+ * A track's dimensions as the user edited them (`PATCH tracks/:id` with `dimensions`): each entry with a key is one the
+ * track has, under its label now; each without is new, and gets the key the same label has elsewhere (a default's, another
+ * track's) unless this track uses it already, else `slugDimension` of its label with `-2`, `-3`… while that is taken (as in
+ * `trackDimensions`). @throws 400 for none at all, a label twice (case and width aside), and a key the track does not have.
+ */
+function editedDimensions(rt: Runtime, current: Track, entries: { key?: DimensionKey; label: string }[]): Dimension[] {
+  if (!entries.length) throw new ApiError(400, say('dimensionsNeeded'))
+  const own = new Set(current.dimensions.map(d => d.key))
+  const keyOfLabel = new Map<string, DimensionKey>(DEFAULT_DIMENSIONS.map(d => [sameLabel(d.label), d.key]))
+  const taken = new Set<DimensionKey>([...DEFAULT_DIMENSIONS.map(d => d.key), ...rt.repo.cardDimensions()])
+  for (const track of rt.repo.listTracks()) {
+    for (const d of track.dimensions) {
+      taken.add(d.key)
+      if (!keyOfLabel.has(sameLabel(d.label))) keyOfLabel.set(sameLabel(d.label), d.key)
+    }
+  }
+  const usedHere = new Set<DimensionKey>()
+  for (const entry of entries) {
+    if (entry.key === undefined) continue
+    if (!own.has(entry.key)) throw new ApiError(400, say('dimensionUnknown', { key: entry.key }))
+    if (usedHere.has(entry.key)) throw new ApiError(400, say('dimensionTwice', { label: entry.label.trim() }))
+    usedHere.add(entry.key)
+  }
+  const labels = new Set<string>()
+  return entries.map(entry => {
+    const label = entry.label.trim()
+    if (labels.has(sameLabel(label))) throw new ApiError(400, say('dimensionTwice', { label }))
+    labels.add(sameLabel(label))
+    if (entry.key !== undefined) return { key: entry.key, label }
+    let key = keyOfLabel.get(sameLabel(label))
+    if (key === undefined || usedHere.has(key)) {
+      const base = slugDimension(label)
+      key = base
+      for (let n = 2; taken.has(key) || usedHere.has(key); n++) key = `${base}-${n}`
+      taken.add(key)
+    }
+    usedHere.add(key)
+    return { key, label }
+  })
 }
 
 // ---- the routes ----
@@ -380,6 +469,14 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
   }
   /** How many cards a product that joined a track is asked for at once: those it lacks, if it is worked on (not paused). */
   const toppedUp = (joined: Joined | undefined) => joined?.work === 'top-up' ? joined.missing.length : 0
+  /**
+   * Whether the product has work in flight that deleting it must wait for: a run of it queued or running (a 追问 chat
+   * aside: it is the user's, and over once opened), or the scheduler's own work on it, waiting for its turn included.
+   */
+  const hasWork = (productId: Id, active = repo.activeRuns()) => active.some(r => r.productId === productId && r.kind !== 'followup') || rt.scheduler.isBusy(productId)
+  /** Removes the icon files of products that were erased (`<icons>/<id>.<type>`); a missing one is no matter. */
+  const removeIcons = (ids: Id[]) => rt.background(Promise.all(ids.filter(id => /^[\w-]+$/.test(id))
+    .flatMap(id => Object.keys(ICON_TYPES).map(ext => rm(join(rt.iconsDir, `${id}.${ext}`), { force: true })))), 'removing the icons of deleted products')
   /** Whether the product has no card yet for one of `keys`. */
   const lacksCard = (productId: Id, keys: DimensionKey[]) => {
     const have = new Set(repo.latestCards(productId).map(c => c.dimension))
@@ -550,17 +647,29 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'PATCH tracks/:id': async req => {
       const current = track(req.params.id!)
       const body = TrackPatch.parse(await req.body())
-      // The track's own dimensions are among the keys in use, so a label it keeps keeps its key.
-      const dimensions = body.extraDimensions && trackDimensions(rt, body.extraDimensions)
+      if (body.dimensions && body.extraDimensions) badRequest('dimensions and extraDimensions cannot both be given')
+      // The track's own dimensions are among the keys in use, so a label it keeps keeps its key; its defaults stay as they are.
+      const dimensions = body.dimensions ? editedDimensions(rt, current, body.dimensions)
+        : body.extraDimensions && trackDimensions(rt, body.extraDimensions, current.dimensions.filter(d => DEFAULT_KEYS.has(d.key)))
       const updated = repo.updateTrack(current.id, { name: body.name, brief: body.brief, dimensions })
       // The user asked for these: fill them in now (Ruling 25), not after the 7 days that pace automatic top-ups.
       const had = new Set(current.dimensions.map(d => d.key))
       const added = updated.dimensions.filter(d => !had.has(d.key)).map(d => d.key)
-      if (added.length) {
-        const lacking = repo.productsOfTrack(current.id).filter(p => isWorkedOn(p) && lacksCard(p.id, added)).map(p => p.id)
-        if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products of track ${current.id}`)
-      }
-      return updated
+      const lacking = added.length ? repo.productsOfTrack(current.id).filter(p => isWorkedOn(p) && lacksCard(p.id, added)).map(p => p.id) : []
+      if (lacking.length) rt.background(rt.scheduler.topUpNow(lacking), `top-up of the products of track ${current.id}`)
+      return { ...updated, toppedUp: lacking.length }
+    },
+
+    'POST tracks/:id/delete': ({ params }) => {
+      const t = track(params.id!)
+      const active = repo.activeRuns()
+      if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify'))) throw new ApiError(409, say('trackBusy'))
+      // Those only this track has go with it: none of them may be in the middle of something.
+      const busy = repo.productsOfTrack(t.id).find(p => tracksOf(p.id).length === 1 && hasWork(p.id, active))
+      if (busy) throw new ApiError(409, say('productBusy', { name: busy.name }))
+      const erased = repo.deleteTrack(t.id, [reviewedKey(t.id)])
+      removeIcons(erased.map(p => p.id))
+      return { ok: true as const, deletedProducts: erased.filter(p => FOLLOWED.includes(p.status)).length }
     },
 
     'POST tracks/:id/recommend': async req => {
@@ -683,12 +792,32 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     'PATCH products/:id': async req => {
       const p = product(req.params.id!)
       const body = ProductPatch.parse(await req.body())
-      if (body.status !== undefined && body.status !== p.status) {
-        if (p.status !== 'tracking' && p.status !== 'paused') throw new ApiError(409, say('pauseAfterBaseline'))
-        repo.setProductStatus(p.id, body.status)
-      }
-      if (body.dailyBudgetYuan !== undefined) repo.setProductBudget(p.id, body.dailyBudgetYuan)
+      // Everything that may be refused is looked at first, so a refused change leaves the product as it was.
+      if (body.status !== undefined && body.status !== p.status && p.status !== 'tracking' && p.status !== 'paused') throw new ApiError(409, say('pauseAfterBaseline'))
+      const name = body.name ?? p.name
+      const company = body.company?.trim() ?? p.company
+      const renamed = name !== p.name || company !== p.company
+      // Another product Outpost follows that reads the same is a clash to refuse (deleting one of them is the merge); a
+      // recommendation's row of exactly that name merges into this one (`renameProduct`).
+      const twin = renamed ? repo.findSameProduct({ ...p, name, company }) : null
+      if (twin) throw new ApiError(409, say('nameTaken', { name: twin.name }))
+      const sites = body.officialDomains && [...new Set(body.officialDomains.filter(site => site.trim()).map(siteHost))]
+      const merged = repo.atomic(() => {
+        if (body.status !== undefined && body.status !== p.status) repo.setProductStatus(p.id, body.status)
+        if (body.dailyBudgetYuan !== undefined) repo.setProductBudget(p.id, body.dailyBudgetYuan)
+        if (sites) repo.setOfficialDomains(p.id, sites)
+        return renamed ? repo.renameProduct(p.id, name, company) : []
+      })
+      removeIcons(merged.map(row => row.id))
       return repo.getProduct(p.id)!
+    },
+
+    'POST products/:id/delete': ({ params }) => {
+      const p = product(params.id!)
+      if (hasWork(p.id)) throw new ApiError(409, say('productBusy', { name: p.name }))
+      repo.deleteProduct(p.id)
+      removeIcons([p.id])
+      return { ok: true as const }
     },
 
     'POST products/:id/update-now': async ({ params }) => {

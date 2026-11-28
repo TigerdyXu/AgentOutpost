@@ -252,6 +252,14 @@ export class Scheduler {
   }
 
   /**
+   * Whether work on the product is in flight here: its daily run, a baseline or top-up, or a check retried on its own,
+   * including one waiting for another of these to end before it starts (what deleting the product must wait for).
+   */
+  isBusy(productId: Id): boolean {
+    return this.busy.has(productId) || this.topUps.has(productId) || this.checks.has(productId)
+  }
+
+  /**
    * Resolves once every day, daily run, baseline and brief write in flight has ended, including those they start
    * meanwhile. After `stop` (and the runner's stop) they end soon; whoever closes the store waits for this first.
    */

@@ -6,7 +6,8 @@ import type { DatabaseSync } from 'node:sqlite'
  *
  * Conventions: arrays and objects are JSON text, booleans are 0/1, times are ISO strings, ids are UUID text. There are
  * no foreign keys on purpose: a run or finding may name a product or run that is not in the table (tests and
- * half-built flows do), and the repo never deletes rows. Tables with an implicit `rowid` are listed in insertion order.
+ * half-built flows do, and so do the runs of a deleted product). Rows are deleted only when the user deletes a track or a
+ * product (`Repo.deleteTrack`, `Repo.deleteProduct`). Tables with an implicit `rowid` are listed in insertion order.
  */
 export const MIGRATIONS: string[] = [
   `

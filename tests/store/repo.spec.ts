@@ -907,3 +907,103 @@ describe('Repo: storage format', () => {
     expect(repo.upsertProduct(product()).createdAt).toBe('2026-11-25T08:00:00.000Z')
   })
 })
+
+describe('Repo: deleting and renaming (M1.5)', () => {
+  const cand = (trackId: string, productId: string): Omit<Candidate, 'id'> => ({
+    trackId, batchId: 'b1', productId, tier: 'strong', oneLiner: '一句话', reason: '为什么推荐',
+    heat: { foundCount: 1, datedWeekly: [], trend: 'unknown', showBars: false }, selected: false,
+  })
+  const brief = (over: Partial<Brief> = {}): Brief => ({ date: '2026-11-25', gist: '今天一条重要更新', findingIds: [], minorIds: [], quietProductIds: [], skipped: [], costYuan: 1, createdAt: '2026-11-25T10:00:00.000Z', updatedAt: '2026-11-25T10:00:00.000Z', ...over })
+  const count = (db: Db, table: string) => Number(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n)
+
+  /** Two products with a source, a finding, a card, a card edit and facts each, both in brief and runs; `p1` alone in t1. */
+  const world = () => {
+    const db = open()
+    const repo = new Repo(db, () => time)
+    const t1 = repo.createTrack(spec({ name: '赛道一' })), t2 = repo.createTrack(spec({ name: '赛道二' }))
+    const [a, b] = [repo.upsertProduct(product({ name: 'Cursor' })), repo.upsertProduct(product({ name: 'Windsurf', company: 'Codeium' }))]
+    repo.linkProduct(t1.id, a!.id); repo.linkProduct(t2.id, b!.id); repo.linkProduct(t1.id, b!.id)
+    const made = [a!, b!].map(p => {
+      const run = repo.createRun({ kind: 'daily', date: '2026-11-25', trackId: null, productId: p.id })
+      repo.updateRun(run.id, { status: 'done', costYuan: 0.5 })
+      const s1 = repo.addSource(sourceSpec()), s2 = repo.addSource(sourceSpec())
+      const f = repo.addFinding(findingSpec({ productId: p.id, runId: run.id, sourceIds: [s1.id] }))
+      repo.addCardVersion(cardAt(1, { productId: p.id, sourceIds: [s2.id], findingIds: [] }))
+      repo.addCardEdit({ productId: p.id, dimension: 'pricing', summary: 's', bullets: [], body: 'b', sourceIds: [s2.id], inferenceSpans: [], changeNote: 'c', findingIds: [f.id] })
+      repo.addFacts({ productId: p.id, form: 'IDE', platforms: 'Mac', price: '$20', firstReleased: '2023', rivals: [] })
+      repo.addCandidate(cand(t1.id, p.id))
+      return { product: p, run, finding: f, sources: [s1.id, s2.id] }
+    })
+    repo.putBrief(brief({ findingIds: [made[0]!.finding.id, made[1]!.finding.id], quietProductIds: [a!.id], skipped: [{ productId: a!.id, reason: '今日总预算已用完' }] }))
+    return { db, repo, t1, t2, a: made[0]!, b: made[1]! }
+  }
+
+  it('deleteProduct erases the product and all it learnt, takes it out of briefs, and keeps its runs under its name', () => {
+    const { db, repo, a, b } = world()
+    expect(repo.deleteProduct(a.product.id)).toEqual(a.product)
+    expect(repo.getProduct(a.product.id)).toBeNull()
+    expect(repo.findingsOfProduct(a.product.id)).toEqual([])
+    expect(repo.latestCards(a.product.id)).toEqual([])
+    expect(repo.pendingCardEdits(a.product.id)).toEqual([])
+    expect(repo.latestFacts(a.product.id)).toBeNull()
+    expect(repo.getSources(a.sources)).toEqual([])
+    expect(db.prepare('SELECT 1 FROM candidates WHERE product_id = ?').get(a.product.id)).toBeUndefined()
+    expect(db.prepare('SELECT 1 FROM track_products WHERE product_id = ?').get(a.product.id)).toBeUndefined()
+    expect(repo.getBrief('2026-11-25')).toMatchObject({ findingIds: [b.finding.id], quietProductIds: [], skipped: [], gist: '今天一条重要更新' })
+    // What was spent stays spent, and the run log can still say whose it was.
+    expect(repo.getRun(a.run.id)).toMatchObject({ productId: a.product.id, subject: 'Cursor', costYuan: 0.5 })
+    expect(repo.spentOn('2026-11-25')).toBe(1)
+    // The other product is untouched.
+    expect(repo.findingsOfProduct(b.product.id)).toHaveLength(1)
+    expect(repo.getSources(b.sources)).toHaveLength(2)
+    expect(count(db, 'products')).toBe(1)
+  })
+
+  it('deleteProduct keeps a source another product still cites', () => {
+    const { repo, a, b } = world()
+    repo.addFinding(findingSpec({ productId: b.product.id, runId: b.run.id, sourceIds: [a.sources[0]!], dedupeKey: 'shared' }))
+    repo.deleteProduct(a.product.id)
+    expect(repo.getSources(a.sources).map(s => s.id)).toEqual([a.sources[0]])
+  })
+
+  it('deleteTrack erases the products only it has and its candidates, keeps the shared ones elsewhere, and names its runs', () => {
+    const { db, repo, t1, t2, a, b } = world()
+    const unpicked = repo.upsertProduct(product({ name: 'Zed', company: 'Zed Industries', status: 'candidate' }))
+    const elsewhere = repo.upsertProduct(product({ name: 'Cline', company: 'Cline', status: 'candidate' }))
+    repo.addCandidate(cand(t1.id, unpicked.id)); repo.addCandidate(cand(t1.id, elsewhere.id)); repo.addCandidate(cand(t2.id, elsewhere.id))
+    const suggest = repo.createRun({ kind: 'recommend', date: '2026-11-25', trackId: t1.id, productId: null })
+    repo.setSetting(`reviewedCandidates:${t1.id}`, { batchId: 'b1', candidateIds: [] })
+
+    const erased = repo.deleteTrack(t1.id, [`reviewedCandidates:${t1.id}`])
+    expect(erased.map(p => p.name).sort()).toEqual(['Cursor', 'Zed'])
+    expect(repo.listTracks().map(t => t.name)).toEqual(['赛道二'])
+    expect(repo.getProduct(a.product.id)).toBeNull()
+    expect(repo.getProduct(unpicked.id)).toBeNull()
+    expect(repo.getProduct(elsewhere.id)).not.toBeNull() // still a candidate of 赛道二
+    expect(repo.productsOfTrack(t2.id).map(p => p.id)).toEqual([b.product.id])
+    expect(repo.findingsOfProduct(b.product.id)).toHaveLength(1)
+    expect(repo.listCandidates(t1.id)).toEqual([])
+    expect(repo.listCandidates(t2.id)).toHaveLength(1)
+    expect(repo.getSetting(`reviewedCandidates:${t1.id}`)).toBeUndefined()
+    expect(repo.getRun(suggest.id)).toMatchObject({ trackId: t1.id, subject: '赛道一' })
+    expect(count(db, 'track_products')).toBe(1)
+  })
+
+  it('renameProduct renames, and merges a recommendation row of exactly that name into it', () => {
+    const { db, repo, t1, a } = world()
+    const row = repo.upsertProduct(product({ name: 'cursor ide', company: 'anysphere', status: 'candidate' }))
+    const candidate = repo.addCandidate(cand(t1.id, row.id))
+    const merged = repo.renameProduct(a.product.id, ' Cursor IDE ', 'Anysphere')
+    expect(merged.map(p => p.id)).toEqual([row.id])
+    expect(repo.getProduct(a.product.id)).toMatchObject({ name: 'Cursor IDE', company: 'Anysphere', status: 'tracking' })
+    expect(repo.getProduct(row.id)).toBeNull()
+    expect(db.prepare('SELECT product_id FROM candidates WHERE id = ?').get(candidate.id)!.product_id).toBe(a.product.id)
+    expect(repo.findingsOfProduct(a.product.id)).toHaveLength(1)
+  })
+
+  it('setOfficialDomains replaces the domains', () => {
+    const { repo, a } = world()
+    repo.setOfficialDomains(a.product.id, ['cursor.sh', 'anysphere.inc'])
+    expect(repo.getProduct(a.product.id)!.officialDomains).toEqual(['cursor.sh', 'anysphere.inc'])
+  })
+})

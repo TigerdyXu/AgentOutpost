@@ -164,6 +164,101 @@ export class Repo {
   /** Sets where the product's icon file is kept (null clears it); nothing else about the product changes. */
   setProductIcon(id: Id, iconPath: string | null): void { this.patch(PRODUCT, id, { iconPath }, ['iconPath']) }
 
+  /** Sets the product's official domains (as given: the caller normalises them); nothing else changes. */
+  setOfficialDomains(id: Id, officialDomains: string[]): void { this.patch(PRODUCT, id, { officialDomains }, ['officialDomains']) }
+
+  /**
+   * Renames the product (name and company, trimmed). Another row that has exactly that name at that company (case aside),
+   * which the unique index would refuse, is merged into this one: its candidates name this product from now on, and the
+   * row is deleted (`deleteProduct`). The caller makes sure that row is not one Outpost follows (that is a clash to refuse,
+   * not a merge); the rows merged away are returned, so that their icon files can go too.
+   * @throws When the product does not exist.
+   */
+  renameProduct(id: Id, name: string, company: string): Product[] {
+    return this.db.atomic(() => {
+      this.require(PRODUCT, id)
+      const merged = this.select(PRODUCT, 'WHERE name = ? COLLATE NOCASE AND company = ? COLLATE NOCASE AND id <> ?', name.trim(), company.trim(), id)
+      for (const other of merged) {
+        this.db.prepare('UPDATE candidates SET product_id = ? WHERE product_id = ?').run(id, other.id)
+        this.deleteProduct(other.id)
+      }
+      this.patch(PRODUCT, id, { name: name.trim(), company: company.trim() }, ['name', 'company'])
+      return merged
+    })
+  }
+
+  /**
+   * Erases the product and everything Outpost learnt about it: its cards and their history, its facts, its card edits,
+   * its findings and the sources only they and its cards cite, its place in every track, the candidates that name it, and
+   * its entries in every brief (its findings, main and minor; its quiet and skipped lines). A brief's gist, which the AI
+   * wrote, is left as it is. Its runs stay (what was spent stays spent), each keeping the product's name in `subject` so the
+   * run log can still say whose it was. Returns the product as it was.
+   * @throws When the product does not exist.
+   */
+  deleteProduct(id: Id): Product {
+    return this.db.atomic(() => {
+      const product = this.require(PRODUCT, id)
+      const column = (sql: string) => this.db.prepare(sql).all(id).map(row => String(Object.values(row)[0]))
+      const findingIds = new Set(column('SELECT id FROM findings WHERE product_id = ?'))
+      const cited = new Set([
+        ...column('SELECT j.value FROM findings, json_each(findings.source_ids) j WHERE findings.product_id = ?'),
+        ...column('SELECT j.value FROM card_versions, json_each(card_versions.source_ids) j WHERE card_versions.product_id = ?'),
+        ...column('SELECT j.value FROM card_edits, json_each(card_edits.source_ids) j WHERE card_edits.product_id = ?'),
+      ])
+      for (const table of ['findings', 'card_versions', 'card_edits', 'facts', 'candidates', 'track_products'])
+        this.db.prepare(`DELETE FROM ${table} WHERE product_id = ?`).run(id)
+      // A source some other row still cites stays (none should, but a shared one must not vanish from under it).
+      const stillCited = new Set(this.db.prepare(`SELECT j.value FROM findings, json_each(findings.source_ids) j
+        UNION SELECT j.value FROM card_versions, json_each(card_versions.source_ids) j
+        UNION SELECT j.value FROM card_edits, json_each(card_edits.source_ids) j`).all().map(row => String(row.value)))
+      const remove = this.db.prepare('DELETE FROM sources WHERE id = ?')
+      for (const sourceId of cited) if (!stillCited.has(sourceId)) remove.run(sourceId)
+      for (const brief of this.select(BRIEF, 'ORDER BY date')) {
+        const kept: Brief = {
+          ...brief,
+          findingIds: brief.findingIds.filter(f => !findingIds.has(f)),
+          minorIds: brief.minorIds.filter(f => !findingIds.has(f)),
+          quietProductIds: brief.quietProductIds.filter(p => p !== id),
+          skipped: brief.skipped.filter(s => s.productId !== id),
+        }
+        if (JSON.stringify(kept) !== JSON.stringify(brief)) this.putBrief(kept)
+      }
+      this.db.prepare('UPDATE runs SET subject = ? WHERE product_id = ?').run(product.name, id)
+      this.db.prepare('DELETE FROM products WHERE id = ?').run(id)
+      return product
+    })
+  }
+
+  /**
+   * Erases the track: its place for every product, its candidates, and what was remembered of it (`settings` keys the
+   * caller names). The products only this track has (no other track lists them) are erased with it (`deleteProduct`), and
+   * so are the rows of products it recommended that nobody follows and nothing else names (no other track's candidate,
+   * no track). Its recommendations' runs stay, keeping the track's name in `subject`. Returns the products erased, the
+   * followed ones and those recommended rows alike.
+   * @throws When the track does not exist.
+   */
+  deleteTrack(trackId: Id, settingKeys: string[] = []): Product[] {
+    return this.db.atomic(() => {
+      const track = this.require(TRACK, trackId)
+      const inOthers = (productId: Id) => this.db.prepare('SELECT 1 FROM track_products WHERE product_id = ? AND track_id <> ?').get(productId, trackId) !== undefined
+      const own = this.productsOfTrack(trackId).filter(p => !inOthers(p.id))
+      const recommended = [...new Set(this.listCandidates(trackId).map(c => c.productId))]
+      for (const p of own) this.deleteProduct(p.id)
+      this.db.prepare('DELETE FROM candidates WHERE track_id = ?').run(trackId)
+      this.db.prepare('DELETE FROM track_products WHERE track_id = ?').run(trackId)
+      const orphans = recommended.flatMap(id => {
+        const p = this.get(PRODUCT, id)
+        if (!p || FOLLOWED.includes(p.status)) return []
+        const named = this.db.prepare('SELECT 1 FROM candidates WHERE product_id = ? UNION SELECT 1 FROM track_products WHERE product_id = ?').get(id, id)
+        return named ? [] : [this.deleteProduct(id)]
+      })
+      for (const key of settingKeys) this.setSetting(key, undefined)
+      this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind = 'recommend'").run(track.name, trackId)
+      this.db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
+      return [...own, ...orphans]
+    })
+  }
+
   /** Puts the product in the track's tracked list; linking twice is harmless. */
   linkProduct(trackId: Id, productId: Id): void {
     this.db.prepare('INSERT OR IGNORE INTO track_products (track_id, product_id) VALUES (?, ?)').run(trackId, productId)
