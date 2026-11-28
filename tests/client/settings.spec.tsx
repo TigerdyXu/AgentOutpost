@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfigPageForm } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { ModelsView } from '../../src/host/api.ts'
 import { Settings, SettingsForm, usePageForm } from '../../src/client/pages/Settings.tsx'
-import { all, click, fail, mount, settle, state, stubApi, t, text, type, unmount } from '../fixtures/client.tsx'
+import { all, click, fail, find, mount, settle, state, stubApi, t, text, type, unmount } from '../fixtures/client.tsx'
 
 /** What DSH offers: DeepSeek (metered) and a local Ollama, DeepSeek being its default. */
 const MODELS: ModelsView = {
@@ -64,10 +64,8 @@ describe('the browser fallback', () => {
   it('explains how to enable the browser fallback when it is off', async () => {
     await mount(<Settings />, { state: state({ browserAvailable: false }) })
     expect(text()).toContain('没开浏览器兜底')
-    // The browser comes with the research preset (cordis.patch.yml), on: it is off here because the profile overrides the
-    // preset without it (missing packages make research run on the preset without a browser: that is the next message).
-    expect(document.querySelector('.op-browser')?.textContent).toBe(
-      '没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。浏览器在前哨的调研预设里，默认是开的；profile 里覆盖了这个预设、去掉了浏览器时就会这样，删掉那条覆盖后重启即可打开。')
+    // Neither missing packages (the next message) nor the user's switch: something the Desktop's log tells.
+    expect(document.querySelector('.op-browser')?.textContent).toBe('没开浏览器兜底：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。详情在桌面版的日志里。')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBeNull()
     expect(text()).not.toContain('浏览器兜底已开启')
     expect(document.querySelector('.op-browser code')).toBeNull()
@@ -95,7 +93,7 @@ describe('the browser fallback', () => {
   it('says the browser is on when research runs without its own but the profile\'s browser reaches it', async () => {
     // The profile's Playwright clashed with the preset's own: research runs on the preset without a browser, with the profile's.
     await mount(<Settings />, { state: state({ browserAvailable: true, browserMissing: true }) })
-    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启')
+    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启关掉')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBe('')
   })
 
@@ -111,12 +109,20 @@ describe('the browser fallback', () => {
     expect(text()).not.toContain('浏览器兜底已开启')
   })
 
-  it('shows no browser notice when it is on', async () => {
-    await mount(<Settings />, { state: state({ browserAvailable: true }) })
+  it('says it is on, with a switch to turn it off, and turns it off and on (M2.4)', async () => {
+    const api = stubApi({ 'POST browser': { ok: true } })
+    const { refresh } = await mount(<Settings />, { state: state({ browserAvailable: true }) })
     expect(text()).not.toContain('没开浏览器兜底')
-    expect(text()).not.toContain('删掉那条覆盖')
-    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启')
+    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已开启关掉')
     expect(document.querySelector('.op-browser')?.getAttribute('data-on')).toBe('')
+    await click(find('关掉'))
+    expect(api.requests.filter(r => r.method === 'POST').map(r => [r.path, r.body])).toEqual([['browser', { on: false }]])
+    expect(refresh).toHaveBeenCalled()
+    unmount()
+    await mount(<Settings />, { state: state({ browserAvailable: false, browserOff: true }) })
+    expect(document.querySelector('.op-browser')?.textContent).toBe('浏览器兜底已关掉：公众号、小红书、知乎等页面打不开，相关消息会一直是『待确认』。打开')
+    await click(find('打开'))
+    expect(api.requests.filter(r => r.method === 'POST').map(r => r.body).at(-1)).toEqual({ on: true })
   })
 
   it('says nothing about the browser until the state is known', async () => {

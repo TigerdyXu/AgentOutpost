@@ -6,7 +6,7 @@
  * track's name opens its settings (M1.5). Tracks, and the products within a track, are put in order by dragging them, or
  * with Alt+↑/↓ on one that has the focus (M2.4); a product moves to another track from its page's 「⋯」, not by dragging.
  */
-import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import type { Id } from '../../core/types.ts'
 import type { TrackView } from '../../host/api.ts'
 import { call, describeError, useCandidates } from '../api.ts'
@@ -85,69 +85,104 @@ function DefaultPickRow({ trackId, tracked, onChoose }: { trackId: Id; tracked: 
 type DragProps = {
   draggable: true
   'data-drop'?: 'before' | 'after'
+  'data-reorder': string
   'aria-keyshortcuts': string
   onDragStart: (event: DragEvent) => void
   onDragOver: (event: DragEvent) => void
-  onDragLeave: () => void
+  onDragLeave: (event: DragEvent) => void
   onDrop: (event: DragEvent) => void
   onDragEnd: () => void
   onKeyDown: (event: KeyboardEvent) => void
 }
 
+/** The drag's own data type: dropped on a text field (DSH's chat input, say), a row inserts nothing. */
+const DRAG_TYPE = 'application/x-outpost-reorder'
+/** What is being dragged, across the lists (a drag starts in one list's hook and may pass over another's). */
+let dragged: { group: string; id: Id } | null = null
+
+/** Where over `target` a drop at `clientY` lands: before it in its upper half, after it in its lower. */
+const sideOf = (target: Element, clientY: number): 'before' | 'after' => {
+  const box = target.getBoundingClientRect()
+  return clientY < box.top + box.height / 2 ? 'before' : 'after'
+}
+
 /**
- * Putting a list in order (M2.4): the ids of what is listed, in order, and what saves a new order. An entry dragged over
- * another lands before it (upper half) or after it (lower half); Alt+↑/↓ moves the focused one a place. Only entries of the
- * same list (`group`) take a drop: a product does not land among another track's.
+ * Putting a list in order (M2.4): `ids` as the host lists them, and what saves a new order. The new order shows at once
+ * (`order`, until the host's next answer), so quick moves build on each other; an entry dragged over another lands before
+ * it (upper half) or after it (lower half); Alt+↑/↓ moves the focused one a place and keeps the focus on it. Only entries
+ * of the same list (`group`) take a drop: a product does not land among another track's.
  */
 function useReorder(group: string, ids: readonly Id[], save: (order: Id[]) => void) {
-  const { t } = useShell()
-  const [dragging, setDragging] = useState<{ group: string; id: Id } | null>(dragged)
+  const [pending, setPending] = useState<readonly Id[] | null>(null)
   const [over, setOver] = useState<{ id: Id; side: 'before' | 'after' } | null>(null)
+  const [focusId, setFocusId] = useState<Id | null>(null)
+  const key = ids.join(' ')
+  // The host's answer is the order now.
+  useEffect(() => { setPending(null) }, [key])
+  const order = pending && pending.length === ids.length && pending.every(id => ids.includes(id)) ? pending : ids
+  // A moved entry's node moves too, and the browser drops its focus: give it back.
+  useEffect(() => {
+    if (focusId === null) return
+    const element = document.querySelector<HTMLElement>(`[data-reorder="${group}:${focusId}"]`)
+    const target = element?.matches('button') ? element : element?.querySelector<HTMLElement>('button')
+    target?.focus()
+    setFocusId(null)
+  }, [focusId, group, order])
   const place = (id: Id, target: Id, side: 'before' | 'after') => {
     if (id === target) return
-    const rest = ids.filter(other => other !== id)
+    const rest = order.filter(other => other !== id)
     const at = rest.indexOf(target) + (side === 'after' ? 1 : 0)
-    save([...rest.slice(0, at), id, ...rest.slice(at)])
+    const next = [...rest.slice(0, at), id, ...rest.slice(at)]
+    if (next.join(' ') === order.join(' ')) return
+    setPending(next)
+    save(next)
   }
-  return (id: Id): DragProps => ({
+  const ours = () => dragged !== null && dragged.group === group
+  const props = (id: Id): DragProps => ({
     draggable: true,
     ...over?.id === id ? { 'data-drop': over.side } : {},
+    'data-reorder': `${group}:${id}`,
     'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown',
     onDragStart: event => {
+      event.stopPropagation() // a product's row is inside its track's group: the track does not move with it
       dragged = { group, id }
-      setDragging(dragged)
-      try { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', t('nav.dragging')) } catch { /* some browsers want data to drag */ }
+      try { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData(DRAG_TYPE, id) } catch { /* no data transfer here */ }
     },
     onDragOver: event => {
-      const from = dragged ?? dragging
-      if (!from || from.group !== group || from.id === id) return
+      if (!ours() || dragged!.id === id) return
       event.preventDefault()
-      const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
-      const side = event.clientY < box.top + box.height / 2 ? 'before' : 'after'
+      event.stopPropagation()
+      const side = sideOf(event.currentTarget, event.clientY)
       if (over?.id !== id || over.side !== side) setOver({ id, side })
     },
-    onDragLeave: () => { if (over?.id === id) setOver(null) },
-    onDrop: event => {
-      const from = dragged ?? dragging
-      event.preventDefault()
-      if (from && from.group === group && over) place(from.id, id, over.side)
-      dragged = null
-      setDragging(null)
-      setOver(null)
+    onDragLeave: event => {
+      // Leaving the row for its own icon or label is still over it.
+      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+      if (over?.id === id) setOver(null)
     },
-    onDragEnd: () => { dragged = null; setDragging(null); setOver(null) },
+    onDrop: event => {
+      if (!ours()) return
+      event.preventDefault()
+      event.stopPropagation()
+      const from = dragged!
+      dragged = null
+      setOver(null)
+      place(from.id, id, sideOf(event.currentTarget, event.clientY))
+    },
+    onDragEnd: () => { dragged = null; setOver(null) },
     onKeyDown: event => {
       if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
       event.preventDefault()
-      const at = ids.indexOf(id)
+      event.stopPropagation()
+      const at = order.indexOf(id)
       const to = event.key === 'ArrowUp' ? at - 1 : at + 1
-      if (at < 0 || to < 0 || to >= ids.length) return
-      place(id, ids[to]!, event.key === 'ArrowUp' ? 'before' : 'after')
+      if (at < 0 || to < 0 || to >= order.length) return
+      place(id, order[to]!, event.key === 'ArrowUp' ? 'before' : 'after')
+      setFocusId(id)
     },
   })
+  return { order, props }
 }
-/** What is being dragged, across the lists (a drag starts in one list's hook and may pass over another's). */
-let dragged: { group: string; id: Id } | null = null
 
 function TrackGroup({ view, folded, onFold, onChoose, move }: { view: TrackView; folded: boolean; onFold: () => void; onChoose: () => void; move: DragProps }): ReactNode {
   const { t, picks, route, navigate } = useShell()
@@ -155,10 +190,11 @@ function TrackGroup({ view, folded, onFold, onChoose, move }: { view: TrackView;
   const picking = track.status === 'picking'
   const editing = route.page === 'editTrack' && route.trackId === track.id
   const { refresh } = useShell()
-  const productIds = products.map(item => item.product.id)
-  const moveProduct = useReorder(`products:${track.id}`, productIds, order => {
+  const reorder = useReorder(`products:${track.id}`, products.map(item => item.product.id), order => {
     call('POST tracks/:id/reorder', { id: track.id, body: { productIds: order } }).then(() => { refresh() }, () => { refresh() })
   })
+  const byId = new Map(products.map(item => [item.product.id, item]))
+  const ordered = reorder.order.flatMap(id => byId.get(id) ?? [])
   return <div className="op-group" role="group" aria-label={track.name}>
     <div className="op-group-top" {...move} title={t('nav.reorder')}>
       <button type="button" className="op-group-head" aria-expanded={!folded} onClick={onFold}>
@@ -174,12 +210,12 @@ function TrackGroup({ view, folded, onFold, onChoose, move }: { view: TrackView;
       {!picking && <Row to={{ page: 'track', trackId: track.id }} icon={<OverviewIcon />} label={t('nav.overview')} onChoose={onChoose} />}
       {picking && (picks[track.id] === undefined ? <DefaultPickRow trackId={track.id} tracked={new Set(products.map(item => item.product.id))} onChoose={onChoose} />
         : <PickRow trackId={track.id} count={picks[track.id]} onChoose={onChoose} />)}
-      {products.map(({ product, hasNew, progress }) => {
+      {ordered.map(({ product, hasNew, progress }) => {
         const end = product.status === 'baselining'
           ? `${t('nav.baselining')}${progress ? ` ${t('nav.progress', { done: progress.done, total: progress.total })}` : ''}`
           : product.status === 'paused' ? t('nav.paused') : undefined
         return <Row key={product.id} to={{ page: 'product', productId: product.id, tab: 'dossier' }} icon={<ProductIcon product={product} size={20} />}
-          label={product.name} end={end} dot={hasNew ? t('nav.new') : undefined} onChoose={onChoose} drag={moveProduct(product.id)} />
+          label={product.name} end={end} dot={hasNew ? t('nav.new') : undefined} onChoose={onChoose} drag={reorder.props(product.id)} />
       })}
       {/* A track still being picked has no products to add to yet: its 挑产品 page is where they come from. */}
       {!picking && <Row to={{ page: 'addProduct', trackId: track.id }} icon={null} label={t('add.row')} quiet onChoose={onChoose} />}
@@ -194,9 +230,10 @@ export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void })
   const { t, state, stateError, navigate, refresh } = useShell()
   const [folded, toggleFold] = useFolded()
   const tracks = state?.tracks ?? []
-  const moveTrack = useReorder('tracks', tracks.map(view => view.track.id), order => {
+  const reorder = useReorder('tracks', tracks.map(view => view.track.id), order => {
     call('POST tracks/reorder', { body: { trackIds: order } }).then(() => { refresh() }, () => { refresh() })
   })
+  const byTrack = new Map(tracks.map(view => [view.track.id, view]))
   const todayEnd = state === undefined ? undefined : state.todayUnread > 0 ? t('nav.todayNew', { count: state.todayUnread })
     : tracks.length === 0 ? t('nav.todayNone') : undefined
   return <nav className="op-mid" aria-label={t('nav.label')}>
@@ -209,7 +246,7 @@ export function MiddleColumn({ onChoose = () => {} }: { onChoose?: () => void })
     <Row to={{ page: 'today' }} icon={<BriefIcon />} label={t('nav.today')} end={todayEnd}
       endTone={state && state.todayUnread > 0 ? 'accent' : undefined} onChoose={onChoose} />
     <div className="op-mid-tracks">
-      {tracks.map(view => <TrackGroup key={view.track.id} view={view} folded={folded.has(view.track.id)} move={moveTrack(view.track.id)}
+      {reorder.order.flatMap(id => byTrack.get(id) ?? []).map(view => <TrackGroup key={view.track.id} view={view} folded={folded.has(view.track.id)} move={reorder.props(view.track.id)}
         onFold={() => { toggleFold(view.track.id) }} onChoose={onChoose} />)}
     </div>
     <div className="op-mid-foot">

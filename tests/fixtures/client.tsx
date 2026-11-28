@@ -139,7 +139,7 @@ export const track = (id: string, name: string, products: TrackProductView[], ex
   products, candidatesToReview, recommending: false,
 })
 export const state = (extra: Partial<StateView> = {}): StateView => ({
-  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, runTime: '08:00', browserAvailable: true, browserMissing: false, researchBroken: false, dataDir: '/Users/tiger/Projects/AgentOutpost-data', ...extra,
+  tracks: [], todayDate: '2026-11-25', todayUnread: 0, todayCostYuan: 0, runTime: '08:00', browserAvailable: true, browserMissing: false, browserOff: false, researchBroken: false, dataDir: '/Users/tiger/Projects/AgentOutpost-data', ...extra,
 })
 
 /** A verified, unread major finding of `productId` that cites nothing, from today's run. */

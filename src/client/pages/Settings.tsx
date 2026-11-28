@@ -430,16 +430,37 @@ const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/TigerdyXu/
  * are not installed, as after a plain `dsh plugin add` of Outpost), it says research still runs and gives the command that
  * installs the plugins, whole and selectable in one click. Else the profile overrides the preset without its browser.
  */
-function BrowserFallback({ t, available, missing, broken }: { t: T; available: boolean; missing: boolean; broken: boolean }): ReactNode {
+function BrowserFallback({ t, available, missing, broken, off }: { t: T; available: boolean; missing: boolean; broken: boolean; off: boolean }): ReactNode {
+  const { refresh } = useShell()
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  // The user's own switch (M2.4): on unless turned off; off, research runs on the preset without the browser.
+  const toggle = async (on: boolean) => {
+    setBusy(true)
+    setProblem(null)
+    try { await call('POST browser', { body: { on } }); refresh() }
+    catch (failure) { setProblem(describeError(t, failure instanceof Error ? failure : new Error(String(failure)))) }
+    finally { setBusy(false) }
+  }
+  const switchButton = (on: boolean) => <button type="button" className="op-link" disabled={busy} onClick={() => { void toggle(on) }}>
+    {t(on ? 'settings.browser.turnOn' : 'settings.browser.turnOff')}</button>
+  const note = problem && <span className="op-form-problem" role="alert">{problem}</span>
   if (broken) {
     return <section className="op-browser" data-broken="" role="alert">
       <span>{t('settings.browser.broken')}</span>
+    </section>
+  }
+  if (off) {
+    return <section className="op-browser" role="status">
+      <span>{t('settings.browser.turnedOff')}</span>
+      {switchButton(true)}{note}
     </section>
   }
   if (available) {
     return <section className="op-browser" data-on="" role="status">
       <CheckIcon size={16} />
       <span>{t('settings.browser.on')}</span>
+      {switchButton(false)}{note}
     </section>
   }
   if (missing) {
@@ -459,7 +480,7 @@ export function Settings(): ReactNode {
   const { t, state, configForm } = useShell()
   return <div className="op-page op-settings">
     <h1 className="op-page-title">{t('nav.settings')}</h1>
-    {state && <BrowserFallback t={t} available={state.browserAvailable} missing={state.browserMissing} broken={state.researchBroken} />}
+    {state && <BrowserFallback t={t} available={state.browserAvailable} missing={state.browserMissing} broken={state.researchBroken} off={state.browserOff} />}
     <SettingsForm t={t} form={configForm} {...state ? { known: { runTime: state.runTime, dataDir: state.dataDir } } : {}} />
   </div>
 }

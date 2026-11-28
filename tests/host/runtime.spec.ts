@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, statSync } from 'node:fs'
+import { chmodSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +12,8 @@ import { Repo } from '../../src/store/repo.ts'
 import { apiHost, type ApiHost, type CapturedRoute } from '../fixtures/api-host.ts'
 import { dshHost } from '../fixtures/dsh-context.ts'
 import { flush, gate } from '../fixtures/fake-driver.ts'
+import { pathToFileURL } from 'node:url'
+import { browserPackagesInstalled } from '../../src/host/browser-preset.ts'
 
 /** Every `onCompromised` the runtime hands the lock, so a test can report a lost lock the way proper-lockfile would. */
 const compromised = vi.hoisted(() => [] as ((error: Error) => void)[])
@@ -336,6 +338,45 @@ describe('Runtime', () => {
     await installed.stop()
     expect(unregister).toHaveBeenCalledOnce()
     other.cleanup()
+  })
+
+  it('turns the browser fallback off and on from 设置: the preset with the browser goes, and comes back (M2.4)', async () => {
+    const unregister = vi.fn(async () => {})
+    const register = vi.fn(async (_definition: { id: string; plugins: readonly unknown[] }) => unregister)
+    host.services.agentPresets = { ...(host.services.agentPresets as object), register }
+    runtime = host.create(true)
+    runtime.start()
+    await runtime.researchPreset()
+    expect(register).toHaveBeenCalledOnce()
+    await runtime.setBrowserFallback(false)
+    expect(unregister).toHaveBeenCalledOnce()
+    expect(runtime.browserTurnedOff()).toBe(true)
+    await runtime.setBrowserFallback(false) // already off: nothing more
+    expect(unregister).toHaveBeenCalledOnce()
+    await runtime.setBrowserFallback(true)
+    expect(register).toHaveBeenCalledTimes(2)
+    expect(runtime.browserTurnedOff()).toBe(false)
+    // Turned off, it stays off when Outpost starts again.
+    await runtime.setBrowserFallback(false)
+    await runtime.stop()
+    runtime = host.create(true)
+    runtime.start()
+    await runtime.researchPreset()
+    expect(register).toHaveBeenCalledTimes(2)
+  })
+
+  it('finds the browser packages above the profile, or above Outpost’s own files', () => {
+    const profile = join(host.dir, 'profile')
+    for (const name of ['@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp']) {
+      mkdirSync(join(profile, 'node_modules', name), { recursive: true })
+      writeFileSync(join(profile, 'node_modules', name, 'package.json'), '{}')
+    }
+    const elsewhere = join(host.dir, 'dev', 'lib')
+    mkdirSync(elsewhere, { recursive: true })
+    expect(browserPackagesInstalled(undefined, elsewhere)).toBe(false) // a development Outpost: not above its files
+    expect(browserPackagesInstalled(pathToFileURL(`${profile}/`).href, elsewhere)).toBe(true) // the profile's own
+    expect(browserPackagesInstalled(undefined, join(profile, 'node_modules', 'dsh-outpost', 'lib'))).toBe(true) // installed in it
+    expect(browserPackagesInstalled('not a url', elsewhere)).toBe(false)
   })
 
   it('says the browser fallback is on when the research preset composes an active browser provider', () => {

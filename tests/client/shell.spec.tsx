@@ -157,6 +157,25 @@ describe('middle column', () => {
     expect(sent().at(-1)).toEqual(['tracks/reorder', { trackIds: ['t2', 't1'] }])
   })
 
+  it('shows a new order at once and keeps the focus on what moved, so Alt+↓ can be pressed again (M2.4 review)', async () => {
+    const api = stubApi({
+      'GET state': state({ tracks: [track('t1', '甲', []), track('t2', '乙', []), track('t3', '丙', [])] }),
+      'POST tracks/reorder': { ok: true },
+    })
+    await mount(<App t={t} />)
+    const names = () => all('.op-group-name').map(name => name.textContent)
+    const press = (target: Element) => act(() => { target.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true })) })
+    const first = all<HTMLButtonElement>('.op-group-head')[0]!
+    first.focus()
+    await press(first)
+    expect(names()).toEqual(['乙', '甲', '丙']) // before the host answers
+    expect(document.activeElement?.textContent).toContain('甲')
+    await press(document.activeElement!)
+    expect(names()).toEqual(['乙', '丙', '甲'])
+    await settle()
+    expect(api.requests.filter(r => r.method === 'POST').map(r => r.body)).toEqual([{ trackIds: ['t2', 't1', 't3'] }, { trackIds: ['t2', 't3', 't1'] }])
+  })
+
   it('shows picking, baselining and waiting candidates as each track stands', async () => {
     const api = stubApi({
       'GET state': state({ tracks: [

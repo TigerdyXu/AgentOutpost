@@ -68,6 +68,8 @@ export interface StateView {
    * profile's either (`browserAvailable` false), 设置 says how to install the browser packages.
    */
   browserMissing: boolean
+  /** The user turned the browser fallback off on 设置 (M2.4): research runs on the preset without it. */
+  browserOff: boolean
   /** Neither research preset can compose a session (`Runtime.researchPreset`): no research runs at all until it is fixed. */
   researchBroken: boolean
   /** The data directory in use (database, icons, working files), for 设置 to show; it cannot be changed while Outpost runs. */
@@ -251,6 +253,8 @@ export interface Api {
   'POST topics/:id/delete': { response: { ok: true } }
   /** The 专题 about the product, oldest first (its 专题 tab). */
   'GET products/:id/topics': { response: { topics: TopicRow[] } }
+  /** Turns the browser fallback on or off (设置, M2.4); it is on unless turned off. */
+  'POST browser': { body: { on: boolean }; response: { ok: true } }
   /** The tracks in the order the user dragged them into (M2.4): those named first, in that order; the rest after. */
   'POST tracks/reorder': { body: { trackIds: Id[] }; response: { ok: true } }
   /** The track's products in the order the user dragged them into (M2.4), likewise. */
@@ -738,7 +742,8 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         todayCostYuan: repo.spentOn(rt.today()),
         runTime: rt.settings().runTime,
         browserAvailable: rt.browserAvailable(),
-        browserMissing: preset === BASIC_AGENT_PRESET,
+        browserMissing: preset === BASIC_AGENT_PRESET && !rt.browserTurnedOff(),
+        browserOff: rt.browserTurnedOff(),
         researchBroken: preset === null,
         dataDir: rt.dataDir,
       }
@@ -902,6 +907,12 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const { on } = Weekly.parse(await req.body())
       repo.setSetting(weeklyOffKey(t.id), on ? undefined : true)
       return weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today())
+    },
+
+    'POST browser': async req => {
+      const { on } = Weekly.parse(await req.body()) // { on: boolean }, as for the weekly suggestions
+      await rt.setBrowserFallback(on)
+      return { ok: true as const }
     },
 
     'POST tracks/reorder': async req => {

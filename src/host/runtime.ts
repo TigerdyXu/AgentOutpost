@@ -22,7 +22,7 @@ import { DshModelClient } from './dsh-model.ts'
 import {
   chooseResearchPreset, DshSessionDriver, profileBrowserProvider, researchPresetRuns, type AgentPresets, type ResearchPresetChoice,
 } from './dsh-sessions.ts'
-import { browserPackagesInstalled, browserPresetDefinition } from './browser-preset.ts'
+import { BROWSER_OFF, browserPackagesInstalled, browserPresetDefinition } from './browser-preset.ts'
 import { registerRoutes } from './http.ts'
 import { NodeIconFetcher } from './icons.ts'
 import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
@@ -131,7 +131,7 @@ export class Runtime {
     this.driver = parts.driver ?? new DshSessionDriver(ctx, this.workspaceDir)
     this.model = parts.model ?? new DshModelClient(ctx, () => modelFor('brief', this.settings()))
     this.icons = parts.icons ?? new NodeIconFetcher(this.iconsDir)
-    this.browserInstalled = parts.browserInstalled ?? (() => browserPackagesInstalled())
+    this.browserInstalled = parts.browserInstalled ?? (() => browserPackagesInstalled((ctx as { baseUrl?: unknown }).baseUrl))
     this.runner = new JobRunner({ repo: this.repo, driver: this.driver, clock: this.clock, settings: () => this.settings(), log })
     const jobs: JobDeps = { repo: this.repo, runner: this.runner, clock: this.clock, icons: this.icons }
     this.jobs = { ...jobs, verifyProduct: (productId, scope) => verifyProduct(jobs, productId, scope) }
@@ -209,7 +209,7 @@ export class Runtime {
 
   /**
    * Whether research sessions can open pages in a browser. Outpost's own browser lives inside the research preset
-   * (cordis.patch.yml: the browser-use service and its Playwright provider in an isolated group), so it is on when a
+   * (src/host/browser-preset.ts: the browser-use service and its Playwright provider in an isolated group), so it is on when a
    * revision of `outpost-researcher` DSH holds has a browser provider running (`researchPresetRuns`). A provider
    * registered for the whole profile counts too, a Playwright one beside the preset's own included: research sessions
    * then run on the preset without a browser (`researchPreset`), and the profile's Playwright is the one they get.
@@ -244,7 +244,7 @@ export class Runtime {
    */
   private async registerBrowserPreset(): Promise<void> {
     const presets = this.ctx.get('agentPresets') as AgentPresets | null | undefined
-    if (!presets?.register || !this.browserInstalled()) return
+    if (this.unregisterBrowserPreset || this.repo.getSetting<boolean>(BROWSER_OFF) === true || !presets?.register || !this.browserInstalled()) return
     try {
       const unregister = await presets.register(browserPresetDefinition())
       if (this.stopping) await unregister() // stopped while it loaded
@@ -327,6 +327,24 @@ export class Runtime {
       }
     }
   }
+
+  /**
+   * Turns the browser fallback on or off (设置, M2.4), at once: off unregisters the preset with the browser, so new research
+   * sessions run on the one without; on registers it again (when its packages are installed). Remembered across restarts.
+   */
+  setBrowserFallback(on: boolean): Promise<void> {
+    this.repo.setSetting(BROWSER_OFF, on ? undefined : true)
+    this.browserPreset = this.browserPreset.then(async () => {
+      if (on) return this.registerBrowserPreset()
+      const unregister = this.unregisterBrowserPreset
+      this.unregisterBrowserPreset = null
+      try { await unregister?.() } catch (error) { this.log(`the browser preset could not be unregistered: ${messageOf(error)}`) }
+    })
+    return this.browserPreset
+  }
+
+  /** Whether the user turned the browser fallback off. */
+  browserTurnedOff(): boolean { return this.repo.getSetting<boolean>(BROWSER_OFF) === true }
 
   /** Writes to DSH's log. */
   log(message: string): void {

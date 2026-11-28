@@ -79,9 +79,9 @@ export const RETRY_DELAY_MS = 15_000
  */
 export const RELEASE_WAIT_MS = 60_000
 /**
- * Sessions of runs that ended longer ago than this are archived, after each day's run: Outpost writes a dozen sessions a
- * day (research, checks, maps' neighbours: recommendations, topics), and a week of them crowded the user's own out of
- * DSH's session list (M1 defect 9). A day keeps the latest ones at hand, to open from 运行记录.
+ * Sessions of runs that ended before this many local days ago (counted from midnight) are archived, after each day's
+ * run: Outpost writes a dozen sessions a day (research, checks, recommendations, topics), and a week of them crowded the
+ * user's own out of DSH's session list (M1 defect 9). 1 keeps today's and yesterday's at hand, to open from 运行记录.
  */
 export const ARCHIVE_AFTER_DAYS = 1
 
@@ -200,7 +200,8 @@ export class JobRunner {
    * (DSH no longer has it, say) is logged and not tried again.
    */
   async archiveOld(now: Date): Promise<void> {
-    const cutoff = now.getTime() - ARCHIVE_AFTER_DAYS * DAY_MS
+    // Midnight `ARCHIVE_AFTER_DAYS` days back: whatever ended yesterday stays, however late today's run ends.
+    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ARCHIVE_AFTER_DAYS).getTime()
     const through = Date.parse(this.repo.getSetting<string>(ARCHIVED_THROUGH) ?? '')
     const from = Number.isNaN(through) ? -Infinity : through // none yet, or unreadable: look at every run
     if (!(cutoff > from)) return

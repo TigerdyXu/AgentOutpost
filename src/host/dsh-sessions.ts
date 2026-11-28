@@ -40,7 +40,7 @@ declare module '@deepseek-ai/dsh-llm' {
 
 /** Every Outpost session id starts with this; the tools go only to sessions that carry it. */
 export const SESSION_PREFIX = 'outpost-'
-/** The research preset (cordis.patch.yml), with the browser fallback; research runs on it whenever it can be used. */
+/** The research preset with the browser fallback (registered by Outpost, src/host/browser-preset.ts); research runs on it whenever it can be used. */
 export const AGENT_PRESET = 'outpost-researcher'
 /**
  * The same research preset without the browser group (cordis.patch.yml), so that it loads without the browser packages,
@@ -65,7 +65,7 @@ export const WORKSPACE_TITLE = '前哨'
  * sentence here: it says what stops and where the details are (what DSH said of each preset is in the log).
  */
 export const RESEARCH_PRESET_BROKEN = say('presetBroken')
-/** DSH's Playwright browser provider, as the research preset composes it (cordis.patch.yml). */
+/** DSH's Playwright browser provider, as the research preset composes it (src/host/browser-preset.ts). */
 export const PLAYWRIGHT_MODULE = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
 /** The name that provider registers with browser use, which is also the MCP server name its tools are reached by. */
 export const PLAYWRIGHT_PROVIDER = 'playwright-mcp'

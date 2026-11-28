@@ -15,9 +15,9 @@ import type { Repo } from '../../store/repo.ts'
 export const WEEKLY_EVERY_DAYS = 7
 /** Settings key, per track: `true` when its weekly suggestions are turned off. */
 export const weeklyOffKey = (trackId: Id) => `weeklySuggestionsOff:${trackId}`
-/** What the weekly recommendation is asked, as the user's adjustment of the batch (prompts/recommend.md 「调整要求」). */
 /** The `subject` of a weekly recommendation's run: how its 重试 knows to ask again for what is new only. */
 export const WEEKLY_SUBJECT = '每周推荐'
+/** What the weekly recommendation is asked, as the user's adjustment of the batch (prompts/recommend.md 「调整要求」). */
 export const WEEKLY_REFINE = '每周例行刷新：只交上一轮之后新出现的、或者有了新进展值得再看一眼的产品；上一轮交过、没有新变化的不要重复交；够格的少就少交，一个都没有也行。'
 
 /** How a track's weekly suggestions stand on `today`. */

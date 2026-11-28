@@ -20,22 +20,30 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+/** Settings key: `true` when the user turned the browser fallback off on 设置 (M2.4); it is on unless they did. */
+export const BROWSER_OFF = 'browserFallbackOff'
+
 /** The packages the `browser` group needs (`dsh plugin add` them; install.sh does). */
 export const BROWSER_PACKAGES = ['@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'] as const
 /** Where the Desktop's Chrome is on a Mac; elsewhere Playwright looks for one itself. */
 const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 /**
- * Whether every browser package is installed where DSH loads the profile's plugins from: a `node_modules` above Outpost's
- * own (Outpost is one of the profile's packages), as Node would look for it.
+ * Whether every browser package is installed where DSH loads the profile's plugins from: a `node_modules` above the
+ * profile (`baseUrl`, the context's, where DSH resolves a preset's plugins), or above Outpost's own files (a profile that
+ * holds Outpost as a package of its own), as Node would look for it. A development or linked Outpost lives elsewhere: the
+ * profile's own directory is what counts then.
  */
-export function browserPackagesInstalled(start = dirname(fileURLToPath(import.meta.url))): boolean {
-  return BROWSER_PACKAGES.every(name => {
-    for (let dir = start; ; dir = dirname(dir)) {
+export function browserPackagesInstalled(baseUrl?: unknown, start = dirname(fileURLToPath(import.meta.url))): boolean {
+  const starts = [start]
+  try { if (baseUrl !== undefined && baseUrl !== null) starts.unshift(fileURLToPath(new URL(String(baseUrl)))) } catch { /* not a file: address */ }
+  const under = (from: string, name: string) => {
+    for (let dir = from; ; dir = dirname(dir)) {
       if (existsSync(join(dir, 'node_modules', name, 'package.json'))) return true
       if (dirname(dir) === dir) return false
     }
-  })
+  }
+  return BROWSER_PACKAGES.every(name => starts.some(from => under(from, name)))
 }
 
 /** The basic preset's plugin rows (cordis.patch.yml `outpost-researcher-basic-preset`), which this one repeats. */
