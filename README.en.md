@@ -8,7 +8,7 @@ Tell it what you're following. It recommends products and builds a sourced dossi
 
 ![Outpost demo: today's brief, a product dossier, a new track](docs/images/demo.gif)
 
-> The interface is in Chinese.
+> The interface follows the language set in DeepSeek Harness (Settings → General → Language): Chinese or English, and English for the other languages. What the AI writes (dossiers, findings, the brief's summary) is in Chinese.
 
 ## Install
 
@@ -26,17 +26,19 @@ You need:
 
 ## How to use
 
-**1. Create a track.** Click 「＋ 新赛道」 (New track). Name it, say in one sentence what you care about, and click 「开始找候选」 (Find candidates). Candidate products appear as the AI searches; tick the ones to follow and start tracking.
+**1. Create a track.** Click **+ New track**. Name it, say in one sentence what you care about, and click **Find candidates**. Candidate products appear as the AI searches; tick the ones to follow and start tracking.
 
 <img src="docs/images/new-track.png" width="760" alt="New track">
 
-**2. Read the dossier.** Each product gets a card per dimension, such as positioning, audience, experience and business model, and every point links to its source. The 「动态」 (Updates) tab lists its news over time.
+**2. Read the dossier.** Each product gets a card per dimension, such as positioning, audience, experience and business model, and every point links to its source. The **Feed** tab lists its news over time.
 
 <img src="docs/images/product.png" width="760" alt="Product dossier">
 
-**3. Read the brief each morning.** Outpost runs once a day, at 08:00 by default. The most important items come first, and every one has been fact-checked. Click 「追问」 (Ask) on any item to chat about it.
+**3. Read the brief each morning.** Outpost runs once a day, at 08:00 by default. The most important items come first, and every one has been fact-checked. Click **Ask more** on any item to chat about it.
 
-**4. Add products and move them between tracks.** Under a track, click 「＋ 添加产品」 (Add product). Type a product's name, or ask Outpost for another round of recommendations. The 「⋯」 menu on a product page moves the product to another track, or adds it there too.
+**4. Add products and move them between tracks.** Under a track, click **+ Add a product**. Type a product's name, or ask Outpost for another round of recommendations. The **⋯** menu on a product page moves the product to another track, or adds it there too.
+
+**5. Rename or delete.** The same **⋯** menu changes a product's name, company and official site, or deletes the product. The **⋯** beside a track's name opens its settings: its name, what it follows, its dimensions, and deleting the track. Deleting asks once more and can't be undone; spending records stay.
 
 <img src="docs/images/add-product.png" width="760" alt="Add product">
 
@@ -47,7 +49,7 @@ Rough figures with DeepSeek (deepseek-flash), web searches included:
 - One product's daily update and fact check: about ¥0.5–1.
 - Finding candidates for a new track: about ¥0.5–1.
 
-DeepSeek charges half outside weekday peak hours (9–12 and 14–18 Beijing time), and the 08:00 run is off-peak. Set a daily budget in 「设置」 (Settings); once spending reaches it, the rest waits for the next day. Local models (Ollama) and a Claude subscription count as ¥0 and don't use the budget.
+DeepSeek charges half outside weekday peak hours (9–12 and 14–18 Beijing time), and the 08:00 run is off-peak. Set a daily budget in **Settings**; once spending reaches it, the rest waits for the next day. Local models (Ollama) and a Claude subscription count as ¥0 and don't use the budget.
 
 > These are estimates. DeepSeek Harness doesn't report what each web search actually used, so Outpost assumes about 8,000 input and 800 output tokens per search. Your DeepSeek bill is the final word.
 

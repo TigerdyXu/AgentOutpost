@@ -13,6 +13,8 @@
 > **M1.3 changes (2026-11-27)**: Spend is counted in full: web searches are estimated per search, DeepSeek off-peak is priced at half, and 「追问」 (follow-up) chats are counted. For details see [`docs/en/m1.3-design.md`](m1.3-design.md).
 >
 > **M1.4 changes (2026-11-27)**: Outpost installs and runs with a plain `dsh plugin add`, without the install script: the data directory defaults to `~/.outpost/data`; without the browser plugins, research runs on a preset without a browser, and the settings page says how to install them; the version is now 0.1.4 and changes with each milestone. For details see [`docs/en/m1.4-design.md`](m1.4-design.md).
+>
+> **M1.5 changes (2026-11-28)**: the interface follows the Desktop's language setting (Chinese or English), including the fixed sentences the background writes and the default dimension names; what the AI writes is unchanged. Tracks and products can be deleted (for good; spending records stay) and edited: a track's name, focus and dimensions, a product's name, company and official site (the ⋯ beside a track's name, and the product page's ⋯). For details see [`docs/en/m1.5-design.md`](m1.5-design.md).
 
 ## 1. Why build this
 

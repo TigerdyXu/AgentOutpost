@@ -81,7 +81,7 @@ DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
 
    退回时先退出桌面版，把这几个文件拷回 `~/Projects/AgentOutpost-data/`（备份里没有 `-wal`、`-shm` 的，要把数据目录里现有的这两个删掉），再装回旧包（见下面「撤回」）。
 
-3. **检查并打包，放进固定的包目录** `~/Projects/AgentOutpost-data/packages/`，文件名带上提交号（版本号取自 `package.json`：M1.3 以前一直是 0.1.0，M1.4 起每个里程碑加一，比如 0.1.4；同一版本的几次打包靠提交号区分）。在干净的代码上打（`git status` 没有改动）：
+3. **检查并打包，放进固定的包目录** `~/Projects/AgentOutpost-data/packages/`，文件名带上提交号（版本号取自 `package.json`：M1.3 以前一直是 0.1.0，M1.4 起每个里程碑加一，比如 0.1.4、0.1.5；同一版本的几次打包靠提交号区分）。在干净的代码上打（`git status` 没有改动）：
 
    ```sh
    cd /Users/tiger/Projects/AgentOutpost
