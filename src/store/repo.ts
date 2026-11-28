@@ -43,7 +43,7 @@ class Codec<T extends object> {
 const TRACK = new Codec<Track>('tracks', { id: 'plain', name: 'plain', brief: 'plain', dimensions: 'json', status: 'plain', createdAt: 'plain' })
 const PRODUCT = new Codec<Product>('products', { id: 'plain', name: 'plain', company: 'plain', region: 'plain', form: 'plain', iconPath: 'plain', officialDomains: 'json', status: 'plain', dailyBudgetYuan: 'plain', createdAt: 'plain' })
 const CANDIDATE = new Codec<Candidate>('candidates', { id: 'plain', trackId: 'plain', batchId: 'plain', productId: 'plain', tier: 'plain', oneLiner: 'plain', reason: 'plain', heat: 'json', selected: 'bool' })
-const SOURCE = new Codec<Source>('sources', { id: 'plain', url: 'plain', title: 'plain', publisher: 'plain', publishedAt: 'plain', kind: 'plain', isOfficial: 'bool', quote: 'plain', syndicationGroup: 'plain', openedVia: 'plain', quoteFound: 'bool', supportsClaim: 'bool' })
+const SOURCE = new Codec<Source>('sources', { id: 'plain', url: 'plain', title: 'plain', publisher: 'plain', publishedAt: 'plain', kind: 'plain', isOfficial: 'bool', quote: 'plain', syndicationGroup: 'plain', openedVia: 'plain', quoteFound: 'bool', supportsClaim: 'bool', officialConfirmed: 'bool' })
 const FINDING = new Codec<Finding>('findings', { id: 'plain', productId: 'plain', runId: 'plain', headline: 'plain', why: 'plain', importance: 'plain', claimKind: 'plain', sourceIds: 'json', status: 'plain', statusNote: 'plain', unconfirmedUntil: 'plain', dimensions: 'json', inference: 'bool', read: 'bool', late: 'bool', dedupeKey: 'plain', createdAt: 'plain', verifiedOn: 'plain' })
 const CARD_VERSION = new Codec<CardVersion>('card_versions', { productId: 'plain', dimension: 'plain', version: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', addedSpans: 'json', changeNote: 'plain', findingIds: 'json', createdAt: 'plain' })
 const CARD_EDIT = new Codec<CardEdit>('card_edits', { id: 'plain', productId: 'plain', dimension: 'plain', summary: 'plain', bullets: 'json', body: 'plain', sourceIds: 'json', inferenceSpans: 'json', changeNote: 'plain', findingIds: 'json', status: 'plain' })
@@ -51,7 +51,7 @@ const FACTS = new Codec<Facts>('facts', { productId: 'plain', version: 'plain', 
 const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', findingIds: 'json', minorIds: 'json', quietProductIds: 'json', skipped: 'json', costYuan: 'plain', createdAt: 'plain', updatedAt: 'plain' })
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
-type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup'>>
+type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup' | 'officialConfirmed'>>
 type FindingPatch = Partial<Pick<Finding, 'status' | 'statusNote' | 'unconfirmedUntil' | 'read' | 'late' | 'sourceIds' | 'verifiedOn'>>
 type TrackPatch = Partial<Pick<Track, 'name' | 'brief' | 'dimensions' | 'status'>>
 
@@ -313,7 +313,7 @@ export class Repo {
     return source
   }
 
-  updateSource(id: Id, patch: SourcePatch): void { this.patch(SOURCE, id, patch, ['openedVia', 'quoteFound', 'supportsClaim', 'syndicationGroup']) }
+  updateSource(id: Id, patch: SourcePatch): void { this.patch(SOURCE, id, patch, ['openedVia', 'quoteFound', 'supportsClaim', 'syndicationGroup', 'officialConfirmed']) }
 
   /** The sources with those ids, in the order asked; ids that do not exist are skipped. */
   getSources(ids: Id[]): Source[] {

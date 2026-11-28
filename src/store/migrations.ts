@@ -182,6 +182,11 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE runs ADD COLUMN subject TEXT;
   `,
+  // 4: whether the checker, having seen the page, agrees that the product's maker published it (M1.6); null for every
+  // source checked before, which therefore no longer counts as official.
+  `
+  ALTER TABLE sources ADD COLUMN official_confirmed INTEGER;
+  `,
 ]
 
 /**

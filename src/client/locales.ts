@@ -102,6 +102,7 @@ const OWN = {
   'today.skipped': ['因预算未跑：{names}（{reason}）', 'Not run, over budget: {names} ({reason})'],
   'today.failed': ['未能更新：{name}（{reason}）', 'Could not update: {name} ({reason})'],
   'today.verifyBudget': ['{name}的新消息核查因预算未完成，明天继续', 'The check of {name}’s news ran out of budget; it continues tomorrow'],
+  'today.verifyBudgetPaused': ['{name}的新消息核查因预算未完成；{name}已暂停，恢复跟踪后接着核', 'The check of {name}’s news ran out of budget; {name} is paused, so it continues once you resume it'],
   'today.sessionNotReady': ['追问会话已经建好，但会话列表还没准备好；稍后在 DSH 的会话列表里就能找到。', 'The follow-up session is created, but the session list is not ready; find it in DSH’s session list shortly.'],
   'today.sessionNotListed': ['追问会话已经建好，但会话列表里还没出现；稍后在 DSH 的会话列表里就能找到。', 'The follow-up session is created, but is not in the session list yet; find it in DSH’s session list shortly.'],
   // 新建赛道 (design §5.3): step 1, the form and its summary.
@@ -315,6 +316,8 @@ const OWN = {
   'sources.cited': ['被引用', 'Cited by'],
   'sources.citedBy': ['被 {count} 条结论引用', 'Cited by {count} conclusions'],
   'sources.kind.official': ['官方发布', 'Official'],
+  'sources.kind.officialUnchecked': ['官方（未核实）', 'Official (not checked)'],
+  'sources.kind.officialRefused': ['不是官方', 'Not official'],
   'sources.kind.media': ['媒体报道', 'Media'],
   'sources.kind.review': ['评测', 'Review'],
   'sources.kind.appstore': ['应用商店', 'App store'],

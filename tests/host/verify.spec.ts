@@ -52,7 +52,7 @@ const daysAfterStart = (days: number) => new Date(START.getTime() + days * DAY_M
 const dailyRun = (date = TODAY) => repo.createRun({ kind: 'daily', date, trackId: null, productId: 'p1' })
 const addSource = (url: string, over: Partial<Omit<Source, 'id' | 'url'>> = {}): Source => repo.addSource({
   url, title: '报道', publisher: '某媒体', publishedAt: null, kind: 'media', isOfficial: false, quote: `${url} 的原话`,
-  syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...over,
+  syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null, ...over,
 })
 const official = (url: string) => addSource(url, { kind: 'official', isOfficial: true, publisher: 'Cursor' })
 const addFinding = (sources: Source[], over: Partial<Omit<Finding, 'id' | 'createdAt' | 'sourceIds'>> = {}): Finding => repo.addFinding({
@@ -74,15 +74,19 @@ const spanText = (body: string, spans: Span[]) => spans.map(s => body.slice(s.st
 interface PendingSource { sourceId: string; url: string; quote: string; needsCheck: boolean }
 interface PendingItem { itemId: string; claimKind: string | null; claim: string; sources: PendingSource[] }
 interface Pending { pendingFindings: PendingItem[]; pendingCardEdits: PendingItem[]; unconfirmedFindings: PendingItem[] }
-interface Check { openedVia: OpenedVia; quoteFound: boolean | null; supportsClaim?: boolean | null; syndicationGroup?: string | null }
+interface Check { openedVia: OpenedVia; quoteFound: boolean | null; supportsClaim?: boolean | null; official?: boolean | null; syndicationGroup?: string | null }
 
 const readPending = async (r: Round) => await r.call('outpost_read_pending') as Pending
 const everySource = (p: Pending) => [...p.pendingFindings, ...p.pendingCardEdits, ...p.unconfirmedFindings].flatMap(i => i.sources)
-/** A check session that reports `check` (or what it gives for the source; null: says nothing) for every source waiting, then ends. */
+/**
+ * A check session that reports `check` (or what it gives for the source; null: says nothing) for every source waiting,
+ * then ends. Unless the check says otherwise, it agrees with the researcher on whether the maker published the page.
+ */
 const reportCheck = (check: Check | ((s: PendingSource) => Check | null)): Play => async r => {
   for (const s of everySource(await readPending(r))) {
     const report = typeof check === 'function' ? check(s) : check
-    if (report) await r.call('outpost_report_check', { sourceId: s.sourceId, supportsClaim: null, ...report })
+    const official = repo.getSources([s.sourceId])[0]!.isOfficial
+    if (report) await r.call('outpost_report_check', { sourceId: s.sourceId, supportsClaim: null, official, ...report })
   }
   await r.done()
   return completed()
@@ -159,7 +163,7 @@ describe('verifyProduct', () => {
         itemId: f.id,
         source: { url: 'https://www.theinformation.example/cursor-revenue', title: 'Cursor 收入', publisher: 'The Information', publishedAt: null, kind: 'media', isOfficial: false, quote: 'annualized revenue passed $500 million' },
       }) as { sourceId: string }
-      await r.call('outpost_report_check', { sourceId: added.sourceId, ...SEEN })
+      await r.call('outpost_report_check', { sourceId: added.sourceId, official: false, ...SEEN })
       await r.done()
       return completed()
     }
@@ -189,6 +193,34 @@ describe('verifyProduct', () => {
     expect(finding(thirdParty.id)).toMatchObject({ status: 'unconfirmed', verifiedOn: null })
     expect(finding(refuted.id)).toMatchObject({ status: 'withdrawn', verifiedOn: null })
     expect(repo.findingsVerifiedOn('2026-11-24').map(f => f.id)).toEqual([official1.id])
+  })
+
+  it('takes one official page for a claim about the product itself only when the check agrees the maker published it (M1.6)', async () => {
+    const agreed = addFinding([official('https://cursor.com/changelog/2-0')])
+    // The researcher once called another company's site, and a regulator's, the maker's own.
+    const refused = addFinding([official('https://cursor.example/blog/teams')], { dedupeKey: 'k2' })
+    const unsure = addFinding([official('https://regulator.example/notice')], { dedupeKey: 'k3' })
+    driver.script[VERIFY] = reportCheck(s => ({ ...SEEN, official: s.url.startsWith('https://cursor.com/') ? true : s.url.includes('cursor.example') ? false : null }))
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(finding(agreed.id)).toMatchObject({ status: 'verified', statusNote: null })
+    expect(finding(refused.id)).toMatchObject({ status: 'unconfirmed', statusNote: '只有一个来源' }) // waits for a second source
+    expect(finding(unsure.id)).toMatchObject({ status: 'unconfirmed', statusNote: '只有一个来源' })
+    expect(repo.getSources(finding(refused.id).sourceIds)[0]).toMatchObject({ isOfficial: true, officialConfirmed: false })
+  })
+
+  it('does not count a page checked before M1.6 as official on the researcher’s word alone', async () => {
+    // Checked by an earlier build: the quote matched, nobody asked who published it.
+    const old = addSource('https://cursor.com/changelog/1-9', { kind: 'official', isOfficial: true, openedVia: 'http', quoteFound: true, supportsClaim: true })
+    const f = addFinding([old], { status: 'unconfirmed', unconfirmedUntil: daysAfterStart(UNCONFIRMED_WINDOW_DAYS).toISOString() })
+    let offered: PendingSource[] = []
+    driver.script[VERIFY] = async r => { offered = everySource(await readPending(r)); return await reportCheck(s => s.needsCheck ? SEEN : null)(r) }
+
+    await verifyProduct(deps, 'p1', 'daily')
+
+    expect(offered.map(s => s.needsCheck)).toEqual([false]) // its quote is settled: the page is not opened again
+    expect(finding(f.id)).toMatchObject({ status: 'unconfirmed', statusNote: '只有一个来源' })
   })
 
   it('records today as the verified day of a baseline check', async () => {
@@ -398,7 +430,7 @@ describe('verifyProduct', () => {
     const edit = addEdit({ dimension: 'positioning', body: 'Cursor 是 AI 编辑器[1]，评测说它很快[2]。', sourceIds: sources.map(s => s.id), changeNote: '建档' })
     // The checker reports the first source, then runs out (no outpost_done, not even after the reminder).
     driver.script[VERIFY] = async r => {
-      if (r.kind === 'run') await r.call('outpost_report_check', { sourceId: sources[0]!.id, ...SEEN })
+      if (r.kind === 'run') await r.call('outpost_report_check', { sourceId: sources[0]!.id, official: sources[0]!.isOfficial, ...SEEN })
       return completed()
     }
 
@@ -416,7 +448,7 @@ describe('verifyProduct', () => {
     let offered: PendingSource[] = []
     driver.script[VERIFY] = async r => {
       offered = everySource(await readPending(r))
-      for (const s of offered.filter(s => s.needsCheck)) await r.call('outpost_report_check', { sourceId: s.sourceId, ...SEEN })
+      for (const s of offered.filter(s => s.needsCheck)) await r.call('outpost_report_check', { sourceId: s.sourceId, official: null, ...SEEN })
       await r.done()
       return completed()
     }
@@ -462,7 +494,7 @@ describe('verifyProduct', () => {
   it('rejects when the check session failed, judging nothing on half a report', async () => {
     const f = addFinding([official('https://cursor.com/changelog/2-0')])
     driver.script[VERIFY] = async r => {
-      for (const s of everySource(await readPending(r))) await r.call('outpost_report_check', { sourceId: s.sourceId, ...SEEN })
+      for (const s of everySource(await readPending(r))) await r.call('outpost_report_check', { sourceId: s.sourceId, official: null, ...SEEN })
       return failure('模型返回了无法解析的内容')
     }
 

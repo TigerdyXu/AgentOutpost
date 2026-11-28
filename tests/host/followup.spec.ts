@@ -31,8 +31,8 @@ beforeEach(() => {
   const track = repo.createTrack({ name: 'AI 编程助手', brief: '盯住编程类 Agent', dimensions: [{ key: 'positioning', label: '定位' }, { key: 'business', label: '商业化' }], status: 'active' })
   repo.upsertProduct({ id: 'p1', name: 'Cursor', company: 'Anysphere', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: ['cursor.com'], status: 'tracking', dailyBudgetYuan: null })
   repo.linkProduct(track.id, 'p1')
-  official = repo.addSource({ url: 'https://cursor.com/changelog/2-1', title: 'Cursor 2.1 更新日志', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true })
-  const media = repo.addSource({ url: 'https://36kr.com/p/1', title: 'Cursor 后台 Agent 上线', publisher: '36氪', publishedAt: null, kind: 'media', isOfficial: false, quote: '开发者可以把任务交给后台 Agent', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true })
+  official = repo.addSource({ url: 'https://cursor.com/changelog/2-1', title: 'Cursor 2.1 更新日志', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: true })
+  const media = repo.addSource({ url: 'https://36kr.com/p/1', title: 'Cursor 后台 Agent 上线', publisher: '36氪', publishedAt: null, kind: 'media', isOfficial: false, quote: '开发者可以把任务交给后台 Agent', syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: false })
   const run = repo.createRun({ kind: 'daily', date: TODAY, trackId: null, productId: 'p1' })
   finding = repo.addFinding({
     productId: 'p1', runId: run.id, headline: '后台 Agent 正式上线', why: '不用守着编辑器也能让 Agent 改代码', importance: 'major', claimKind: 'self',

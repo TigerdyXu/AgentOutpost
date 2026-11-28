@@ -16,7 +16,12 @@ export interface Candidate { id: Id; trackId: Id; batchId: Id; productId: Id; ti
 
 export type SourceKind = 'official' | 'media' | 'review' | 'appstore' | 'social'
 export type OpenedVia = 'http' | 'browser' | 'snippet' | 'unopened'
-export interface Source { id: Id; url: string; title: string; publisher: string; publishedAt: string | null; kind: SourceKind; isOfficial: boolean; quote: string; syndicationGroup: string | null; openedVia: OpenedVia | null; quoteFound: boolean | null; supportsClaim: boolean | null }
+export interface Source { id: Id; url: string; title: string; publisher: string; publishedAt: string | null; kind: SourceKind
+  /** What the researcher said: the product's maker published it. Counts only once the checker agrees (`officialConfirmed`, `isOwnSource`). */
+  isOfficial: boolean
+  quote: string; syndicationGroup: string | null; openedVia: OpenedVia | null; quoteFound: boolean | null; supportsClaim: boolean | null
+  /** What the checker said, having seen the page (M1.6): true, the maker published it; false, someone else did; null, not checked or could not tell. */
+  officialConfirmed: boolean | null }
 
 export type Importance = 'major' | 'notable' | 'minor'
 export type ClaimKind = 'self' | 'third-party'

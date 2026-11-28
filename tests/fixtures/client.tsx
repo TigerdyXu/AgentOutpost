@@ -142,7 +142,9 @@ export const finding = (id: string, productId: string, extra: Partial<Finding> =
 })
 export const source = (id: string, extra: Partial<Source> = {}): Source => ({
   id, url: `https://example.com/${id}`, title: `来源 ${id}`, publisher: `发布方 ${id}`, publishedAt: '2026-11-24', kind: 'media', isOfficial: false,
-  quote: `${id} 的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, ...extra,
+  quote: `${id} 的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true,
+  officialConfirmed: extra.isOfficial ?? false, // the check agreed with whatever the researcher said
+  ...extra,
 })
 export const brief = (extra: Partial<Brief> = {}): Brief => ({
   date: '2026-11-25', gist: '', findingIds: [], minorIds: [], quietProductIds: [], skipped: [], costYuan: 0,

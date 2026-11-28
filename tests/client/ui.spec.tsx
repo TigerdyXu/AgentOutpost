@@ -13,7 +13,7 @@ afterEach(() => { unmount(); document.head.innerHTML = '' })
 
 const source = (extra: Partial<Source> = {}): Source => ({
   id: 's1', url: 'https://mp.weixin.qq.com/s/abc', title: '豆包·小豆全量开放', publisher: '豆包官方公众号', publishedAt: '2026-11-25',
-  kind: 'official', isOfficial: true, quote: '即日起，小豆对全部安卓用户开放。', syndicationGroup: null, openedVia: 'browser', quoteFound: true,
+  kind: 'official', isOfficial: true, quote: '即日起，小豆对全部安卓用户开放。', syndicationGroup: null, openedVia: 'browser', quoteFound: true, officialConfirmed: true,
   supportsClaim: true, ...extra,
 })
 /** Puts the stylesheet in the document so computed styles follow its rules. */
@@ -111,6 +111,16 @@ it('shows a source chip with its publisher and date, marking official and unreac
   expect(official!.getAttribute('title')).toBe('豆包·小豆全量开放')
   expect(unopened!.textContent).toBe('36氪原文打不开')
   expect([...unopened!.querySelectorAll<HTMLElement>('.op-tag')].map(tag => tag.dataset.kind)).toEqual(['unopened'])
+})
+
+it('marks a source 官方 only when the check agreed that the maker published it (M1.6)', async () => {
+  await mount(<>
+    <SourceChip source={source()} />
+    <SourceChip source={source({ id: 's2', officialConfirmed: false })} />
+    <SourceChip source={source({ id: 's3', officialConfirmed: null })} />
+  </>)
+  const marked = all('a.op-source').map(chip => [...chip.querySelectorAll<HTMLElement>('.op-tag')].some(tag => tag.dataset.kind === 'official'))
+  expect(marked).toEqual([true, false, false]) // the researcher called all three official
 })
 
 it('styles with theme variables only: no color literals, hairline borders, selection without a side bar', () => {

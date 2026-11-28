@@ -1,8 +1,12 @@
 /**
  * 来源 (design §5.4): every source the profile cites: its title (a link), who published it and when, what kind of source it
  * is, whether it is the product's own, and which conclusions cite it. The most cited come first, then the newest.
+ *
+ * 官方 is what the check agreed to (`isOwnSource`): a source the researcher called the maker's own reads 「官方（未核实）」
+ * until a check has seen it, and 「不是官方」 once the check said someone else published it.
  */
 import type { ReactNode } from 'react'
+import { isOwnSource } from '../../../core/credibility.ts'
 import type { Source, SourceKind } from '../../../core/types.ts'
 import type { ProductView } from '../../../host/api.ts'
 import { useShell } from '../../shell/context.ts'
@@ -10,6 +14,12 @@ import { Tag } from '../../ui/Tag.tsx'
 
 const KINDS: Record<SourceKind, 'sources.kind.official' | 'sources.kind.media' | 'sources.kind.review' | 'sources.kind.appstore' | 'sources.kind.social'> = {
   official: 'sources.kind.official', media: 'sources.kind.media', review: 'sources.kind.review', appstore: 'sources.kind.appstore', social: 'sources.kind.social',
+}
+
+/** The kind as the page names it: an 「官方发布」 the check has not agreed to says so. */
+function kindKey(source: Source): (typeof KINDS)[SourceKind] | 'sources.kind.officialUnchecked' | 'sources.kind.officialRefused' {
+  if (source.kind !== 'official' || isOwnSource(source)) return KINDS[source.kind]
+  return source.officialConfirmed === false ? 'sources.kind.officialRefused' : 'sources.kind.officialUnchecked'
 }
 
 /**
@@ -48,12 +58,12 @@ export function SourcesTab({ view }: { view: ProductView }): ReactNode {
           return <tr key={source.id}>
             <td className="op-sources-title">
               <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a>
-              {source.isOfficial && <Tag kind="official" />}
+              {isOwnSource(source) && <Tag kind="official" />}
               {source.openedVia === 'unopened' && <Tag kind="unopened" />}
             </td>
             <td>{source.publisher || t('dossier.fact.none')}</td>
             <td className="op-sources-date">{source.publishedAt?.slice(0, 10) || t('dossier.fact.none')}</td>
-            <td className="op-sources-kind">{t(KINDS[source.kind])}</td>
+            <td className="op-sources-kind">{t(kindKey(source))}</td>
             <td>
               <span className="op-sources-count">{t('sources.citedBy', { count: by.length })}</span>
               {by.length > 0 && <span className="op-sources-by">{by.join(t('today.list'))}</span>}

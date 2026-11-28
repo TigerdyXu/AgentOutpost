@@ -31,17 +31,19 @@ function dayTitle(t: T, day: string): string {
 
 /**
  * What the brief says about the products it could not update: one line per reason for those the budget stopped (the
- * reason once, over their names), then one per product whose check the budget cut short, then one per failure.
+ * reason once, over their names), then one per product whose check the budget cut short (which goes on tomorrow, or,
+ * for a product paused since, once it is resumed), then one per failure.
  */
-function skippedNotes(t: T, skipped: Brief['skipped'], nameOf: (id: Id) => string | undefined): string[] {
+function skippedNotes(t: T, skipped: Brief['skipped'], productOf: (id: Id) => Pick<Product, 'name' | 'status'> | undefined): string[] {
   const stopped = new Map<string, string[]>()
   const unchecked: string[] = []
   const failed: string[] = []
   for (const entry of skipped) {
-    const name = nameOf(entry.productId)
-    if (name === undefined) continue
+    const product = productOf(entry.productId)
+    if (product === undefined) continue
+    const { name } = product
     if (entry.failed) failed.push(t('today.failed', { name, reason: told(t, entry.reason) }))
-    else if (entry.reason === VERIFY_BUDGET) unchecked.push(t('today.verifyBudget', { name }))
+    else if (entry.reason === VERIFY_BUDGET) unchecked.push(t(product.status === 'paused' ? 'today.verifyBudgetPaused' : 'today.verifyBudget', { name }))
     else stopped.set(entry.reason, [...stopped.get(entry.reason) ?? [], name])
   }
   return [
@@ -150,7 +152,7 @@ export function Today(): ReactNode {
     ...noNews || main.length === 0 ? [] : [unconfirmedCount > 0 ? t('today.unconfirmed', { count: unconfirmedCount }) : t('today.checked')],
   ] : []
 
-  const notes = brief ? skippedNotes(t, brief.skipped.filter(entry => visible(entry.productId)), id => index.products.get(id)?.name) : []
+  const notes = brief ? skippedNotes(t, brief.skipped.filter(entry => visible(entry.productId)), id => index.products.get(id)) : []
   const quiet = brief ? brief.quietProductIds.flatMap(id => index.products.get(id) ?? []).filter(p => visible(p.id)) : []
 
   return <div className="op-page op-today">

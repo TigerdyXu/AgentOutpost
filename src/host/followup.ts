@@ -6,6 +6,7 @@
  * of the product's cards; its one Outpost tool is `outpost_read`, for the full dossier. The panel then opens the session.
  */
 import { localDate } from '../core/calendar.ts'
+import { isOwnSource } from '../core/credibility.ts'
 import { modelFor, type ModelSettings } from '../core/models.ts'
 import type { Finding, FindingStatus, Id, Product } from '../core/types.ts'
 import type { Repo } from '../store/repo.ts'
@@ -60,7 +61,7 @@ export async function startFollowup(deps: FollowupDeps, findingId: Id): Promise<
 
 function firstMessage(repo: Repo, finding: Finding, product: Product): string {
   const sources = repo.getSources(finding.sourceIds).map((s, i) => {
-    const who = [s.publisher, s.isOfficial ? '官方' : null, s.publishedAt].filter(Boolean).join(' · ')
+    const who = [s.publisher, isOwnSource(s) ? '官方' : null, s.publishedAt].filter(Boolean).join(' · ')
     return `  ${i + 1}. 《${s.title}》${who} ${s.url}\n     原话：「${s.quote}」`
   })
   const labels = new Map(repo.dimensionsOfProduct(product.id).map(d => [d.key, d.label]))

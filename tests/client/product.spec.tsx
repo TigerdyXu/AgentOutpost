@@ -1367,6 +1367,18 @@ describe('the sources tab', () => {
     expect(control('来源').textContent).toBe('来源')
   })
 
+  it('calls a source official only when the check agreed, and says when it did not (M1.6)', async () => {
+    const claimed = (id: string, title: string, officialConfirmed: boolean | null) => source(id, { title, kind: 'official', isOfficial: true, officialConfirmed })
+    const three = [claimed('s1', '官网', true), claimed('s2', '同名公司', false), claimed('s3', '旧来源', null)]
+    await show(view({ sources: three, cards: [card('p1', 'positioning', { sourceIds: ['s1', 's2', 's3'] })] }), { route: route({ tab: 'sources' }) })
+    const kinds = () => list().map(row => row.querySelector('.op-sources-kind')?.textContent)
+    expect(kinds()).toEqual(['官方发布', '不是官方', '官方（未核实）'])
+    expect(list().map(row => tags(row, 'official').length)).toEqual([1, 0, 0])
+    unmount()
+    await show(view({ sources: three, cards: [card('p1', 'positioning', { sourceIds: ['s1', 's2', 's3'] })] }), { route: route({ tab: 'sources' }), t: tEn })
+    expect(kinds()).toEqual(['Official', 'Not official', 'Official (not checked)'])
+  })
+
   it('says what a source that could not be opened was, and shows nothing when there are none', async () => {
     await show(view({ sources: [source('s4', { openedVia: 'unopened', title: '公众号文章', publisher: '某号' })], cards: [card('p1', 'positioning', { sourceIds: ['s4'] })] }), { route: route({ tab: 'sources' }) })
     expect(tags(list()[0]!, 'unopened').map(tag => tag.textContent)).toEqual(['原文打不开'])

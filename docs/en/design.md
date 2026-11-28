@@ -15,6 +15,8 @@
 > **M1.4 changes (2026-11-27)**: Outpost installs and runs with a plain `dsh plugin add`, without the install script: the data directory defaults to `~/.outpost/data`; without the browser plugins, research runs on a preset without a browser, and the settings page says how to install them; the version is now 0.1.4 and changes with each milestone. For details see [`docs/en/m1.4-design.md`](m1.4-design.md).
 >
 > **M1.5 changes (2026-11-28)**: the interface follows the Desktop's language setting (Chinese or English), including the fixed sentences the background writes and the default dimension names; what the AI writes is unchanged. Tracks and products can be deleted (for good; spending records stay) and edited: a track's name, focus and dimensions, a product's name, company and official site (the ⋯ beside a track's name, and the product page's ⋯). For details see [`docs/en/m1.5-design.md`](m1.5-design.md).
+>
+> **M1.6 changes (2026-11-28)**: 「官方」 (Official) needs the checker's agreement: a source the researcher calls official counts as official, and so as enough on its own, only once the checker, having opened the page, agrees the product's maker published it; sources checked before no longer count as official. The brief no longer says "continues tomorrow" for a paused product. For details see [`docs/en/m1.6-design.md`](m1.6-design.md).
 
 ## 1. Why build this
 
@@ -245,7 +247,7 @@ Create a new dsh session (the standard preset, with `outpost_read` attached; the
 
 1. Every conclusion must have a source and an original quote; those without are not accepted.
 2. **What counts as qualified** (decided by the user on 2026-11-25):
-   - **When an official source speaks about its own affairs, one source is enough**: which features were released, what changed, price, launch scope and so on, where the source is the product's official site, official blog, official WeChat account, app store changelog or official social media account. In the UI the source is marked 「官方」 (Official).
+   - **When an official source speaks about its own affairs, one source is enough**: which features were released, what changed, price, launch scope and so on, where the source is the product's official site, official blog, official WeChat account, app store changelog or official social media account. In the UI the source is marked 「官方」 (Official). From M1.6, "official" needs both the researcher and the checker: the checker opens the page and judges whether the product's maker published it (the official domain is only a hint).
    - **What others say needs two independent sources**: user numbers, reviews, rumors, analysis and judgments. Several reprints of the same press release count as one.
    - Those that do not qualify are marked 「待确认」, are not put into the dossier, and per §7.4 more corroboration is searched for, with a 7-day deadline.
    - **An original that cannot be opened ≠ fake**: if neither plain fetch nor the browser can open it, it counts as verified when the search snippet matches the original wording; otherwise it is treated as 「待确认」, with the note 「原文打不开」.

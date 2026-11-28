@@ -56,7 +56,7 @@ const oneFinding: Play = async r => {
 const allSeen: Play = async r => {
   const pending = await r.call('outpost_read_pending') as Record<string, { sources: { sourceId: string }[] }[]>
   for (const s of Object.values(pending).flat().flatMap(i => i.sources))
-    await r.call('outpost_report_check', { sourceId: s.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true })
+    await r.call('outpost_report_check', { sourceId: s.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true, official: true })
   await r.done()
   return completed()
 }

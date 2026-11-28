@@ -35,7 +35,7 @@ const RECENT_DAYS = 14
 const MAX_ADDED_SOURCES = 3
 const MAX_SOURCES = 8
 const MAX_DIMENSIONS = 20
-const UNOPENED_NOTE = 'openedVia=unopened：quoteFound/supportsClaim 按未知记录'
+const UNOPENED_NOTE = 'openedVia=unopened：quoteFound/supportsClaim/official 按未知记录'
 
 const TOOL_NAMES: Record<RunToolKind, string[]> = {
   recommend: ['outpost_submit_candidate', 'outpost_done'],
@@ -111,6 +111,7 @@ const ReportCheck = z.object({
   openedVia: z.enum(['http', 'browser', 'snippet', 'unopened']),
   quoteFound: z.boolean().nullable(),
   supportsClaim: z.boolean().nullable(),
+  official: z.boolean().nullable(),
   syndicationGroup: z.string().trim().max(500).nullish(),
 })
 const AddSource = z.object({ itemId: str(80), source: SourceInput })
@@ -173,7 +174,7 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
 
   const storeSource = (s: SourceInput): Source => repo.addSource({
     url: s.url, title: s.title, publisher: s.publisher, publishedAt: normalizeDate(s.publishedAt ?? undefined), kind: s.kind, isOfficial: s.isOfficial, quote: s.quote,
-    syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+    syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null,
   })
   const storeSources = (inputs: SourceInput[]): Source[] => inputs.map(storeSource)
 
@@ -333,7 +334,7 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
       }),
 
     tool('outpost_report_check',
-      '报告你对一个来源的核查结果（每个来源报告一次）。sourceId 取自 outpost_read_pending；openedVia 为 http（直接打开了）、browser（用浏览器打开了）、snippet（只看到搜索摘要）或 unopened（打不开）；quoteFound 表示原文里是否找到了那句引文（没打开过就填 null）；supportsClaim 表示原文是否支持那条结论（不确定就填 null）；openedVia 为 unopened 时这两项一律按未知（null）记录，不管你填了什么；如果这个来源只是转载别家的通稿，syndicationGroup 填原始通稿的网址。成功返回 { ok: true }。',
+      '报告你对一个来源的核查结果（每个来源报告一次）。sourceId 取自 outpost_read_pending；openedVia 为 http（直接打开了）、browser（用浏览器打开了）、snippet（只看到搜索摘要）或 unopened（打不开）；quoteFound 表示原文里是否找到了那句引文（没打开过就填 null）；supportsClaim 表示原文是否支持那条结论（不确定就填 null）；official 表示这个页面是不是这个产品的公司自己发布的（官网、帮助中心、官方博客或新闻室、它自己的应用商店页、官方公众号或官方账号填 true；媒体、评测、论坛帖子、别的公司——包括名字相近的另一家——填 false；看不出填 null）；openedVia 为 unopened 时这三项一律按未知（null）记录，不管你填了什么；如果这个来源只是转载别家的通稿，syndicationGroup 填原始通稿的网址。成功返回 { ok: true }。',
       ReportCheck, args => {
         const { findings, unconfirmed, cardEdits } = waiting(needProduct())
         const known = new Set([...findings, ...unconfirmed].flatMap(f => f.sourceIds).concat(cardEdits.flatMap(e => e.sourceIds)))
@@ -342,9 +343,10 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
         const unseen = args.openedVia === 'unopened'
         repo.updateSource(args.sourceId, {
           openedVia: args.openedVia, quoteFound: unseen ? null : args.quoteFound, supportsClaim: unseen ? null : args.supportsClaim,
+          officialConfirmed: unseen ? null : args.official,
           syndicationGroup: args.syndicationGroup ? canonicalUrl(args.syndicationGroup) : undefined,
         })
-        return unseen && (args.quoteFound !== null || args.supportsClaim !== null) ? { ok: true, note: UNOPENED_NOTE } : { ok: true }
+        return unseen && (args.quoteFound !== null || args.supportsClaim !== null || args.official !== null) ? { ok: true, note: UNOPENED_NOTE } : { ok: true }
       }),
 
     tool('outpost_add_source',

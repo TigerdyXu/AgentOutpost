@@ -6,7 +6,7 @@
  */
 import { localDate } from '../../core/calendar.ts'
 import { applyCardEdit } from '../../core/cards.ts'
-import { isValidEvidence, isVoidEvidence, judge, type Evidence } from '../../core/credibility.ts'
+import { isOwnSource, isValidEvidence, isVoidEvidence, judge, type Evidence } from '../../core/credibility.ts'
 import type { CardEdit, Finding, Id, Run, Source, Span } from '../../core/types.ts'
 import type { Repo } from '../../store/repo.ts'
 import { renderPrompt } from '../prompts.ts'
@@ -156,12 +156,12 @@ function write(repo: Repo, edit: CardEdit, kept: CardText, now: Date): void {
   repo.setCardEditStatus(edit.id, 'applied')
 }
 
-/** A source as `judge` sees it; one nobody reported on counts as not opened (see `verifyProduct`). */
+/** A source as `judge` sees it: official only as `isOwnSource` says; one nobody reported on counts as not opened (see `verifyProduct`). */
 function evidenceOf(s: Source): Evidence {
   const seen = s.openedVia === null
     ? { openedVia: 'unopened' as const, quoteFound: null, supportsClaim: null }
     : { openedVia: s.openedVia, quoteFound: s.quoteFound, supportsClaim: s.supportsClaim }
-  return { url: s.url, isOfficial: s.isOfficial, syndicationGroup: s.syndicationGroup, ...seen }
+  return { url: s.url, isOfficial: isOwnSource(s), syndicationGroup: s.syndicationGroup, ...seen }
 }
 
 // ---- citations ----

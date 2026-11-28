@@ -57,7 +57,7 @@ const addCandidate = (trackId: Id, productId: Id) => repo.addCandidate({
 })
 const addSource = (title: string) => repo.addSource({
   url: `https://example.com/${encodeURIComponent(title)}`, title, publisher: '36氪', publishedAt: '2026-11-24', kind: 'media', isOfficial: false,
-  quote: `${title}的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true,
+  quote: `${title}的原话`, syndicationGroup: null, openedVia: 'http', quoteFound: true, supportsClaim: true, officialConfirmed: false,
 })
 /** A finding handed in by a finished daily run dated `date`. */
 const addFinding = (productId: Id, over: Partial<Finding> = {}, date = TODAY) => {
@@ -114,7 +114,7 @@ const baselines = (known: string[], until?: Promise<void>): Play => async round 
 const checksAll: Play = async round => {
   const pending = await round.call('outpost_read_pending') as Record<string, { sources: { sourceId: string; needsCheck: boolean }[] }[]>
   for (const source of Object.values(pending).flat().flatMap(item => item.sources).filter(s => s.needsCheck))
-    await round.call('outpost_report_check', { sourceId: source.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true })
+    await round.call('outpost_report_check', { sourceId: source.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true, official: true })
   await round.done()
   return completed()
 }
@@ -1497,7 +1497,7 @@ describe('runs', () => {
     const failed = addRun('verify', { status: 'failed', error: '模型返回了无法解析的内容' }, TODAY, { productId: 'p1' })
     const source = repo.addSource({
       url: 'https://cursor.com/changelog/2-0', title: 'Cursor 2.0', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true,
-      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null,
     })
     const waiting = repo.addFinding({ // what the daily run handed in, still waiting for a check
       productId: 'p1', runId: daily.id, headline: '后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [source.id], status: 'pending',
@@ -1521,7 +1521,7 @@ describe('runs', () => {
     const daily = addRun('daily', { status: 'failed', error: '核查没有完成：模型返回了无法解析的内容' }, TODAY, { productId: 'p1' })
     const source = repo.addSource({
       url: 'https://cursor.com/changelog/2-0', title: 'Cursor 2.0', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true,
-      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+      quote: 'Background agents are now generally available', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null,
     })
     const waiting = repo.addFinding({
       productId: 'p1', runId: daily.id, headline: '后台 Agent 正式上线', why: '值得看', importance: 'major', claimKind: 'self', sourceIds: [source.id], status: 'pending',

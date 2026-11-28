@@ -73,7 +73,7 @@ const idOf = (result: unknown, key: string): string => {
 }
 /** A source and a finding written straight into the store, as an earlier run would have left them. */
 const seedFinding = (over: Partial<Omit<Finding, 'id' | 'createdAt'>> = {}, sourceOver: Partial<Omit<Source, 'id'>> = {}) => {
-  const s = repo.addSource({ url: 'https://seed.example/1', title: '旧报道', publisher: '某媒体', publishedAt: null, kind: 'media', isOfficial: false, quote: '原话', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...sourceOver })
+  const s = repo.addSource({ url: 'https://seed.example/1', title: '旧报道', publisher: '某媒体', publishedAt: null, kind: 'media', isOfficial: false, quote: '原话', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null, ...sourceOver })
   const f = repo.addFinding({
     productId: product.id, runId: run.id, headline: '旧发现', why: '旧', importance: 'notable', claimKind: 'third-party', sourceIds: [s.id], status: 'pending', statusNote: null,
     unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'seed', verifiedOn: null, ...over,
@@ -227,7 +227,7 @@ describe('outpost_submit_finding', () => {
     expect(sources.map(s => s.url)).toEqual([raw, 'https://36kr.example/p/9']) // the raw address is kept, not the canonical form
     expect(sources[0]).toEqual({
       id: f.sourceIds[0], url: raw, title: 'Cursor 1.2 更新日志', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: '推出新的团队定价',
-      syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null,
+      syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null, // the checker has the last word on 官方
     })
     expect(sources[1]).toMatchObject({ kind: 'media', isOfficial: false, quote: '团队版每人每月 40 美元' })
   })
@@ -498,8 +498,8 @@ describe('outpost_read', () => {
     atDaysAgo(20, () => seedFinding({ headline: '二十天前的发现' }, { url: 'https://seed.example/ancient' }))
     atDaysAgo(3, () => seedFinding({ headline: '三天前的发现', status: 'verified', dedupeKey: 'three' }, { url: 'https://seed.example/known' }))
     seedFinding({ headline: '今天的发现', status: 'unconfirmed', dedupeKey: 'today' }, { url: 'https://www.seed.example/today/?utm_source=x' })
-    const cardSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null })
-    const twice = repo.addSource({ url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null })
+    const cardSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
+    const twice = repo.addSource({ url: 'https://seed.example/known/', title: '同一页', publisher: 'x', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
     repo.addCardVersion({ productId: product.id, dimension: 'pricing', version: 1, summary: '旧摘要', bullets: ['旧'], body: '旧[1]', sourceIds: [cardSource.id, twice.id], inferenceSpans: [], addedSpans: [], changeNote: '', findingIds: [], createdAt: time.toISOString() })
     repo.addCardVersion({ productId: product.id, dimension: 'pricing', version: 2, summary: '新摘要', bullets: ['新一', '新二'], body: '新[1]', sourceIds: [cardSource.id, twice.id], inferenceSpans: [], addedSpans: [], changeNote: '', findingIds: [], createdAt: time.toISOString() })
     repo.addFacts({ productId: product.id, ...facts })
@@ -549,7 +549,7 @@ describe('verification tools', () => {
     seedFinding({ headline: '未证实', status: 'unproven' }, { url: 'https://seed.example/x' })
     const other = repo.upsertProduct({ name: 'Zed', company: 'Zed Industries', region: 'overseas', form: 'IDE', iconPath: null, officialDomains: [], status: 'tracking', dailyBudgetYuan: null })
     seedFinding({ productId: other.id, headline: '别的产品的待核查' }, { url: 'https://seed.example/o' })
-    const editSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价页', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: '卡片引句', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null })
+    const editSource = repo.addSource({ url: 'https://cursor.com/pricing', title: '定价页', publisher: 'Cursor', publishedAt: null, kind: 'official', isOfficial: true, quote: '卡片引句', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null })
     const edit = repo.addCardEdit({ productId: product.id, dimension: 'pricing', summary: '卡片摘要', bullets: ['要点'], body: '卡片正文[1]', sourceIds: [editSource.id], inferenceSpans: [], changeNote: '建档', findingIds: [] })
     const appliedEdit = repo.addCardEdit({ productId: product.id, dimension: 'positioning', summary: '已处理', bullets: ['要点'], body: '正文', sourceIds: [], inferenceSpans: [], changeNote: '建档', findingIds: [] })
     repo.setCardEditStatus(appliedEdit.id, 'applied')
@@ -572,7 +572,7 @@ describe('verification tools', () => {
       quoteMissing: seen('browser', false),
       contradicts: seen('http', true, false),
     }
-    const ids = Object.entries(checks).map(([name, check]) => [name, repo.addSource({ url: `https://seed.example/${name}`, title: 't', publisher: 'p', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, ...check }).id] as const)
+    const ids = Object.entries(checks).map(([name, check]) => [name, repo.addSource({ url: `https://seed.example/${name}`, title: 't', publisher: 'p', publishedAt: null, kind: 'media', isOfficial: false, quote: 'q', syndicationGroup: null, officialConfirmed: null, ...check }).id] as const)
     const f = repo.addFinding({
       productId: product.id, runId: run.id, headline: '待确认', why: '旧', importance: 'notable', claimKind: 'third-party', sourceIds: ids.map(([, id]) => id), status: 'unconfirmed',
       statusNote: null, unconfirmedUntil: null, dimensions: [], inference: false, read: false, late: false, dedupeKey: 'checks', verifiedOn: null,
@@ -587,24 +587,40 @@ describe('verification tools', () => {
   it('outpost_report_check records what the checker saw on the source', async () => {
     const { source: s } = seedFinding()
     const call = toolbox('verify')
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'browser', quoteFound: true, supportsClaim: true })).toEqual({ ok: true })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'browser', quoteFound: true, supportsClaim: true, official: null })).toEqual({ ok: true })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'browser', quoteFound: true, supportsClaim: true, syndicationGroup: null })
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: null, supportsClaim: null })).toEqual({ ok: true })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: null, supportsClaim: null, official: null })).toEqual({ ok: true })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
+  })
+
+  it('outpost_report_check records whether the checker found the page to be the maker’s own (M1.6)', async () => {
+    const { source: s } = seedFinding({}, { kind: 'official', isOfficial: true })
+    const call = toolbox('verify')
+    for (const official of [false, null, true]) {
+      expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: true, supportsClaim: true, official })).toEqual({ ok: true })
+      expect(repo.getSources([s.id])[0]!.officialConfirmed, String(official)).toBe(official)
+    }
+    // Nobody can tell who published a page nobody saw.
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: null, supportsClaim: null, official: true }))
+      .toMatchObject({ ok: true, note: expect.stringContaining('official') })
+    expect(repo.getSources([s.id])[0]!.officialConfirmed).toBeNull()
+    // It may be null, but not left out.
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: true, supportsClaim: true }))
+      .toMatchObject({ error: expect.stringContaining('official') })
   })
 
   it('outpost_report_check records a source that could not be opened as unverified, whatever the agent claims about it', async () => {
     const { source: s } = seedFinding()
     const call = toolbox('verify')
-    const r = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: true, supportsClaim: true })
-    expect(r).toEqual({ ok: true, note: 'openedVia=unopened：quoteFound/supportsClaim 按未知记录' })
+    const r = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: true, supportsClaim: true, official: null })
+    expect(r).toEqual({ ok: true, note: 'openedVia=unopened：quoteFound/supportsClaim/official 按未知记录' })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
     // Even a "not found" cannot come from a page nobody saw.
-    const again = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: false, supportsClaim: false })
+    const again = await call('outpost_report_check', { sourceId: s.id, openedVia: 'unopened', quoteFound: false, supportsClaim: false, official: null })
     expect(again).toMatchObject({ ok: true, note: expect.stringContaining('unopened') })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'unopened', quoteFound: null, supportsClaim: null })
     // A page that was opened (or a search snippet) keeps what the agent saw.
-    await call('outpost_report_check', { sourceId: s.id, openedVia: 'snippet', quoteFound: true, supportsClaim: true })
+    await call('outpost_report_check', { sourceId: s.id, openedVia: 'snippet', quoteFound: true, supportsClaim: true, official: null })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'snippet', quoteFound: true, supportsClaim: true })
   })
 
@@ -612,11 +628,11 @@ describe('verification tools', () => {
     const original = seedFinding({}, { url: 'https://www.official.example/pr/2026/?utm_source=x' })
     const repost = seedFinding({ dedupeKey: 'b' }, { url: 'https://36kr.example/p/1' })
     const call = toolbox('verify')
-    await call('outpost_report_check', { sourceId: repost.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true, syndicationGroup: 'https://www.official.example/pr/2026/?utm_source=weibo' })
-    await call('outpost_report_check', { sourceId: original.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true })
+    await call('outpost_report_check', { sourceId: repost.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true, official: null, syndicationGroup: 'https://www.official.example/pr/2026/?utm_source=weibo' })
+    await call('outpost_report_check', { sourceId: original.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true, official: null })
     const group = repo.getSources([repost.source.id])[0]!.syndicationGroup
     expect(group).toBe('official.example/pr/2026') // the shape `judge` compares: the canonical address of the original
-    await call('outpost_report_check', { sourceId: repost.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true, syndicationGroup: '' })
+    await call('outpost_report_check', { sourceId: repost.source.id, openedVia: 'http', quoteFound: true, supportsClaim: true, official: null, syndicationGroup: '' })
     expect(repo.getSources([repost.source.id])[0]!.syndicationGroup).toBe(group) // an empty group is no news
   })
 
@@ -626,7 +642,7 @@ describe('verification tools', () => {
     const settled = seedFinding({ status: 'verified', dedupeKey: 'v' })
     const call = toolbox('verify')
     for (const sourceId of [foreign.source.id, settled.source.id, 'no-such-source']) {
-      const r = await call('outpost_report_check', { sourceId, openedVia: 'http', quoteFound: false, supportsClaim: false })
+      const r = await call('outpost_report_check', { sourceId, openedVia: 'http', quoteFound: false, supportsClaim: false, official: null })
       expect(r, sourceId).toMatchObject({ error: expect.stringContaining('sourceId') })
     }
     expect(repo.getSources([foreign.source.id, settled.source.id]).map(s => s.quoteFound)).toEqual([null, null])
@@ -635,8 +651,8 @@ describe('verification tools', () => {
   it('outpost_report_check names the field when the report is malformed', async () => {
     const { source: s } = seedFinding()
     const call = toolbox('verify')
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'telepathy', quoteFound: true, supportsClaim: true })).toMatchObject({ error: expect.stringContaining('openedVia') })
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: 'yes', supportsClaim: true })).toMatchObject({ error: expect.stringContaining('quoteFound') })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'telepathy', quoteFound: true, supportsClaim: true, official: null })).toMatchObject({ error: expect.stringContaining('openedVia') })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: 'yes', supportsClaim: true, official: null })).toMatchObject({ error: expect.stringContaining('quoteFound') })
     expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: true })).toMatchObject({ error: expect.stringContaining('supportsClaim') })
     expect(repo.getSources([s.id])[0]!.openedVia).toBeNull()
   })
@@ -651,7 +667,7 @@ describe('verification tools', () => {
     expect(repo.getSources([added])[0]).toMatchObject({ url: 'https://other.example/story', publishedAt: '2026-11-23', kind: 'media', isOfficial: false, openedVia: null, quoteFound: null, supportsClaim: null, syndicationGroup: null })
     const pending = await call('outpost_read_pending') as { unconfirmedFindings: { sources: { sourceId: string }[] }[] }
     expect(pending.unconfirmedFindings[0]!.sources.map(s => s.sourceId)).toContain(added)
-    expect(await call('outpost_report_check', { sourceId: added, openedVia: 'http', quoteFound: true, supportsClaim: true })).toEqual({ ok: true }) // the new source can be reported on
+    expect(await call('outpost_report_check', { sourceId: added, openedVia: 'http', quoteFound: true, supportsClaim: true, official: null })).toEqual({ ok: true }) // the new source can be reported on
   })
 
   it('limits outpost_add_source to 3 per item', async () => {
@@ -719,10 +735,10 @@ describe('optional fields sent as null', () => {
   it('takes a null repost group as none, while quoteFound and supportsClaim keep their own null', async () => {
     const { source: s } = seedFinding()
     const call = toolbox('verify')
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: null, supportsClaim: true, syndicationGroup: null })).toEqual({ ok: true })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', quoteFound: null, supportsClaim: true, official: null, syndicationGroup: null })).toEqual({ ok: true })
     expect(repo.getSources([s.id])[0]).toMatchObject({ openedVia: 'http', quoteFound: null, supportsClaim: true, syndicationGroup: null })
     // quoteFound and supportsClaim may be null, but not left out.
-    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', supportsClaim: true })).toMatchObject({ error: expect.stringContaining('quoteFound') })
+    expect(await call('outpost_report_check', { sourceId: s.id, openedVia: 'http', supportsClaim: true, official: null })).toMatchObject({ error: expect.stringContaining('quoteFound') })
   })
 })
 

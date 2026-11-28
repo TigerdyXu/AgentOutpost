@@ -520,6 +520,16 @@ describe('the rest of the day', () => {
     ])
   })
 
+  it('does not promise tomorrow’s check for a product paused since (M1.6)', async () => {
+    const paused = everyone.map(p => p.id === 'p2' ? { ...p, status: 'paused' as const } : p)
+    const answer = view([finding('f1', 'p1')], { products: paused, briefExtra: { skipped: [{ productId: 'p2', reason: VERIFY_BUDGET }] } })
+    await show(answer)
+    expect(notes()).toEqual(['Meta Muse的新消息核查因预算未完成；Meta Muse已暂停，恢复跟踪后接着核'])
+    unmount()
+    await show(answer, { t: tEn })
+    expect(notes()).toEqual(['The check of Meta Muse’s news ran out of budget; Meta Muse is paused, so it continues once you resume it'])
+  })
+
   it('speaks English when DSH does: the host’s reasons too, nested ones included, and English list commas', async () => {
     await show(view([finding('f1', 'p1')], { briefExtra: { skipped: [
       { productId: 'p4', reason: '今日总预算已用完' }, { productId: 'p6', reason: '今日总预算已用完' },

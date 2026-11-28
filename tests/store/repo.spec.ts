@@ -50,7 +50,7 @@ const twinsRepo = () => {
   return { repo, db, insertAlike }
 }
 const sourceSpec = (over: Partial<Omit<Source, 'id'>> = {}): Omit<Source, 'id'> =>
-  ({ url: 'https://cursor.com/changelog', title: 'Changelog', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: '推出新定价', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, ...over })
+  ({ url: 'https://cursor.com/changelog', title: 'Changelog', publisher: 'Cursor', publishedAt: '2026-11-24', kind: 'official', isOfficial: true, quote: '推出新定价', syndicationGroup: null, openedVia: null, quoteFound: null, supportsClaim: null, officialConfirmed: null, ...over })
 const findingSpec = (over: Partial<Omit<Finding, 'id' | 'createdAt'>> = {}): Omit<Finding, 'id' | 'createdAt'> =>
   ({ productId: 'p1', runId: 'r1', headline: 'Cursor 推出新定价', why: '价格变了', importance: 'major', claimKind: 'self', sourceIds: ['s1'], status: 'pending', statusNote: null, unconfirmedUntil: null, dimensions: ['pricing'], inference: false, read: false, late: false, dedupeKey: 'cursor-pricing', verifiedOn: null, ...over })
 const cardAt = (version: number, over: Partial<CardVersion> = {}): CardVersion =>
@@ -130,6 +130,22 @@ describe('openDb', () => {
     expect(db.prepare('PRAGMA table_info(runs)').all().map(c => c.name)).toContain('subject')
     const repo = new Repo(db, () => time)
     expect(repo.getRun('r-old')).toMatchObject({ id: 'r-old', kind: 'daily', productId: 'p1', costYuan: 0.2, subject: null })
+  })
+
+  it('adds the checker’s official mark to the sources of a database made before it, as not checked (M1.6)', () => {
+    const raw = new DatabaseSync(dbPath)
+    migrate(raw, MIGRATIONS.slice(0, 3)) // the schema as M1.2 to M1.5 shipped it
+    raw.prepare(`INSERT INTO sources (id, url, title, publisher, published_at, kind, is_official, quote, syndication_group, opened_via, quote_found, supports_claim)
+      VALUES ('s-old', 'https://muse.example/', '旧来源', 'Muse', NULL, 'official', 1, '原话', NULL, 'http', 1, 1)`).run()
+    raw.close()
+
+    const db = open()
+
+    expect(db.prepare('PRAGMA table_info(sources)').all().map(c => c.name)).toContain('official_confirmed')
+    const repo = new Repo(db, () => time)
+    expect(repo.getSources(['s-old'])).toMatchObject([{ id: 's-old', isOfficial: true, openedVia: 'http', quoteFound: true, officialConfirmed: null }])
+    repo.updateSource('s-old', { officialConfirmed: false })
+    expect(repo.getSources(['s-old'])[0]!.officialConfirmed).toBe(false)
   })
 
   it('close is safe to call twice', () => {
