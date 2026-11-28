@@ -15,7 +15,7 @@ import { DEFAULT_DIMENSIONS, slugDimension } from '../core/dimensions.ts'
 import { FOLLOWED, hasNameKey, nameKey } from '../core/identity.ts'
 import type { Billing, ModelRef } from '../core/models.ts'
 import type {
-  Axes, Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Placement, Product, ProductStatus, Run, RunStatus, Source, Track,
+  Axes, Brief, Candidate, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Placement, Product, ProductStatus, Run, RunStatus, Source, Topic, TopicCadence, TopicVersion, Track,
 } from '../core/types.ts'
 import { listModelGroups } from './dsh-model.ts'
 import { BASIC_AGENT_PRESET } from './dsh-sessions.ts'
@@ -27,6 +27,7 @@ import { CHECK_NOT_DONE } from './jobs/daily.ts'
 import { startIdentify } from './jobs/identify.ts'
 import { AXIS_LABEL_MAX, MAP_MIN_PRODUCTS, mappable, sameAxes } from './jobs/landscape.ts'
 import { weeklyOffKey, weeklyState, type WeeklyState } from './jobs/weekly.ts'
+import { topicSchedule } from './jobs/topic.ts'
 import { LAST_COMPLETED } from './scheduler.ts'
 import { startRecommendation } from './jobs/recommend.ts'
 import { joinTrack, type Joined } from './join.ts'
@@ -141,6 +142,38 @@ export interface TrackOverview {
   unmapped: { status: RunStatus; error: string | null; at: string | null } | null
   /** Its weekly suggestions (M2.2): on or off, the last and the next. */
   weekly: WeeklyState
+  /** Its 专题 (M2.3), oldest first. */
+  topics: TopicRow[]
+}
+/** A 专题 in a list (M2.3): the track page's, a product's 专题 tab. */
+export interface TopicRow {
+  topic: Topic
+  /** The names of its products that still exist, in its order. */
+  productNames: string[]
+  /** How many versions it has, the day of the first and of the newest, and what the newest changed. */
+  versions: number
+  first: string | null
+  last: string | null
+  lastNote: string | null
+  /** A round is under way. */
+  researching: boolean
+  /** The latest round made no version after the newest one: why. */
+  problem: string | null
+  /** When the next round is due (a weekly topic, or a first round still owed), or null. */
+  next: string | null
+}
+/** A 专题's own page (M2.3). */
+export interface TopicView {
+  row: TopicRow
+  track: { id: Id; name: string }
+  /** Its products that still exist, in its order. */
+  products: Product[]
+  /** The newest version, or null before the first. */
+  version: TopicVersion | null
+  /** Every version, newest first: what it changed and when. */
+  history: { version: number; changeNote: string; createdAt: string }[]
+  /** The sources the newest version's cards cite. */
+  sources: Source[]
 }
 /** The models DSH offers now, for the four model choices of 设置. */
 export interface ModelsView {
@@ -202,6 +235,19 @@ export interface Api {
    * its products come from).
    */
   'POST tracks/:id/dismiss': { response: { ok: true } }
+  /**
+   * Starts a 专题 (M2.3) on the track: the question, 1–8 of its products, once or weekly. Its first round starts at once,
+   * in the background (a research session and a check, held to the day's budget). 409 for a track not started.
+   */
+  'POST tracks/:id/topics': { body: { question: string; productIds: Id[]; cadence: TopicCadence }; response: { topicId: Id } }
+  'GET topics/:id': { response: TopicView }
+  /** A new round now (立即更新); 409 while one is under way. */
+  'POST topics/:id/update': { response: { ok: true } }
+  'PATCH topics/:id': { body: { cadence: TopicCadence }; response: Topic }
+  /** Erases the topic, its versions and their sources; 409 while a round is under way. */
+  'POST topics/:id/delete': { response: { ok: true } }
+  /** The 专题 about the product, oldest first (its 专题 tab). */
+  'GET products/:id/topics': { response: { topics: TopicRow[] } }
   /** Turns the track's weekly suggestions (M2.2) on or off; they are on unless turned off. */
   'POST tracks/:id/weekly': { body: { on: boolean }; response: WeeklyState }
   /**
@@ -333,6 +379,11 @@ const TrackRef = z.object({ trackId: z.string().min(1) })
 const Move = z.object({ from: z.string().min(1), to: z.string().min(1) })
 const axisEnd = text(AXIS_LABEL_MAX).min(1, '轴的两端都要写')
 const Weekly = z.object({ on: z.boolean() })
+const MAX_QUESTION = 60
+const MAX_TOPIC_PRODUCTS = 8
+const cadence = z.enum(['once', 'weekly'])
+const NewTopic = z.object({ question: text(MAX_QUESTION).min(1, '请写要深挖的问题'), productIds: z.array(z.string().min(1)).min(1).max(MAX_TOPIC_PRODUCTS), cadence })
+const TopicPatch = z.object({ cadence })
 const MapRequest = z.object({ axes: z.object({ x: z.object({ low: axisEnd, high: axisEnd }), y: z.object({ low: axisEnd, high: axisEnd }) }).optional() })
 const Followup = z.object({ findingId: z.string().min(1) })
 const ReadAll = z.object({ date: z.string() })
@@ -539,6 +590,27 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
     return { brief, shown }
   }
 
+  /** A topic as its lists show it (M2.3). */
+  const topicRow = (topic: Topic): TopicRow => {
+    const rounds = repo.topicVersions(topic.id)
+    const finals = rounds.filter(v => v.status === 'final')
+    const newest = finals.at(-1)
+    const lastRound = rounds.at(-1)
+    const researching = rt.isResearching(topic.id)
+    return {
+      topic,
+      productNames: topic.productIds.flatMap(id => repo.getProduct(id)?.name ?? []),
+      versions: finals.length,
+      first: finals[0]?.createdAt ?? null,
+      last: newest?.createdAt ?? null,
+      lastNote: newest?.changeNote ?? null,
+      researching,
+      problem: !researching && lastRound?.status === 'rejected' ? lastRound.changeNote : null,
+      next: topicSchedule(repo, topic, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today()).next,
+    }
+  }
+  const topic = (id: string) => repo.getTopic(id) ?? notFound(say('topicNotFound'))
+
   /** The batch the 候选推荐 page shows: the latest recommendation's, even an empty one, else the latest with candidates. */
   const shownBatch = (t: Track): Id | null => repo.latestRun('recommend', { trackId: t.id })?.id ?? repo.latestBatchId(t.id)
   const candidatesToReview = (t: Track): number => {
@@ -714,6 +786,7 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
       const active = repo.activeRuns()
       if (active.some(r => r.trackId === t.id && (r.kind === 'recommend' || r.kind === 'identify'))) throw new ApiError(409, say('trackBusy'))
       if (rt.isDrawing(t.id)) throw new ApiError(409, say('mapDrawing')) // the drawing would outlive its track
+      if (repo.topicsOfTrack(t.id).some(tp => rt.isResearching(tp.id))) throw new ApiError(409, say('topicBusy'))
       // Those only this track has go with it: none of them may be in the middle of something.
       const busy = repo.productsOfTrack(t.id).find(p => tracksOf(p.id).length === 1 && hasWork(p.id, active))
       if (busy) throw new ApiError(409, say('productBusy', { name: busy.name }))
@@ -749,7 +822,61 @@ export function createApi(rt: Runtime): (route: string, req: ApiRequestParts) =>
         unmapped: last && !isActive(last) && last.id !== landscape?.runId && (last.status !== 'done' || last.error !== null)
           ? { status: last.status, error: last.error, at: last.endedAt ?? last.startedAt } : null,
         weekly: weeklyState(repo, t, rt.today(), repo.getSetting<string>(LAST_COMPLETED) === rt.today()),
+        topics: repo.topicsOfTrack(t.id).map(topicRow),
       }
+    },
+
+    'POST tracks/:id/topics': async req => {
+      const t = track(req.params.id!)
+      const body = NewTopic.parse(await req.body())
+      if (t.status === 'archived') throw new ApiError(409, say('trackArchived'))
+      if (t.status !== 'active') throw new ApiError(409, say('dismissNotStarted'))
+      const inTrack = new Set(repo.productsOfTrack(t.id).map(p => p.id))
+      const productIds = [...new Set(body.productIds)]
+      const stranger = productIds.find(id => !inTrack.has(id))
+      if (stranger) badRequest(say('topicProductNotInTrack', { id: stranger }))
+      const created = repo.createTopic({ trackId: t.id, question: body.question, productIds, cadence: body.cadence })
+      rt.background(rt.researchTopic(created.id), `topic ${created.id}`)
+      return { topicId: created.id }
+    },
+
+    'GET topics/:id': ({ params }) => {
+      const tp = topic(params.id!)
+      const t = track(tp.trackId)
+      const version = repo.latestTopicVersion(tp.id)
+      const history = repo.topicVersions(tp.id).filter(v => v.status === 'final').reverse()
+        .map(v => ({ version: v.version!, changeNote: v.changeNote, createdAt: v.createdAt }))
+      return {
+        row: topicRow(tp), track: { id: t.id, name: t.name },
+        products: tp.productIds.flatMap(id => repo.getProduct(id) ?? []),
+        version, history,
+        sources: version ? repo.getSources(version.cards.flatMap(c => c.sourceIds)) : [],
+      }
+    },
+
+    'POST topics/:id/update': ({ params }) => {
+      const tp = topic(params.id!)
+      if (rt.isResearching(tp.id)) throw new ApiError(409, say('topicBusy'))
+      rt.background(rt.researchTopic(tp.id), `topic ${tp.id}`)
+      return { ok: true as const }
+    },
+
+    'PATCH topics/:id': async req => {
+      const tp = topic(req.params.id!)
+      const { cadence: next } = TopicPatch.parse(await req.body())
+      return repo.updateTopic(tp.id, { cadence: next })
+    },
+
+    'POST topics/:id/delete': ({ params }) => {
+      const tp = topic(params.id!)
+      if (rt.isResearching(tp.id)) throw new ApiError(409, say('topicBusy'))
+      repo.deleteTopic(tp.id)
+      return { ok: true as const }
+    },
+
+    'GET products/:id/topics': ({ params }) => {
+      const p = product(params.id!)
+      return { topics: repo.topicsOfProduct(p.id).map(topicRow) }
     },
 
     'POST tracks/:id/weekly': async req => {

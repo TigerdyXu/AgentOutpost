@@ -15,13 +15,14 @@ import { DossierTab, shownCards } from './product/DossierTab.tsx'
 import { FeedTab } from './product/FeedTab.tsx'
 import { ProductMenu, type ProductChange, type ProductTracks, type TrackChange } from './product/ProductMenu.tsx'
 import { citations, SourcesTab } from './product/SourcesTab.tsx'
+import { TopicsTab } from './product/TopicsTab.tsx'
 import { told } from '../words.ts'
 
 /** How often the profile is read, and how often while something works on it; and how often a run is asked about. */
 const POLL_MS = 5000
 const BUSY_MS = 2000
 const RUN_MS = 2000
-const TABS: readonly ProductTab[] = ['dossier', 'feed', 'sources']
+const TABS: readonly ProductTab[] = ['dossier', 'feed', 'sources', 'topics']
 
 type ProductRoute = Extract<Route, { page: 'product' }>
 
@@ -190,6 +191,7 @@ function ProductPage({ route }: { route: ProductRoute }): ReactNode {
           ? <FeedTab product={view.product} findings={feed.data.findings} sources={[...feed.data.sources, ...view.sources]} dimensions={view.dimensions} changed={feed.data.changed} />
           : feed.error && <p className="op-day-problem" role="alert">{describeError(t, feed.error)}</p>)}
         {tab === 'sources' && <SourcesTab view={view} />}
+        {tab === 'topics' && <TopicsTab productId={view.product.id} />}
       </div>
     </>}
   </div>

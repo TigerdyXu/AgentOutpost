@@ -137,6 +137,12 @@ function writeIfBacked(repo: Repo, edit: CardEdit, now: Date): void {
 
 /** The edit's sources that the check found void, and those it found valid (1-based, as `[n]` counts them). */
 function sourceCheck(repo: Repo, edit: CardEdit): { removed: number[]; valid: number[] } {
+  return sourceVerdicts(repo, edit.sourceIds)
+}
+
+/** Of the sources `sourceIds` (a card's, in its `[n]` order), those the check found void and those it found valid, 1-based. */
+export function sourceVerdicts(repo: Repo, sourceIds: Id[]): { removed: number[]; valid: number[] } {
+  const edit = { sourceIds }
   const byId = new Map(repo.getSources(edit.sourceIds).map(s => [s.id, s]))
   const removed: number[] = []
   const valid: number[] = []

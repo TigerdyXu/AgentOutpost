@@ -83,6 +83,15 @@ export const SAID = {
   mapDrawing: ['地图正在画，等它画完', 'The map is being drawn; wait for it to finish'],
   // M2.2
   dismissNotStarted: ['这个赛道还在挑产品，挑好开始跟踪就行', 'This track is still being picked; start following from it instead'],
+  // M2.3: 专题.
+  topicNoProducts: ['专题涉及的产品都删掉了', 'Every product of the topic was deleted'],
+  topicNoCards: ['调研没有交卡片', 'The research handed in no cards'],
+  topicNothingHeld: ['核查后没有一张卡片站得住', 'No card held up under the check'],
+  topicFirst: ['首版', 'First version'],
+  topicUpdated: ['更新了一版', 'Updated'],
+  topicBusy: ['这个专题正在深挖，等它跑完', 'This topic is being looked into; wait for it to finish'],
+  topicNotFound: ['找不到这个专题', 'Cannot find this topic'],
+  topicProductNotInTrack: ['产品 {id} 不在这个赛道里', 'Product {id} is not in this track'],
 } as const satisfies Record<string, readonly [string, string]>
 
 export type SaidKey = keyof typeof SAID

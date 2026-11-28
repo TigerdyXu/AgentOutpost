@@ -2003,6 +2003,55 @@ describe('the track page (M2.1)', () => {
     expect(most).toBe(1)
   })
 
+  it('starts a 专题 on a track, shows it on the track and its products, and lets it be updated, changed and deleted (M2.3)', async () => {
+    const t = seed()
+    const TOPIC = 'outpost-topic-'
+    const CHECK = 'outpost-topicCheck-'
+    const hold = gate()
+    host.driver.script[TOPIC] = async round => {
+      await hold.promise
+      await round.call('outpost_submit_topic_card', {
+        title: '记什么', summary: '都记偏好', bullets: ['偏好[1]'], body: '两家都记偏好。[1]', products: ['Cursor', 'Windsurf'],
+        sources: [{ url: 'https://a.example/1', title: '报道', publisher: '某媒体', publishedAt: null, kind: 'media', isOfficial: false, quote: '原话' }],
+      })
+      await round.done('查了记什么')
+      return completed()
+    }
+    host.driver.script[CHECK] = async round => {
+      const pending = await round.call('outpost_read_pending') as { pendingCardEdits: { sources: { sourceId: string }[] }[] }
+      for (const s of pending.pendingCardEdits.flatMap(i => i.sources)) await round.call('outpost_report_check', { sourceId: s.sourceId, openedVia: 'http', quoteFound: true, supportsClaim: true, official: false })
+      await round.done()
+      return completed()
+    }
+    // Refused: no question, a product of another track, too many products, a track still being picked.
+    expect((await host.call('POST', `tracks/${t.id}/topics`, { question: ' ', productIds: ['p1'], cadence: 'once' })).status).toBe(400)
+    addProduct('x1', 'Other', 'tracking')
+    expect((await host.call('POST', `tracks/${t.id}/topics`, { question: '记忆', productIds: ['p1', 'x1'], cadence: 'once' })).json()).toMatchObject({ error: '产品 x1 不在这个赛道里' })
+    const picking = addTrack({ name: '挑选中', status: 'picking' })
+    expect((await host.call('POST', `tracks/${picking.id}/topics`, { question: '记忆', productIds: ['p1'], cadence: 'once' })).status).toBe(409)
+
+    const { topicId } = ok(await host.call('POST', `tracks/${t.id}/topics`, { question: '谁能记住偏好', productIds: ['p2', 'p1'], cadence: 'weekly' })).json<{ topicId: Id }>()
+    await flush()
+    let page = ok(await host.call('GET', `topics/${topicId}`)).json<ApiResponse<'GET topics/:id'>>()
+    expect(page).toMatchObject({ track: { id: t.id, name: 'AI 编程助手' }, version: null, row: { researching: true, versions: 0, productNames: ['Windsurf', 'Cursor'] } })
+    expect((await host.call('POST', `topics/${topicId}/update`)).json()).toMatchObject({ error: '这个专题正在深挖，等它跑完' })
+    expect((await host.call('POST', `tracks/${t.id}/delete`)).json()).toMatchObject({ error: '这个专题正在深挖，等它跑完' })
+    hold.open()
+    for (let i = 0; i < 50 && rt.isResearching(topicId); i++) await flush()
+
+    page = ok(await host.call('GET', `topics/${topicId}`)).json<ApiResponse<'GET topics/:id'>>()
+    expect(page.version).toMatchObject({ version: 1, changeNote: '查了记什么', cards: [{ title: '记什么', productIds: ['p1', 'p2'] }] })
+    expect(page.history).toEqual([{ version: 1, changeNote: '查了记什么', createdAt: expect.any(String) }])
+    expect(page.sources.map(s => s.url)).toEqual(['https://a.example/1'])
+    expect(page.row).toMatchObject({ researching: false, versions: 1, problem: null })
+    expect((await overview(t.id)).topics.map(row => row.topic.id)).toEqual([topicId])
+    expect(ok(await host.call('GET', 'products/p1/topics')).json<ApiResponse<'GET products/:id/topics'>>().topics.map(row => row.topic.question)).toEqual(['谁能记住偏好'])
+
+    expect(ok(await host.call('PATCH', `topics/${topicId}`, { cadence: 'once' })).json()).toMatchObject({ cadence: 'once' })
+    ok(await host.call('POST', `topics/${topicId}/delete`))
+    expect((await host.call('GET', `topics/${topicId}`)).status).toBe(404)
+  })
+
   it('erases a deleted track’s maps and keeps its map runs under its name', async () => {
     const t = seed()
     host.complete.mockResolvedValue(drawn())

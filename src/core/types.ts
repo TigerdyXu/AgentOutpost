@@ -50,6 +50,19 @@ export interface Landscape { id: Id; trackId: Id; date: string; gist: string; ax
   /** When the dossiers it was drawn from were read (before the model was asked): cards written later are news to the next drawing. */
   createdAt: string }
 
+/** 专题 (M2.3, design §5.6): one question looked into across some of a track's products, once or every week. */
+export type TopicCadence = 'once' | 'weekly'
+export interface Topic { id: Id; trackId: Id; question: string; productIds: Id[]; cadence: TopicCadence; createdAt: string }
+/** One conclusion card of a 专题: like a dossier card, with a title of its own and the products it is about. */
+export interface TopicCard { title: string; summary: string; bullets: string[]; body: string; sourceIds: Id[]; inferenceSpans: Span[]; productIds: Id[] }
+/**
+ * What one round of a 专题 handed in: a `draft` while it is researched and checked, then a `final` version (numbered from
+ * 1, what the page shows) or `rejected` (nothing checked held; `changeNote` says why). A final's `changeNote` is what this
+ * version changed, in the researcher's words.
+ */
+export type TopicVersionStatus = 'draft' | 'final' | 'rejected'
+export interface TopicVersion { id: Id; topicId: Id; version: number | null; status: TopicVersionStatus; cards: TopicCard[]; changeNote: string; runId: Id | null; createdAt: string }
+
 export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds: Id[]; quietProductIds: Id[]
   /**
    * Tracked products not updated that day, with why. Without `failed` the budget stopped it (shown 「因预算未跑：…」);
@@ -60,9 +73,10 @@ export interface Brief { date: string; gist: string; findingIds: Id[]; minorIds:
 
 /**
  * `identify`: a product the user named by hand, confirmed before it joins their track (M1.2 按名字加). `landscape`: a
- * track's map and its one-sentence 格局, drawn by a model call (M2.1).
+ * track's map and its one-sentence 格局, drawn by a model call (M2.1). `topic` and `topicCheck`: a 专题's research and its
+ * check (M2.3).
  */
-export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify' | 'landscape'
+export type RunKind = 'recommend' | 'baseline' | 'daily' | 'verify' | 'synthesize' | 'followup' | 'identify' | 'landscape' | 'topic' | 'topicCheck'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'
 /**
  * Tokens a model call used. `searches` counts the web searches made on a DeepSeek route: each is a hidden model call of its

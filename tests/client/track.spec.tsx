@@ -27,7 +27,7 @@ const overview = (over: Partial<TrackOverview> = {}): TrackOverview => ({
     { product: zed, cards: [] },
   ],
   landscape: landscape(), since: null, drawing: false, mappable: 2, unmapped: null,
-  weekly: { on: true, last: '2026-11-26', next: '2026-12-03', running: false, problem: null }, ...over,
+  weekly: { on: true, last: '2026-11-26', next: '2026-12-03', running: false, problem: null }, topics: [], ...over,
 })
 
 async function show(view: TrackOverview | (() => TrackOverview) = overview(), shell: Partial<Shell> = {}, extra: Record<string, unknown> = {}) {

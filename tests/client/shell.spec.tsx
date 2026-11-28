@@ -72,7 +72,7 @@ describe('middle column', () => {
     stubApi({
       'GET state': state({ tracks: [track('t1', 'Personal Agent', [tracked(product('p1', 'Meta Muse'))], {}, 2), track('t3', '新赛道', [], { status: 'picking' })] }),
       'GET tracks/:id/overview': { track: track('t1', 'Personal Agent', []).track, products: [], landscape: null, since: null, drawing: false, mappable: 0, unmapped: null,
-        weekly: { on: true, last: null, next: null, running: false, problem: null } },
+        weekly: { on: true, last: null, next: null, running: false, problem: null }, topics: [] },
       'GET tracks/:id/candidates': { batchId: 'b1', running: false, status: 'done', error: null, elapsedSec: 5, candidates: [] },
     })
     await mount(<App t={t} />)
@@ -352,7 +352,7 @@ describe('routing', () => {
     expect(pageTitle()).toBe('Meta Muse')
     // The tab comes back as stored; one the page does not have falls back to the dossier; a product needs its id.
     expect(parseRoute({ page: 'product', productId: 'p1', tab: 'sources', expand: 'pricing' })).toEqual({ page: 'product', productId: 'p1', tab: 'sources', expand: 'pricing' })
-    expect(parseRoute({ page: 'product', productId: 'p1', tab: 'topics' })).toEqual({ page: 'product', productId: 'p1', tab: 'dossier' })
+    expect(parseRoute({ page: 'product', productId: 'p1', tab: 'timeline' })).toEqual({ page: 'product', productId: 'p1', tab: 'dossier' })
     expect(parseRoute({ page: 'product', tab: 'feed' })).toBeUndefined()
     expect(parseRoute({ page: 'today', date: '2026-11-24' })).toEqual({ page: 'today', date: '2026-11-24' })
     expect(parseRoute({ page: 'newTrack', trackId: 't1', extra: 1 })).toEqual({ page: 'newTrack', trackId: 't1' })

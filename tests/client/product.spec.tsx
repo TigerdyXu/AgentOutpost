@@ -137,13 +137,13 @@ describe('the header', () => {
     expect(document.querySelector('.op-phead-meta')?.textContent).toBe('字节跳动')
   })
 
-  it('has the tabs 档案, 动态 and 来源 with their counts, and no 专题 tab', async () => {
+  it('has the tabs 档案, 动态 and 来源 with their counts, and 专题 (M2.3)', async () => {
     const f = [finding('f1', 'p1'), finding('f2', 'p1', { status: 'unconfirmed', statusNote: '只有一个来源' }), finding('f3', 'p1', { status: 'unproven', statusNote: '只有一个来源' })]
     const { context } = await show(view(), {}, { 'GET products/:id/findings': { findings: f, sources: [] } })
     const tabs = all('[role="tab"]')
     // 动态 counts what the tab lists open: the unproven one is folded away and has its own count there.
-    expect(tabs.map(tab => tab.textContent)).toEqual(['档案', '动态2', '来源4'])
-    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+    expect(tabs.map(tab => tab.textContent)).toEqual(['档案', '动态2', '来源4', '专题'])
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false'])
     expect(all('[role="tabpanel"]')).toHaveLength(1)
     await click(control('动态2'))
     expect(context.navigate).toHaveBeenLastCalledWith({ page: 'product', productId: 'p1', tab: 'feed' })
@@ -164,7 +164,7 @@ describe('the header', () => {
     expect(control('全部展开')).toBeTruthy()
     unmount()
     await show(view(), { route: route({ tab: 'sources' }) })
-    expect(all('[role="tab"]').map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true'])
+    expect(all('[role="tab"]').map(tab => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true', 'false'])
     expect(all('button').some(button => button.textContent === '全部展开')).toBe(false)
   })
 

@@ -21,6 +21,8 @@
 > **M2.1 changes (2026-11-28)**: the track page (§5.5): the first row under each track, 「赛道概览」 (Overview); a comparison table (exportable as CSV), a positioning map and a one-sentence summary of the field. The map and the summary use the brief-writing model and are redrawn after each day's brief only when a dossier changed; the axes stay put unless the user changes them; the dashed circles count from the first drawing on the current axes. Topics move to M2.3. For details see [`docs/en/m2.1-design.md`](m2.1-design.md).
 >
 > **M2.2 changes (2026-11-28)**: weekly suggestions (§7.1 "weekly refresh"): for each started track whose last finished recommendation is 7 days old or older, a new batch is recommended after the brief and the maps, asking only for products that appeared or moved since; the candidates show under 「候选推荐」 (Suggestions) as before. A switch per track on the track page, on by default. For details see [`docs/en/m2.2-design.md`](m2.2-design.md).
+>
+> **M2.3 changes (2026-11-28)**: topics (§5.6): on the track page, write a question, pick 1–8 products, once or weekly; a research session hands in 2–6 conclusion cards, which the dossier's checker checks by the dossier's rules, and what holds becomes a version; a topic page, and a 「专题」 (Topics) tab on the product page. Placed between the map and the table on the track page. For details see [`docs/en/m2.3-design.md`](m2.3-design.md). This completes M2.
 
 ## 1. Why build this
 

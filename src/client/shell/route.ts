@@ -2,26 +2,27 @@
 import { useCallback, useState } from 'react'
 import type { DimensionKey, Id } from '../../core/types.ts'
 
-export type ProductTab = 'dossier' | 'feed' | 'sources'
+export type ProductTab = 'dossier' | 'feed' | 'sources' | 'topics'
 export type Route =
   | { page: 'today'; date?: string }
   | { page: 'newTrack'; trackId?: Id }
   | { page: 'addProduct'; trackId: Id }
   | { page: 'editTrack'; trackId: Id }
   | { page: 'track'; trackId: Id }
+  | { page: 'topic'; topicId: Id }
   | { page: 'product'; productId: Id; tab: ProductTab; expand?: DimensionKey }
   | { page: 'runs' }
   | { page: 'settings' }
 
 export const HOME: Route = { page: 'today' }
-const TABS: readonly ProductTab[] = ['dossier', 'feed', 'sources']
+const TABS: readonly ProductTab[] = ['dossier', 'feed', 'sources', 'topics']
 const KEY = 'outpost.route'
 
 const text = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
 
 /** A stored value as a route, with unknown fields dropped; undefined when it names no page or lacks what the page needs. */
 export function parseRoute(value: unknown): Route | undefined {
-  const { page, date, trackId, productId, tab, expand } = (value ?? {}) as Record<string, unknown>
+  const { page, date, trackId, productId, tab, expand, topicId } = (value ?? {}) as Record<string, unknown>
   switch (page) {
     case 'today': { const day = text(date); return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? { page, date: day } : { page } }
     case 'newTrack': { const id = text(trackId); return id ? { page, trackId: id } : { page } }
@@ -32,6 +33,7 @@ export function parseRoute(value: unknown): Route | undefined {
       const dimension = text(expand)
       return { page, productId: id, tab: TABS.find(item => item === tab) ?? 'dossier', ...dimension ? { expand: dimension } : {} }
     }
+    case 'topic': { const id = text(topicId); return id ? { page, topicId: id } : undefined }
     case 'runs': case 'settings': return { page }
     default: return undefined
   }
@@ -70,5 +72,6 @@ export function samePage(a: Route, b: Route): boolean {
   if (a.page === 'addProduct' && b.page === 'addProduct') return a.trackId === b.trackId
   if (a.page === 'editTrack' && b.page === 'editTrack') return a.trackId === b.trackId
   if (a.page === 'track' && b.page === 'track') return a.trackId === b.trackId
+  if (a.page === 'topic' && b.page === 'topic') return a.topicId === b.topicId
   return true
 }

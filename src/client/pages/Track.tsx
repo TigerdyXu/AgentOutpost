@@ -9,7 +9,7 @@
  * when a dossier changed, or here on request (「画地图」, 「重画」, 换轴). The table is the dossiers themselves.
  */
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import type { Axes, Axis, CardVersion, Dimension, Placement, Product } from '../../core/types.ts'
+import type { Axes, Axis, CardVersion, Dimension, Id, Placement, Product, TopicCadence } from '../../core/types.ts'
 import type { TrackOverview } from '../../host/api.ts'
 import { call, describeError, usePoll } from '../api.ts'
 import { fileName, saveFile, toCsv } from '../csv.ts'
@@ -17,6 +17,7 @@ import type { T } from '../locales.ts'
 import { useShell } from '../shell/context.ts'
 import { localDay, shortDay } from '../time.ts'
 import { ProductIcon } from '../ui/ProductIcon.tsx'
+import { TopicList } from '../ui/TopicList.tsx'
 import { Tag } from '../ui/Tag.tsx'
 import { labelOf, told } from '../words.ts'
 
@@ -112,6 +113,7 @@ function TrackPage({ view, reload }: { view: TrackOverview; reload: () => Promis
     </header>
     {landscape && <div className="op-gist"><Tag kind="ai" /><span>{landscape.gist}</span></div>}
     <MapSection view={view} reload={reload} titleId={`${ids}-map`} />
+    <TopicsSection view={view} titleId={`${ids}-topics`} />
     <MatrixSection view={view} titleId={`${ids}-matrix`} />
   </div>
 }
@@ -156,6 +158,97 @@ function WeeklyLine({ view, reload }: { view: TrackOverview; reload: () => Promi
       {t('track.weekly.waiting', { count: waiting })}</button>}
     {problem && <span className="op-form-problem" role="alert">{problem}</span>}
   </div>
+}
+
+// ---- 专题 (M2.3) ----
+
+/** The question of a 专题, as the host allows (src/host/api.ts). */
+const MAX_QUESTION = 60
+/** Products in one 专题. */
+const MAX_TOPIC_PRODUCTS = 8
+
+function TopicsSection({ view, titleId }: { view: TrackOverview; titleId: string }): ReactNode {
+  const { t } = useShell()
+  const [asking, setAsking] = useState(false)
+  return <section className="op-tsection" aria-labelledby={titleId}>
+    <div className="op-tsection-head">
+      <h2 className="op-zone-title" id={titleId}>{t('topic.title')}</h2>
+      <span className="op-tsection-hint">{t('topic.hint')}</span>
+    </div>
+    {view.topics.length > 0 && <TopicList rows={view.topics} />}
+    {asking
+      ? <NewTopic view={view} onCancel={() => { setAsking(false) }} />
+      : view.track.status === 'active' && <button type="button" className="op-topic-add" onClick={() => { setAsking(true) }}>{t('topic.add')}</button>}
+  </section>
+}
+
+/**
+ * 「写一个问题，AI 去深挖」: the question, the products (those followed now, the first eight ticked), once or weekly, and
+ * what a round costs; sent, the topic's page opens while its first round runs.
+ */
+function NewTopic({ view, onCancel }: { view: TrackOverview; onCancel: () => void }): ReactNode {
+  const { t, navigate } = useShell()
+  const ids = useId()
+  const choices = view.products.filter(item => item.product.status === 'tracking' || item.product.status === 'paused')
+  const [question, setQuestion] = useState('')
+  const [picked, setPicked] = useState<ReadonlySet<Id>>(() => new Set(choices.filter(item => item.product.status === 'tracking').slice(0, MAX_TOPIC_PRODUCTS).map(item => item.product.id)))
+  const [cadence, setCadence] = useState<TopicCadence>('once')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const toggle = (id: Id) => {
+    const next = new Set(picked)
+    if (!next.delete(id)) next.add(id)
+    setPicked(next)
+  }
+  const ready = question.trim().length > 0 && picked.size > 0 && picked.size <= MAX_TOPIC_PRODUCTS
+  const send = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!ready || busy) return
+    setBusy(true)
+    setProblem(null)
+    try {
+      const productIds = choices.map(item => item.product.id).filter(id => picked.has(id)) // in the track's order
+      const { topicId } = await call('POST tracks/:id/topics', { id: view.track.id, body: { question: question.trim(), productIds, cadence } })
+      navigate({ page: 'topic', topicId })
+    } catch (failure) {
+      setProblem(describeError(t, errorOf(failure)))
+      setBusy(false)
+    }
+  }
+  return <form className="op-topic-form" noValidate onSubmit={event => { void send(event) }}>
+    <div className="op-field">
+      <div className="op-field-head">
+        <label htmlFor={`${ids}-q`}>{t('topic.question')}</label>
+        <span className="op-field-count">{t('new.count', { count: question.length, max: MAX_QUESTION })}</span>
+      </div>
+      <textarea id={`${ids}-q`} className="op-input" rows={2} value={question} maxLength={MAX_QUESTION} autoFocus
+        placeholder={t('topic.questionPlaceholder')} onChange={event => { setQuestion(event.target.value) }} />
+    </div>
+    <fieldset className="op-field op-topic-fieldset">
+      <legend>{t('topic.which', { count: picked.size, max: MAX_TOPIC_PRODUCTS })}</legend>
+      <div className="op-topic-products">
+        {choices.map(({ product }) => <label key={product.id} className="op-topic-product">
+          <input type="checkbox" checked={picked.has(product.id)} onChange={() => { toggle(product.id) }} />
+          <ProductIcon product={product} size={18} /><span>{product.name}</span>
+        </label>)}
+      </div>
+    </fieldset>
+    <fieldset className="op-field op-topic-fieldset">
+      <legend>{t('topic.cadence')}</legend>
+      <div className="op-topic-cadence">
+        {(['once', 'weekly'] as const).map(value => <label key={value}>
+          <input type="radio" name={`${ids}-cadence`} checked={cadence === value} onChange={() => { setCadence(value) }} />
+          <span>{t(value === 'weekly' ? 'topic.weekly' : 'topic.once')}</span>
+        </label>)}
+      </div>
+    </fieldset>
+    <p className="op-form-hint">{t('topic.cost')}</p>
+    {problem && <p className="op-form-problem" role="alert">{problem}</p>}
+    <div className="op-form-actions">
+      <button type="submit" className="op-button" data-variant="primary" disabled={!ready || busy} aria-busy={busy || undefined}>{t(busy ? 'topic.starting' : 'topic.start')}</button>
+      <button type="button" className="op-button" onClick={onCancel}>{t('topic.cancel')}</button>
+    </div>
+  </form>
 }
 
 // ---- the map ----

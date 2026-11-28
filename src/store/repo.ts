@@ -3,7 +3,7 @@ import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { localDate } from '../core/calendar.ts'
 import { FOLLOWED, identityKey, nameKey } from '../core/identity.ts'
 import type {
-  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Product, ProductStatus, Run, RunKind, Source, Track,
+  Brief, Candidate, CardEdit, CardVersion, Dimension, DimensionKey, Facts, Finding, Id, Landscape, Product, ProductStatus, Run, RunKind, Source, Topic, TopicVersion, Track,
 } from '../core/types.ts'
 import type { Db } from './db.ts'
 
@@ -50,6 +50,8 @@ const CARD_EDIT = new Codec<CardEdit>('card_edits', { id: 'plain', productId: 'p
 const FACTS = new Codec<Facts>('facts', { productId: 'plain', version: 'plain', form: 'plain', platforms: 'plain', price: 'plain', firstReleased: 'plain', rivals: 'json', createdAt: 'plain' })
 const BRIEF = new Codec<Brief>('briefs', { date: 'plain', gist: 'plain', findingIds: 'json', minorIds: 'json', quietProductIds: 'json', skipped: 'json', costYuan: 'plain', createdAt: 'plain', updatedAt: 'plain' })
 const LANDSCAPE = new Codec<Landscape>('landscapes', { id: 'plain', trackId: 'plain', date: 'plain', gist: 'plain', axes: 'json', positions: 'json', runId: 'plain', createdAt: 'plain' })
+const TOPIC = new Codec<Topic>('topics', { id: 'plain', trackId: 'plain', question: 'plain', productIds: 'json', cadence: 'plain', createdAt: 'plain' })
+const TOPIC_VERSION = new Codec<TopicVersion>('topic_versions', { id: 'plain', topicId: 'plain', version: 'plain', status: 'plain', cards: 'json', changeNote: 'plain', runId: 'plain', createdAt: 'plain' })
 const RUN = new Codec<Run>('runs', { id: 'plain', kind: 'plain', date: 'plain', trackId: 'plain', productId: 'plain', sessionId: 'plain', status: 'plain', startedAt: 'plain', endedAt: 'plain', usage: 'json', costYuan: 'plain', error: 'plain', progress: 'json', subject: 'plain' })
 
 type SourcePatch = Partial<Pick<Source, 'openedVia' | 'quoteFound' | 'supportsClaim' | 'syndicationGroup' | 'officialConfirmed'>>
@@ -209,11 +211,13 @@ export class Repo {
       for (const table of ['findings', 'card_versions', 'card_edits', 'facts', 'candidates', 'track_products'])
         this.db.prepare(`DELETE FROM ${table} WHERE product_id = ?`).run(id)
       // A source some other row still cites stays (none should, but a shared one must not vanish from under it).
-      const stillCited = new Set(this.db.prepare(`SELECT j.value FROM findings, json_each(findings.source_ids) j
-        UNION SELECT j.value FROM card_versions, json_each(card_versions.source_ids) j
-        UNION SELECT j.value FROM card_edits, json_each(card_edits.source_ids) j`).all().map(row => String(row.value)))
-      const remove = this.db.prepare('DELETE FROM sources WHERE id = ?')
-      for (const sourceId of cited) if (!stillCited.has(sourceId)) remove.run(sourceId)
+      this.pruneSources(cited)
+      // Its topics go on without it (M2.3); one about it alone goes.
+      for (const topic of this.topicsOfProduct(id)) {
+        const left = topic.productIds.filter(p => p !== id)
+        if (left.length) this.updateTopic(topic.id, { productIds: left })
+        else this.deleteTopic(topic.id)
+      }
       for (const brief of this.select(BRIEF, 'ORDER BY date')) {
         const kept: Brief = {
           ...brief,
@@ -256,6 +260,7 @@ export class Repo {
       for (const key of settingKeys) this.setSetting(key, undefined)
       this.db.prepare("UPDATE runs SET subject = ? WHERE track_id = ? AND kind IN ('recommend', 'landscape')").run(track.name, trackId)
       this.db.prepare('DELETE FROM landscapes WHERE track_id = ?').run(trackId)
+      for (const topic of this.topicsOfTrack(trackId)) this.deleteTopic(topic.id)
       this.db.prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
       return [...own, ...orphans]
     })
@@ -435,6 +440,77 @@ export class Repo {
 
   /** The track's drawings, oldest first. */
   landscapesOfTrack(trackId: Id): Landscape[] { return this.select(LANDSCAPE, 'WHERE track_id = ? ORDER BY created_at, rowid', trackId) }
+
+  // ---- 专题 (M2.3) ----
+
+  createTopic(t: Omit<Topic, 'id' | 'createdAt'>): Topic {
+    const topic: Topic = { ...t, id: randomUUID(), createdAt: this.stamp() }
+    this.insert(TOPIC, topic)
+    return topic
+  }
+
+  getTopic(id: Id): Topic | null { return this.get(TOPIC, id) ?? null }
+
+  /** The track's topics, oldest first. */
+  topicsOfTrack(trackId: Id): Topic[] { return this.select(TOPIC, 'WHERE track_id = ? ORDER BY created_at, rowid', trackId) }
+
+  /** The topics about the product, oldest first. */
+  topicsOfProduct(productId: Id): Topic[] {
+    return this.select(TOPIC, 'WHERE EXISTS (SELECT 1 FROM json_each(topics.product_ids) j WHERE j.value = ?) ORDER BY created_at, rowid', productId)
+  }
+
+  updateTopic(id: Id, patch: Partial<Pick<Topic, 'cadence' | 'productIds'>>): Topic {
+    this.patch(TOPIC, id, patch, ['cadence', 'productIds'])
+    return this.require(TOPIC, id)
+  }
+
+  /**
+   * A new round of the topic, as a draft with no cards yet. Drafts an earlier round left (cut short by a quit, say) are
+   * rejected: only the newest round is ever checked.
+   */
+  addTopicDraft(topicId: Id, runId: Id | null = null): TopicVersion {
+    return this.db.atomic(() => {
+      this.db.prepare("UPDATE topic_versions SET status = 'rejected' WHERE topic_id = ? AND status = 'draft'").run(topicId)
+      const draft: TopicVersion = { id: randomUUID(), topicId, version: null, status: 'draft', cards: [], changeNote: '', runId, createdAt: this.stamp() }
+      this.insert(TOPIC_VERSION, draft)
+      return draft
+    })
+  }
+
+  getTopicVersion(id: Id): TopicVersion | null { return this.get(TOPIC_VERSION, id) ?? null }
+
+  updateTopicVersion(id: Id, patch: Partial<Pick<TopicVersion, 'version' | 'status' | 'cards' | 'changeNote' | 'runId'>>): TopicVersion {
+    this.patch(TOPIC_VERSION, id, patch, ['version', 'status', 'cards', 'changeNote', 'runId'])
+    return this.require(TOPIC_VERSION, id)
+  }
+
+  /** Every round of the topic, oldest first: drafts, finals and rejected ones. */
+  topicVersions(topicId: Id): TopicVersion[] { return this.select(TOPIC_VERSION, 'WHERE topic_id = ? ORDER BY created_at, rowid', topicId) }
+
+  /** The topic's newest final version, or null. */
+  latestTopicVersion(topicId: Id): TopicVersion | null {
+    return this.select(TOPIC_VERSION, "WHERE topic_id = ? AND status = 'final' ORDER BY version DESC LIMIT 1", topicId)[0] ?? null
+  }
+
+  /** Erases the topic, its rounds, and the sources only they cite. */
+  deleteTopic(id: Id): void {
+    this.db.atomic(() => {
+      const cited = new Set(this.topicVersions(id).flatMap(v => v.cards.flatMap(c => c.sourceIds)))
+      this.db.prepare('DELETE FROM topic_versions WHERE topic_id = ?').run(id)
+      this.db.prepare('DELETE FROM topics WHERE id = ?').run(id)
+      this.pruneSources(cited)
+    })
+  }
+
+  /** Deletes the sources among `ids` that no finding, card, card edit or topic round cites any more. */
+  private pruneSources(ids: Iterable<Id>): void {
+    const stillCited = new Set(this.db.prepare(`SELECT j.value FROM findings, json_each(findings.source_ids) j
+      UNION SELECT j.value FROM card_versions, json_each(card_versions.source_ids) j
+      UNION SELECT j.value FROM card_edits, json_each(card_edits.source_ids) j
+      UNION SELECT s.value FROM topic_versions, json_each(topic_versions.cards) c, json_each(c.value, '$.sourceIds') s`).all().map(row => String(row.value)))
+    const remove = this.db.prepare('DELETE FROM sources WHERE id = ?')
+    for (const sourceId of ids) if (!stillCited.has(sourceId)) remove.run(sourceId)
+  }
 
   /** The track's newest drawing, or null. */
   latestLandscape(trackId: Id): Landscape | null { return this.select(LANDSCAPE, 'WHERE track_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1', trackId)[0] ?? null }

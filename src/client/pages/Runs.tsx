@@ -98,6 +98,7 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
   // A deleted product or track is named as it was when it was deleted (the host keeps that name in `subject`).
   const gone = (name: string | null) => name === null ? null : t('runs.deleted', { name })
   const object = run.kind === 'synthesize' ? t('runs.object.brief') : run.kind === 'recommend' || run.kind === 'landscape' ? trackName ?? gone(run.subject)
+    : run.kind === 'topic' || run.kind === 'topicCheck' ? run.subject // the 专题's question (M2.3)
     : run.productName ?? (run.productId !== null ? gone(run.subject) : run.subject)
   const started = run.startedAt ? Date.parse(run.startedAt) : NaN
   const ended = run.endedAt ? Date.parse(run.endedAt) : run.status === 'running' ? now : NaN
@@ -107,7 +108,8 @@ function RunItem({ run, now, trackName, product, redone, reload }: {
     : shown === 'interrupted' ? t('runs.interrupted') : null
   // A follow-up is a chat the reader started, which the host cannot run again; a confirmation is asked for again from
   // 「＋ 添加产品」.
-  const retryable = (shown === 'failed' || shown === 'interrupted') && run.kind !== 'followup' && run.kind !== 'identify'
+  // A 专题's round is run again from its page (立即更新): a retry would not know which version it builds on.
+  const retryable = (shown === 'failed' || shown === 'interrupted') && run.kind !== 'followup' && run.kind !== 'identify' && run.kind !== 'topic' && run.kind !== 'topicCheck'
 
   const open = async () => {
     if (!run.sessionId) return

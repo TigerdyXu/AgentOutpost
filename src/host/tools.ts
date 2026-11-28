@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { normalizeDate } from '../core/dates.ts'
 import { isOwnSource, isValidEvidence, isVoidEvidence } from '../core/credibility.ts'
 import { findingKey, isDuplicate, type RecentFinding } from '../core/dedupe.ts'
+import { nameKey } from '../core/identity.ts'
 import { weeklyHeat } from '../core/hotness.ts'
 import type { Id, Source, Span } from '../core/types.ts'
 import { canonicalUrl } from '../core/url.ts'
@@ -15,7 +16,7 @@ import type { IconFetcher, ToolSpec } from './ports.ts'
 import { say } from '../core/messages.ts'
 import { rm } from 'node:fs/promises'
 
-export type RunToolKind = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'followup'
+export type RunToolKind = 'recommend' | 'identify' | 'baseline' | 'daily' | 'verify' | 'followup' | 'topic' | 'topicCheck'
 
 /** What a set of tools may touch: the store, the run it belongs to, and the one track and product it is about (if any). */
 export interface ToolScope {
@@ -23,6 +24,9 @@ export interface ToolScope {
   runId: Id
   trackId: Id | null
   productId: Id | null
+  /** A 专题's research or check (M2.3): the topic, and the draft its cards go into (and are checked from). */
+  topicId?: Id | null
+  draftId?: Id | null
   now: () => Date
   icons: IconFetcher
   /** The agent said it is finished, with a one-sentence summary. */
@@ -46,7 +50,13 @@ const TOOL_NAMES: Record<RunToolKind, string[]> = {
   daily: ['outpost_read', 'outpost_submit_finding', 'outpost_propose_card_edit', 'outpost_done'],
   verify: ['outpost_read_pending', 'outpost_report_check', 'outpost_add_source', 'outpost_done'],
   followup: ['outpost_read'],
+  // 专题 (M2.3): the research hands its cards into the round's draft; the check is the dossier's, on that draft.
+  topic: ['outpost_read_topic', 'outpost_submit_topic_card', 'outpost_done'],
+  topicCheck: ['outpost_read_pending', 'outpost_report_check', 'outpost_done'],
 }
+
+/** A 专题 round has at most this many cards (prompts/topic.md asks for 2–6). */
+const MAX_TOPIC_CARDS = 6
 
 // ---- argument shapes (the length limits are hard: over them the agent is told to shorten and resubmit) ----
 // Optional fields are `.nullish()`: models often send `null` for "nothing here", which means the same as leaving the field out.
@@ -115,6 +125,15 @@ const ReportCheck = z.object({
   syndicationGroup: z.string().trim().max(500).nullish(),
 })
 const AddSource = z.object({ itemId: str(80), source: SourceInput })
+const SubmitTopicCard = z.object({
+  title: str(20),
+  summary: str(40),
+  bullets: z.array(str(40)).min(1).max(3),
+  body: str(2000),
+  sources: z.array(SourceInput).min(1).max(MAX_SOURCES),
+  products: z.array(str(30)).min(1).max(8),
+  inferenceQuotes: z.array(str(2000)).max(20).nullish(),
+})
 const Done = z.object({ summary: str(100) })
 
 // ---- plumbing ----
@@ -208,6 +227,20 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
    */
   const recentFindings = (productId: Id): RecentFinding[] => repo.findingsOfProduct(productId, RECENT_DAYS).map(f =>
     ({ productId: f.productId, dedupeKey: f.dedupeKey, headline: f.headline, urls: repo.getSources(f.sourceIds).map(s => ({ url: s.url, kind: s.kind, isOfficial: s.isOfficial })) }))
+
+  /** The 专题 of a topic run, and the round its cards go into (M2.3). */
+  const needTopic = () => {
+    const topic = scope.topicId ? repo.getTopic(scope.topicId) : null
+    const draft = scope.draftId ? repo.getTopicVersion(scope.draftId) : null
+    if (!topic || !draft || draft.topicId !== topic.id) return reject('这次运行没有关联专题，不能使用这个工具')
+    if (draft.status !== 'draft') return reject('这一轮专题已经结束，不能再提交')
+    return { topic, draft }
+  }
+  /** The cards of the round being checked, as the check reads them: like card edits, one item each. */
+  const topicItems = () => {
+    const { draft } = needTopic()
+    return draft.cards.map((card, i) => ({ itemId: `${draft.id}#${i + 1}`, claimKind: null, dimension: card.title, claim: card.summary, detail: card.body, sourceIds: card.sourceIds }))
+  }
 
   /** Everything of this product that waits for a check. */
   const waiting = (productId: Id) => ({
@@ -320,6 +353,15 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
     tool('outpost_read_pending',
       '核查阶段：读取这个产品等着核查的内容，分三组：pendingFindings（新提交的发现）、pendingCardEdits（待核的卡片修改）、unconfirmedFindings（上次没核实、需要再试的发现）。每条有 itemId、claimKind（self 官方说自己的事，third-party 别人的说法，卡片修改为 null）、claim（要核的话）、detail（补充说明或卡片正文）、sources（每个有 sourceId、url、quote、needsCheck；needsCheck 为 false 的已经核过，不用再打开）。无参数。',
       NoArguments, () => {
+        if (scope.topicId) { // a 专题's round: its cards, nothing else
+          const settledTopic = (s: Source) => { const seen = { ...s, openedVia: s.openedVia ?? 'unopened' as const }; return isValidEvidence(seen) || isVoidEvidence(seen) }
+          return {
+            pendingFindings: [], unconfirmedFindings: [],
+            pendingCardEdits: topicItems().map(({ sourceIds, ...item }) => ({
+              ...item, sources: repo.getSources(sourceIds).map(s => ({ sourceId: s.id, url: s.url, quote: s.quote, needsCheck: !settledTopic(s) })),
+            })),
+          }
+        }
         const { findings, unconfirmed, cardEdits } = waiting(needProduct())
         // A source needs opening until a check has settled it: its quote matched (valid) or its page did not back the claim (void).
         // Never checked, not opened, a search snippet that did not match, an opened page the checker was unsure of: all still open.
@@ -336,8 +378,10 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
     tool('outpost_report_check',
       '报告你对一个来源的核查结果（每个来源报告一次）。sourceId 取自 outpost_read_pending；openedVia 为 http（直接打开了）、browser（用浏览器打开了）、snippet（只看到搜索摘要）或 unopened（打不开）；quoteFound 表示原文里是否找到了那句引文（没打开过就填 null）；supportsClaim 表示原文是否支持那条结论（不确定就填 null）；official 表示这个页面是不是这个产品的公司自己发布的（官网、帮助中心、官方博客或新闻室、它自己的应用商店页、官方公众号或官方账号填 true；媒体、评测、论坛帖子、别的公司——包括名字相近的另一家——填 false；看不出填 null）；openedVia 为 unopened 时这三项一律按未知（null）记录，不管你填了什么；如果这个来源只是转载别家的通稿，syndicationGroup 填原始通稿的网址。成功返回 { ok: true }。',
       ReportCheck, args => {
-        const { findings, unconfirmed, cardEdits } = waiting(needProduct())
-        const known = new Set([...findings, ...unconfirmed].flatMap(f => f.sourceIds).concat(cardEdits.flatMap(e => e.sourceIds)))
+        const known = new Set(scope.topicId ? topicItems().flatMap(item => item.sourceIds) : (() => {
+          const { findings, unconfirmed, cardEdits } = waiting(needProduct())
+          return [...findings, ...unconfirmed].flatMap(f => f.sourceIds).concat(cardEdits.flatMap(e => e.sourceIds))
+        })())
         if (!known.has(args.sourceId)) reject(`sourceId：「${args.sourceId}」不在待核查的内容里。只能报告 outpost_read_pending 列出的来源，或者你用 outpost_add_source 新增的来源`)
         // A page nobody opened cannot confirm or deny a quote; kept as sent, `quoteFound: true` would make `judge` count it as valid.
         const unseen = args.openedVia === 'unopened'
@@ -365,6 +409,57 @@ function buildTools(kind: RunToolKind, scope: ToolScope): Record<string, ToolSpe
         const source = storeSource(args.source)
         repo.updateFinding(item.id, { sourceIds: [...item.sourceIds, source.id] })
         return { sourceId: source.id, remaining: MAX_ADDED_SOURCES - used - 1 }
+      }),
+
+    tool('outpost_read_topic',
+      '专题：读这个专题。返回 question（要查的问题）、products（涉及的产品，每个有 name、company、officialDomains 和 dossier：档案里各维度的 dimension、summary、bullets）、previous（上一版的卡片，每张有 title、summary、bullets、body、products、sources；没有上一版时为 null）。无参数。',
+      NoArguments, () => {
+        const { topic } = needTopic()
+        const products = topic.productIds.flatMap(id => repo.getProduct(id) ?? [])
+        const latest = repo.latestTopicVersion(topic.id)
+        const nameOf = (id: Id) => repo.getProduct(id)?.name ?? null
+        return {
+          question: topic.question,
+          products: products.map(p => {
+            const labels = new Map(repo.dimensionsOfProduct(p.id).map(d => [d.key, d.label]))
+            return {
+              name: p.name, company: p.company, officialDomains: p.officialDomains,
+              dossier: repo.latestCards(p.id).filter(c => labels.has(c.dimension)).map(c => ({ dimension: labels.get(c.dimension)!, summary: c.summary, bullets: c.bullets })),
+            }
+          }),
+          previous: latest && {
+            version: latest.version, createdAt: latest.createdAt,
+            cards: latest.cards.map(c => ({
+              title: c.title, summary: c.summary, bullets: c.bullets, body: c.body, products: c.productIds.flatMap(id => nameOf(id) ?? []),
+              sources: repo.getSources(c.sourceIds).map(s => ({ url: s.url, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, kind: s.kind, isOfficial: isOwnSource(s), quote: s.quote })),
+            })),
+          },
+        }
+      }),
+
+    tool('outpost_submit_topic_card',
+      `专题：交一张结论卡片。title ≤20 字（这张卡讲的方面）；summary ≤40 字（一句话结论）；bullets 1–3 条、每条 ≤40 字；body ≤2000 字，每句话后面用 [n] 引用 sources 里的第 n 个来源（从 1 数起）；sources 1–${MAX_SOURCES} 个，quote 是原文里逐字的一句话；products 是这张卡涉及的产品，用 outpost_read_topic 里的名字；你自己的推论、归纳，把原句逐字放进 inferenceQuotes（必须在 body 里逐字存在）。每轮最多 ${MAX_TOPIC_CARDS} 张。成功返回 { cardNumber }；卡片要等核查后才会生效。`,
+      SubmitTopicCard, args => {
+        const { topic, draft } = needTopic()
+        if (draft.cards.length >= MAX_TOPIC_CARDS) reject(`这一轮已经交了 ${MAX_TOPIC_CARDS} 张卡片，不能再交；交完了就调用 outpost_done`)
+        for (const m of args.body.matchAll(/\[(\d+)\]/g)) {
+          const n = Number(m[1])
+          if (n < 1 || n > args.sources.length) reject(`body：引用了 [${n}]，但 sources 只有 ${args.sources.length} 个（[n] 指 sources 里的第 n 个，从 1 数起）`)
+        }
+        const quotes = args.inferenceQuotes ?? []
+        for (const quote of quotes)
+          if (!args.body.includes(quote)) reject(`inferenceQuotes：这一段在 body 里找不到，必须逐字出现在 body 里：「${quote.slice(0, 40)}」`)
+        const products = topic.productIds.flatMap(id => repo.getProduct(id) ?? [])
+        const byName = new Map(products.map(p => [nameKey(p.name), p.id]))
+        const unknown = args.products.filter(name => !byName.has(nameKey(name)))
+        if (unknown.length) reject(`products：「${unknown.join('」「')}」不是这个专题的产品。只能写：${products.map(p => p.name).join('、')}`)
+        const sources = storeSources(args.sources)
+        const card = {
+          title: args.title, summary: args.summary, bullets: args.bullets, body: args.body, sourceIds: sources.map(s => s.id),
+          inferenceSpans: inferenceSpans(args.body, quotes), productIds: [...new Set(args.products.map(name => byName.get(nameKey(name))!))],
+        }
+        repo.updateTopicVersion(draft.id, { cards: [...draft.cards, card] })
+        return { cardNumber: draft.cards.length + 1 }
       }),
 
     tool('outpost_done',

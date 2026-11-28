@@ -13,7 +13,7 @@ import type { OutpostConfig } from '../config.ts'
 import { localDate } from '../core/calendar.ts'
 import { costOf, pricesAt, pricesFor } from '../core/cost.ts'
 import { billingOf, modelFor, onDeepSeek, type Billing, type ModelRef } from '../core/models.ts'
-import type { Axes, Id, Landscape, Usage } from '../core/types.ts'
+import type { Axes, Id, Landscape, TopicVersion, Usage } from '../core/types.ts'
 import { openDb, lockDataDir, type Db } from '../store/db.ts'
 import { Repo } from '../store/repo.ts'
 import { createApi } from './api.ts'
@@ -28,6 +28,7 @@ import { baselineProducts, type BaselineDeps } from './jobs/baseline.ts'
 import { runDailyProduct } from './jobs/daily.ts'
 import { drawLandscape, needsDrawing } from './jobs/landscape.ts'
 import { recommendAndWait } from './jobs/recommend.ts'
+import { runTopic, topicDue } from './jobs/topic.ts'
 import { WEEKLY_REFINE, weeklyDue } from './jobs/weekly.ts'
 import { JobRunner, STOPPED_ERROR, type JobDeps, type RuntimeSettings } from './jobs/runner.ts'
 import { appendLate, synthesizeBrief, type BriefDeps } from './jobs/synthesize.ts'
@@ -81,6 +82,8 @@ export class Runtime {
   /** What the brief is written with. */
   readonly briefs: BriefDeps
   /** Maps being drawn, by track (`drawMap`). */
+  /** 专题 rounds under way, by topic (`researchTopic`). */
+  private readonly topicRounds = new Map<Id, Promise<TopicVersion | null>>()
   private readonly drawing = new Map<Id, Promise<Landscape | null>>()
   private readonly db: Db
   private readonly unlock: () => void
@@ -137,6 +140,7 @@ export class Runtime {
       verifyProduct: (productId, date) => verifyProduct(jobs, productId, 'daily', date),
       drawMaps: date => this.drawMaps(date),
       suggestWeekly: date => this.suggestWeekly(date),
+      updateTopics: date => this.updateTopics(date),
       log,
     })
   }
@@ -265,6 +269,37 @@ export class Runtime {
       if (track.status !== 'active' || !weeklyDue(this.repo, track, date)) continue
       try { await recommendAndWait(this.jobs, track.id, WEEKLY_REFINE) }
       catch (error) { this.log(`the weekly suggestions of track ${track.id} did not start: ${messageOf(error)}`) }
+    }
+  }
+
+  /**
+   * Runs a round of the 专题 now, for today (`runTopic`), or joins the one under way. Resolves with the version written,
+   * or null when the round was rejected.
+   */
+  researchTopic(topicId: Id, date = this.today()): Promise<TopicVersion | null> {
+    const running = this.topicRounds.get(topicId)
+    if (running) return running
+    const work = runTopic(this.jobs, topicId, date).finally(() => { this.topicRounds.delete(topicId) })
+    this.topicRounds.set(topicId, work)
+    return work
+  }
+
+  /** Whether a round of the topic is under way. */
+  isResearching(topicId: Id): boolean { return this.topicRounds.has(topicId) }
+
+  /**
+   * After the day's brief, maps and weekly suggestions: runs, one after another, a round of each topic due (`topicDue`):
+   * a weekly one whose newest version is a week old, or a first round that did not finish before.
+   */
+  private async updateTopics(date: string): Promise<void> {
+    for (const track of this.repo.listTracks()) {
+      if (track.status !== 'active') continue
+      for (const topic of this.repo.topicsOfTrack(track.id)) {
+        if (this.runner.stopSignal.aborted) return
+        if (this.topicRounds.has(topic.id) || !topicDue(this.repo, topic, date)) continue
+        try { await this.researchTopic(topic.id, date) }
+        catch (error) { this.log(`the topic ${topic.id} could not be updated: ${messageOf(error)}`) }
+      }
     }
   }
 

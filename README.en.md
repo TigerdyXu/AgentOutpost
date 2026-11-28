@@ -40,7 +40,7 @@ You need:
 
 **5. Rename or delete.** The same **⋯** menu changes a product's name, company and official site, or deletes the product. The **⋯** beside a track's name opens its settings: its name, what it follows, its dimensions, and deleting the track. Deleting asks once more and can't be undone; spending records stay.
 
-**6. Compare.** The first row under each track, **Overview**, opens the track's page. The comparison table lays every product's dimensions side by side, marks today's changes and exports to a spreadsheet. The positioning map places the products on two axes, so you can see which ones are alike and which way each is moving. The map and its one-line summary are the AI's reading of the dossiers, marked as an inference.
+**6. Compare.** The first row under each track, **Overview**, opens the track's page. The comparison table lays every product's dimensions side by side, marks today's changes and exports to a spreadsheet. The positioning map places the products on two axes, so you can see which ones are alike and which way each is moving. The map and its one-line summary are the AI's reading of the dossiers, marked as an inference. The track page can also start a **topic**: write a question, pick some products, and the AI looks into it and writes a few conclusion cards with sources, checked like the dossiers, once or updated weekly.
 
 <img src="docs/images/add-product.png" width="760" alt="Add product">
 
@@ -52,6 +52,7 @@ Rough figures with DeepSeek (deepseek-flash), web searches included:
 - Finding candidates for a new track: about ¥0.5–1.
 - Drawing a track's positioning map: a few fen (once a day, when a dossier changed).
 - Weekly suggestions: about ¥0.5–1 per track per week.
+- A topic: about ¥1–2 each time it is looked into.
 
 DeepSeek charges half outside weekday peak hours (9–12 and 14–18 Beijing time), and the 08:00 run is off-peak. Set a daily budget in **Settings**; once spending reaches it, the rest waits for the next day. Local models (Ollama) and a Claude subscription count as ¥0 and don't use the budget.
 

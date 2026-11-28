@@ -201,6 +201,29 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX landscapes_track ON landscapes (track_id, created_at);
   `,
+  // 6: 专题 (M2.3): the questions, and each round's cards (a draft while checked, then final or rejected).
+  `
+  CREATE TABLE topics (
+    id TEXT PRIMARY KEY,
+    track_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    product_ids TEXT NOT NULL,
+    cadence TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX topics_track ON topics (track_id, created_at);
+  CREATE TABLE topic_versions (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT NOT NULL,
+    version INTEGER,
+    status TEXT NOT NULL,
+    cards TEXT NOT NULL,
+    change_note TEXT NOT NULL,
+    run_id TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX topic_versions_topic ON topic_versions (topic_id, created_at);
+  `,
 ]
 
 /**

@@ -82,6 +82,8 @@ export interface SchedulerDeps {
   drawMaps?(date: string): Promise<void>
   /** After the maps, starts the weekly suggestions of the tracks due for them (M2.2); none when absent. */
   suggestWeekly?(date: string): Promise<void>
+  /** After the weekly suggestions, the rounds of the 专题 due (M2.3); none when absent. */
+  updateTopics?(date: string): Promise<void>
   /** Where failures of background work are reported; default `console.warn`. */
   log?: (message: string) => void
 }
@@ -323,6 +325,7 @@ export class Scheduler {
       // The maps read the dossiers as the day left them; a map that cannot be drawn leaves the day complete.
       try { await this.deps.drawMaps?.(date) } catch (error) { this.log(`drawing the maps failed: ${messageOf(error)}`) }
       try { await this.deps.suggestWeekly?.(date) } catch (error) { this.log(`the weekly suggestions failed: ${messageOf(error)}`) }
+      try { await this.deps.updateTopics?.(date) } catch (error) { this.log(`updating the topics failed: ${messageOf(error)}`) }
     }
     try { await this.deps.archiveOld(clock.now()) } catch (error) { this.log(`archiving old sessions failed: ${messageOf(error)}`) }
   }

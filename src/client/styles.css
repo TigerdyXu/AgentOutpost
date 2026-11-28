@@ -3361,3 +3361,135 @@ button.op-run-open:focus-visible {
   font-size: 13px;
   line-height: 20px;
 }
+
+/* ---- 专题 (M2.3): the list on the track page and the product's 专题 tab, the form, the topic page ---- */
+
+.op-topic-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  overflow: hidden;
+}
+
+.op-topic-list li + li {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.op-topic-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-topic-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.op-topic-row:focus-visible { outline: 2px solid var(--dsw-alias-link); outline-offset: -2px; }
+
+.op-topic-q {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.op-topic-meta {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-topic-add {
+  margin-top: 10px;
+  padding: 10px 14px;
+  width: 100%;
+  border: 0.5px dashed var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xl);
+  background: none;
+  color: var(--dsw-alias-link);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.op-topic-form {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+}
+
+.op-topic-fieldset {
+  margin: 12px 0 0;
+  padding: 0;
+  border: none;
+}
+
+.op-topic-fieldset legend {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.op-topic-products,
+.op-topic-cadence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.op-topic-product,
+.op-topic-cadence label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.op-topic-with {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.op-topic-cards {
+  margin-top: 20px;
+}
+
+.op-topic-summary {
+  margin: 6px 0 0;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.op-topic-about {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12.5px;
+}
+
+.op-topic-history {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.op-topic-history li {
+  display: flex;
+  gap: 12px;
+}
