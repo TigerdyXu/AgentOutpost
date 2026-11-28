@@ -17,8 +17,11 @@ export interface SessionAccess {
 export interface Shell {
   t: T
   route: Route
-  /** Shows another page in the right column (and remembers it for the next visit). */
-  navigate: (route: Route) => void
+  /**
+   * Shows another page in the right column (and remembers it for the next visit); on a narrow panel the middle column
+   * closes, unless `keepColumn` (the search box showing results as one types, M3.2).
+   */
+  navigate: (route: Route, options?: { keepColumn?: boolean }) => void
   /** The latest `GET state`; undefined until the first answer. */
   state: StateView | undefined
   /** Why the last `GET state` failed, while it does (cleared by the next answer). */

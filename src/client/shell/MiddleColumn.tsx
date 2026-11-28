@@ -238,21 +238,35 @@ function SearchBox({ onChoose }: { onChoose: () => void }): ReactNode {
   const onSearch = route.page === 'search'
   const [text, setText] = useState(onSearch ? route.q : '')
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  useEffect(() => { if (!onSearch) { clearTimeout(timer.current); setText('') } }, [onSearch])
+  // Another page opened (a row chosen while a search was still due, say): nothing due any more, and the box empties.
+  useEffect(() => { if (route.page !== 'search') { clearTimeout(timer.current); setText('') } }, [route])
   useEffect(() => () => { clearTimeout(timer.current) }, [])
-  const go = (value: string) => { clearTimeout(timer.current); navigate({ page: 'search', q: value.trim() }) }
+  /** Shows the results for `value`; as one types (`keepColumn`) the narrow layout's column stays open. */
+  const go = (value: string, keepColumn: boolean) => { clearTimeout(timer.current); navigate({ page: 'search', q: value.trim() }, { keepColumn }) }
+  const later = (value: string) => {
+    clearTimeout(timer.current)
+    if (value.trim() || onSearch) timer.current = setTimeout(() => { go(value, true) }, SEARCH_DEBOUNCE_MS)
+  }
   return <div className="op-mid-search" role="search">
     <SearchIcon size={16} />
     <input type="search" className="op-mid-search-input" placeholder={t('search.placeholder')} aria-label={t('search.label')} value={text} maxLength={60}
       onChange={event => {
         const value = event.target.value
         setText(value)
-        clearTimeout(timer.current)
-        if (value.trim() || onSearch) timer.current = setTimeout(() => { go(value) }, SEARCH_DEBOUNCE_MS)
+        // While an input method composes (pinyin being chosen), nothing is searched: the words are not there yet.
+        if ((event.nativeEvent as InputEvent).isComposing) clearTimeout(timer.current)
+        else later(value)
       }}
+      onCompositionEnd={event => { later(event.currentTarget.value) }}
       onKeyDown={event => {
-        if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); go(text); onChoose() }
-        else if (event.key === 'Escape' && text) { event.preventDefault(); event.stopPropagation(); setText(''); if (onSearch) go('') }
+        if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); go(text, false); onChoose() }
+        else if (event.key === 'Escape' && text) {
+          event.preventDefault()
+          event.stopPropagation()
+          clearTimeout(timer.current)
+          setText('')
+          if (onSearch) go('', true)
+        }
       }} />
   </div>
 }

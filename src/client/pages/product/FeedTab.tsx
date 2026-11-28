@@ -24,12 +24,21 @@ export function FeedTab({ product, findings, sources, dimensions, changed = {}, 
   const focusUnproven = focus !== undefined && findings.some(finding => finding.id === focus && finding.status === 'unproven')
   const [open, setOpen] = useState(focusUnproven)
   const list = useRef<HTMLDivElement>(null)
+  // Each finding a link asks for is opened (its fold) and scrolled to once; folding and unfolding after that is the reader's.
+  const opened = useRef<Id | undefined>(focusUnproven ? focus : undefined)
+  const scrolled = useRef<Id | undefined>(undefined)
   useEffect(() => {
-    if (focus === undefined) return
-    if (focusUnproven) setOpen(true)
+    if (focus === undefined || !focusUnproven || opened.current === focus) return
+    opened.current = focus
+    setOpen(true)
+  }, [focus, focusUnproven])
+  useEffect(() => {
+    if (focus === undefined || scrolled.current === focus) return
     const target = [...list.current?.querySelectorAll<HTMLElement>('[data-finding]') ?? []].find(element => element.dataset.finding === focus)
-    target?.scrollIntoView?.({ block: 'center' })
-  }, [focus, focusUnproven, open])
+    if (!target) return
+    scrolled.current = focus
+    target.scrollIntoView?.({ block: 'center' })
+  }, [focus, open, findings])
   // Every track the product is in, in the track list's order, as the unfiltered brief names them.
   const trackName = state?.tracks.filter(view => view.products.some(item => item.product.id === product.id)).map(view => view.track.name).join(t('today.list')) || undefined
   const labels = new Map(dimensions.map(dimension => [dimension.key, labelOf(t, dimension)] as const))

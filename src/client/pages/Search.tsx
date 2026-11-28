@@ -83,7 +83,7 @@ export function Search(): ReactNode {
             {hit.status === 'unconfirmed' && <Tag kind="unconfirmed" />}
             {hit.status === 'unproven' && <span className="op-search-meta">{t('feed.unproven')}</span>}
             {/* Found in why it matters: the headline still says which finding it is. */}
-            {hit.snippet.text !== hit.headline && <span className="op-search-headline">{hit.headline}</span>}</>}
+            {!hit.inHeadline && <span className="op-search-headline">{hit.headline}</span>}</>}
           snippet={hit.snippet} />)}
       </Group>
       <Group title="search.group.topics" count={current.topics.length} more={current.more.topics}>

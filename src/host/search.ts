@@ -17,7 +17,8 @@ export interface SearchResults {
   products: { id: Id; name: string; company: string; tracks: string[]; snippet: Snippet }[]
   tracks: { id: Id; name: string; snippet: Snippet }[]
   cards: { productId: Id; product: string; dimension: DimensionKey; label: string; snippet: Snippet }[]
-  findings: { id: Id; productId: Id; product: string; date: string; headline: string; status: FindingStatus; snippet: Snippet }[]
+  /** `inHeadline`: the snippet is the headline's (else it is from why it matters, and the panel shows the headline too). */
+  findings: { id: Id; productId: Id; product: string; date: string; headline: string; status: FindingStatus; inHeadline: boolean; snippet: Snippet }[]
   topics: { id: Id; question: string; track: string; snippet: Snippet }[]
   /** How many more of each kind matched than are listed (`SEARCH_LIMIT`). */
   more: { products: number; tracks: number; cards: number; findings: number; topics: number }
@@ -33,8 +34,17 @@ const AFTER = 64
 /** Findings the panel shows (the product's 动态 tab): checked ones, not those unchecked or withdrawn. */
 const SHOWN: readonly FindingStatus[] = ['verified', 'unconfirmed', 'unproven']
 
-/** `text` folded for matching, with the index in `text` of each folded character. */
+/**
+ * `text` folded for matching, with the index in `text` of each folded character (and `text.length` after the last). When
+ * folding keeps every character one for one (most text: no character that NFKC expands or composes), the indices are
+ * the identity and the text is folded whole, for speed.
+ */
 function fold(text: string): { folded: string; at: number[] } {
+  const whole = text.normalize('NFKC').toLowerCase()
+  // Only composition (combining marks, Hangul jamo) shortens text; without it, an unchanged length means nothing expanded.
+  if (whole.length === text.length && !/[\p{M}\u1100-\u11ff\u3130-\u318f]/u.test(text)) {
+    return { folded: whole, at: Array.from({ length: text.length + 1 }, (_, i) => i) }
+  }
   let folded = ''
   const at: number[] = []
   let i = 0
@@ -59,7 +69,10 @@ function occurrences(text: string, terms: string[]): Span[] {
   const spans: Span[] = []
   for (const term of terms) {
     for (let from = folded.indexOf(term); from >= 0; from = folded.indexOf(term, from + term.length)) {
-      spans.push({ start: at[from]!, end: at[from + term.length] ?? text.length })
+      // A word ending inside what one character folds to (「㎏」 to 「kg」) ends after that whole character.
+      let end = from + term.length
+      while (end < at.length - 1 && at[end] === at[end - 1]) end++
+      spans.push({ start: at[from]!, end: at[end] ?? text.length })
     }
   }
   spans.sort((a, b) => a.start - b.start)
@@ -75,33 +88,43 @@ function occurrences(text: string, terms: string[]): Span[] {
 /** A field as it is searched: citation marks [n] dropped (with the space before a Chinese stop they leave), line breaks as spaces. */
 const plain = (text: string) => text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').replace(/ (?=[，。；：！？、）」』])/g, '').trim()
 
+/** Whether the UTF-16 unit at `i` of `text` is the second half of a character (an emoji, say). */
+const lowHalf = (text: string, i: number) => { const code = text.charCodeAt(i); return code >= 0xdc00 && code <= 0xdfff }
+
 /**
  * The snippet of the thing's fields that `terms` all appear in, or null when one is missing: from the field holding the
- * most words (the first such), around its first match.
+ * most words (the first such), around its first match; `field` is that field's index in `fields`.
  */
-export function matchFields(fields: readonly string[], terms: string[]): Snippet | null {
+export function matchFields(fields: readonly string[], terms: string[]): (Snippet & { field: number }) | null {
   if (!terms.length) return null
-  const texts = fields.map(plain).filter(Boolean)
-  const all = fold(texts.join('\n')).folded
+  const texts = fields.map((text, field) => ({ text: plain(text), field })).filter(item => item.text)
+  const all = fold(texts.map(item => item.text).join('\n')).folded
   if (!terms.every(term => all.includes(term))) return null
-  let best: { text: string; spans: Span[]; count: number } | null = null
-  for (const text of texts) {
+  let best: { text: string; field: number; spans: Span[]; count: number } | null = null
+  for (const { text, field } of texts) {
     const folded = fold(text).folded
     const count = terms.filter(term => folded.includes(term)).length
-    if (count && (!best || count > best.count)) best = { text, spans: occurrences(text, terms), count }
+    if (count && (!best || count > best.count)) best = { text, field, spans: occurrences(text, terms), count }
   }
-  const { text, spans } = best!
+  const { text, field, spans } = best!
   const first = spans[0]!
-  const start = Math.max(0, first.start - BEFORE)
-  const end = Math.min(text.length, first.end + AFTER)
+  // The cut never splits a character in two.
+  let start = Math.max(0, first.start - BEFORE)
+  if (start > 0 && lowHalf(text, start)) start--
+  let end = Math.min(text.length, first.end + AFTER)
+  if (end < text.length && lowHalf(text, end)) end--
   const head = start > 0 ? '…' : ''
   const tail = end < text.length ? '…' : ''
   const shift = head.length - start
   return {
     text: head + text.slice(start, end) + tail,
     marks: spans.filter(s => s.start >= start && s.end <= end).map(s => ({ start: s.start + shift, end: s.end + shift })),
+    field,
   }
 }
+
+/** A snippet as the panel gets it (which field it came from left out). */
+const snippetOf = ({ text, marks }: Snippet): Snippet => ({ text, marks })
 
 /** Keeps the first `SEARCH_LIMIT` of `hits`, counting the rest. */
 function cut<T>(hits: T[]): { list: T[]; more: number } {
@@ -126,29 +149,29 @@ export function search(repo: Repo, query: string): SearchResults {
   const findingHits: (SearchResults['findings'][number] & { at: string })[] = []
   for (const product of products) {
     const nameHit = matchFields([product.name, product.company], terms)
-    if (nameHit) productHits.push({ id: product.id, name: product.name, company: product.company, tracks: tracksOf.get(product.id)!.map(t => t.name), snippet: nameHit })
+    if (nameHit) productHits.push({ id: product.id, name: product.name, company: product.company, tracks: tracksOf.get(product.id)!.map(t => t.name), snippet: snippetOf(nameHit) })
     const dimensions: Dimension[] = repo.dimensionsOfProduct(product.id)
     const cards = repo.latestCards(product.id)
     for (const dimension of dimensions) {
       const card = cards.find(c => c.dimension === dimension.key)
       const hit = card && matchFields([card.summary, ...card.bullets, card.body], terms)
-      if (hit) cardHits.push({ productId: product.id, product: product.name, dimension: dimension.key, label: dimension.label, snippet: hit })
+      if (hit) cardHits.push({ productId: product.id, product: product.name, dimension: dimension.key, label: dimension.label, snippet: snippetOf(hit) })
     }
     for (const finding of repo.findingsOfProduct(product.id)) {
       if (!SHOWN.includes(finding.status)) continue
       const hit = matchFields([finding.headline, finding.why], terms)
-      if (hit) findingHits.push({ id: finding.id, productId: product.id, product: product.name, date: localDate(new Date(finding.createdAt)), headline: finding.headline, status: finding.status, snippet: hit, at: finding.createdAt })
+      if (hit) findingHits.push({ id: finding.id, productId: product.id, product: product.name, date: localDate(new Date(finding.createdAt)), headline: finding.headline, status: finding.status, inHeadline: hit.field === 0, snippet: snippetOf(hit), at: finding.createdAt })
     }
   }
   findingHits.sort((a, b) => b.at.localeCompare(a.at))
   const trackHits: SearchResults['tracks'] = tracks.flatMap(track => {
     const hit = matchFields([track.name, track.brief], terms)
-    return hit ? [{ id: track.id, name: track.name, snippet: hit }] : []
+    return hit ? [{ id: track.id, name: track.name, snippet: snippetOf(hit) }] : []
   })
   const topicHits: SearchResults['topics'] = tracks.flatMap(track => repo.topicsOfTrack(track.id).flatMap(topic => {
     const cards = repo.latestTopicVersion(topic.id)?.cards ?? []
     const hit = matchFields([topic.question, ...cards.flatMap(c => [c.title, c.summary, ...c.bullets, c.body])], terms)
-    return hit ? [{ id: topic.id, question: topic.question, track: track.name, snippet: hit }] : []
+    return hit ? [{ id: topic.id, question: topic.question, track: track.name, snippet: snippetOf(hit) }] : []
   }))
   const p = cut(productHits), t = cut(trackHits), c = cut(cardHits), f = cut(findingHits.map(({ at: _at, ...hit }) => hit)), tp = cut(topicHits)
   return {

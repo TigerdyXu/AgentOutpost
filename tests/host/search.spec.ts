@@ -53,14 +53,17 @@ describe('matching', () => {
   })
 
   it('finds a thing only when all the words are in its fields, and marks them in the field holding the most', () => {
-    expect(matchFields(['小豆的会员', '按月收费，额度与豆包互通'], ['额度', '豆包'])).toEqual({ text: '按月收费，额度与豆包互通', marks: [{ start: 5, end: 7 }, { start: 8, end: 10 }] })
+    expect(matchFields(['小豆的会员', '按月收费，额度与豆包互通'], ['额度', '豆包'])).toEqual({ text: '按月收费，额度与豆包互通', marks: [{ start: 5, end: 7 }, { start: 8, end: 10 }], field: 1 })
     expect(matchFields(['小豆的会员', '按月收费'], ['会员', '收费'])).toMatchObject({ text: '小豆的会员' }) // a word in each: the first field
     expect(matchFields(['小豆的会员'], ['会员', '年费'])).toBeNull()
     expect(matchFields(['anything'], [])).toBeNull()
   })
 
   it('reads full-width and capital letters as the same, and marks the text as it is written', () => {
-    expect(matchFields(['Ｍｕｓｅ 上线'], ['muse'])).toEqual({ text: 'Ｍｕｓｅ 上线', marks: [{ start: 0, end: 4 }] })
+    expect(matchFields(['Ｍｕｓｅ 上线'], ['muse'])).toEqual({ text: 'Ｍｕｓｅ 上线', marks: [{ start: 0, end: 4 }], field: 0 })
+    // A word ending inside what one character folds to marks that whole character, never an empty piece.
+    expect(matchFields(['重 5㎏ 左右'], ['5k'])!.marks).toEqual([{ start: 2, end: 4 }])
+    expect(matchFields(['第Ⅱ代'], ['i'])!.marks).toEqual([{ start: 1, end: 2 }])
   })
 
   it('leaves citation marks and line breaks out, and cuts a long field around the first match', () => {
@@ -71,6 +74,10 @@ describe('matching', () => {
     expect(hit.text).toContain('会员按月收费 ')
     expect(hit.text).not.toContain('[1]')
     expect(matchFields(['Cue Pro 会员 [2]。推论'], ['会员'])!.text).toBe('Cue Pro 会员。推论') // no space left before the stop
+    // The cut never splits an emoji in two.
+    // 24 units back from 会员 is the emoji's second half: the cut moves back to its first.
+    const emoji = matchFields([`前前😀${'后'.repeat(23)}会员`], ['会员'])!
+    expect(emoji.text).toBe(`…😀${'后'.repeat(23)}会员`)
     expect(hit.text.slice(hit.marks[0]!.start, hit.marks[0]!.end)).toBe('会员')
   })
 })
@@ -104,7 +111,8 @@ describe('search', () => {
     finding('p1', '撤回的会员消息', '无', 'withdrawn')
     const hits = search(repo, '会员').findings
     expect(hits.map(h => [h.headline, h.status])).toEqual([['没站住的会员传闻', 'unproven'], ['Muse 调整会员价', 'verified'], ['小豆上线记忆', 'verified']])
-    expect(hits[2]).toEqual({ id: expect.any(String), productId: 'p1', product: '豆包·小豆', date: '2026-11-28', headline: '小豆上线记忆', status: 'verified', snippet: { text: '会员才有', marks: [{ start: 0, end: 2 }] } })
+    expect(hits[2]).toEqual({ id: expect.any(String), productId: 'p1', product: '豆包·小豆', date: '2026-11-28', headline: '小豆上线记忆', status: 'verified', inHeadline: false, snippet: { text: '会员才有', marks: [{ start: 0, end: 2 }] } })
+    expect(hits[1]!.inHeadline).toBe(true)
   })
 
   it('finds topics by question or their latest conclusions', () => {

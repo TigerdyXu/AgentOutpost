@@ -87,7 +87,7 @@ export function App({ t, onState, sessions, configForm }: {
   reported.current = onState
   useEffect(() => { if (state) reported.current?.(state) }, [state])
 
-  const navigate = useCallback((next: Route) => { setRoute(next); setNavOpen(false) }, [setRoute])
+  const navigate = useCallback((next: Route, options?: { keepColumn?: boolean }) => { setRoute(next); if (!options?.keepColumn) setNavOpen(false) }, [setRoute])
   const refresh = useCallback(() => { void reload() }, [reload])
   const setPicks = useCallback((trackId: Id, count: number | null) => {
     setPicksState(previous => {

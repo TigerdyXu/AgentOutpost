@@ -17,8 +17,8 @@ const results = (over: Partial<SearchResults> = {}): SearchResults => ({
 const found = results({
   cards: [{ productId: 'p1', product: '豆包·小豆', dimension: 'business', label: '商业化', snippet: { text: '…三档会员，额度互通', marks: [{ start: 3, end: 5 }] } }],
   findings: [
-    { id: 'f1', productId: 'p1', product: '豆包·小豆', date: '2026-11-27', headline: '会员涨价', status: 'unconfirmed', snippet: { text: '会员涨价', marks: [{ start: 0, end: 2 }] } },
-    { id: 'f2', productId: 'p2', product: 'Muse', date: '2026-11-26', headline: 'Muse 调价', status: 'verified', snippet: { text: '只给会员', marks: [{ start: 2, end: 4 }] } },
+    { id: 'f1', productId: 'p1', product: '豆包·小豆', date: '2026-11-27', headline: '会员涨价', status: 'unconfirmed', inHeadline: true, snippet: { text: '会员涨价', marks: [{ start: 0, end: 2 }] } },
+    { id: 'f2', productId: 'p2', product: 'Muse', date: '2026-11-26', headline: 'Muse 调价', status: 'verified', inHeadline: false, snippet: { text: '只给会员', marks: [{ start: 2, end: 4 }] } },
   ],
   more: { products: 0, tracks: 0, cards: 0, findings: 5, topics: 0 },
 })
@@ -71,14 +71,61 @@ describe('the search box', () => {
     expect(shell.navigate).not.toHaveBeenCalled()
     await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
     expect(shell.navigate).toHaveBeenCalledOnce()
-    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '小豆' })
+    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '小豆' }, { keepColumn: true })
     await type(box, '小豆 会员')
     await act(async () => { box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '小豆 会员' })
+    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '小豆 会员' }, { keepColumn: false })
     expect(onChoose).toHaveBeenCalledOnce()
     await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
     expect(shell.navigate).toHaveBeenCalledTimes(2) // Enter went at once; the pause after it adds nothing
     await act(async () => { box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(box.value).toBe('')
+  })
+
+  it('keeps the narrow layout’s column open while results follow the typing; Enter closes it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    stubApi({ 'GET state': state() })
+    const shell = await mount(<MiddleColumn />, { state: state() })
+    const box = document.querySelector<HTMLInputElement>('.op-mid-search-input')!
+    await type(box, '会员')
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
+    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '会员' }, { keepColumn: true })
+    await act(async () => { box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '会员' }, { keepColumn: false })
+  })
+
+  it('searches nothing while an input method composes, and once it is done', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    stubApi({ 'GET state': state() })
+    const shell = await mount(<MiddleColumn />, { state: state() })
+    const box = document.querySelector<HTMLInputElement>('.op-mid-search-input')!
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      box.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      setter.call(box, 'hui yuan')
+      box.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS * 4) })
+    expect(shell.navigate).not.toHaveBeenCalled()
+    await act(async () => {
+      setter.call(box, '会员')
+      box.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+      box.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '会员' }))
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
+    expect(shell.navigate).toHaveBeenCalledOnce()
+    expect(shell.navigate).toHaveBeenLastCalledWith({ page: 'search', q: '会员' }, { keepColumn: true })
+  })
+
+  it('drops a search still due when Esc empties the box or another page opens first', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    stubApi({ 'GET state': state() })
+    const shell = await mount(<MiddleColumn />, { state: state() })
+    const box = document.querySelector<HTMLInputElement>('.op-mid-search-input')!
+    await type(box, 'a')
+    await act(async () => { box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS) })
+    expect(shell.navigate).not.toHaveBeenCalled()
     expect(box.value).toBe('')
   })
 
@@ -102,6 +149,11 @@ describe('a finding a search hit opened', () => {
     expect(all('[data-focused]').map(card => card.getAttribute('data-finding'))).toEqual(['f2'])
     expect(scrolled.at(-1)).toBe('f2')
     expect(text()).toContain('收起')
+    // Folding it again is the reader's choice now, and the page does not jump back to the finding.
+    await click(all('.op-fold')[0]!)
+    expect(text()).not.toContain('收起')
+    await click(all('.op-fold')[0]!)
+    expect(scrolled).toEqual(['f2'])
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   })
 })
